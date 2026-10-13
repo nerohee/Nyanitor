@@ -1,0 +1,25 @@
+/* 앱 틀은 웹 페이지처럼 글자가 선택되지 않게, 본문 · 입력칸은 그대로 (design.md §3 웹 티 숨기기) */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable],
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+button,
+[role="button"] {
+  cursor: default;
+}

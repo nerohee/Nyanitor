@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 오른쪽 귀 · 회전축 128,50 -->
+  <path class="c-fur c-outline" d="M116 48 L129.6 34.6 Q134.6 30.5 135.4 37 L138 62 Z" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
+  <path class="c-inner-ear" d="M122 47 L128.4 40 Q130.2 38.6 130.6 41 L132 54 Z" fill="#f4b2a6"/>
+</svg>

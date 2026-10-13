@@ -1,0 +1,572 @@
+/*
+ * Nyanitor 디자인 토큰 (P2-01, designer)
+ *
+ * 화면은 여기 있는 변수만 쓴다. 값을 직접 박지 않는다.
+ * - 도구 영역 중립색: 밝게(기본) · 어둡게(OS 설정 `prefers-color-scheme`, 또는 `[data-theme]` 로 강제)
+ * - 시안별 값(강조색 · 둥글기 · 그림자 · 테두리): `[data-variant="a|b|c"]` 가 덮어쓴다
+ * - 고양이 집 시간대 4벌: `[data-time="morning|day|evening|night"]` — 앱 테마와 따로 움직인다
+ * - 고양이 털색: `[data-cat="<id>"]` — 한 그림(부위별 SVG)으로 7마리 (docs/01-planning/cat-assets.md)
+ *
+ * 대비 확인 표: 이 파일 맨 아래 주석.
+ */
+
+/* ───────────────────────── 공통 (테마와 무관) ───────────────────────── */
+:root {
+  /* 글자 — 시스템 글꼴 (desktop/design.md §2). 외부 글꼴 없음 */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "D2Coding", monospace;
+
+  /* 글자 단계 (Fluent 2 단계를 뼈대로). 본문 14px */
+  --text-xs: 12px; /* 캡션 · 이름표 보조 */
+  --text-sm: 13px; /* 보조 설명 · 표 */
+  --text-md: 14px; /* 본문 · 입력칸 */
+  --text-lg: 16px; /* 소제목 · 카드 제목 */
+  --text-xl: 20px; /* 화면 제목 */
+  --text-2xl: 28px; /* 큰 제목 (집 화면 인사) */
+  --text-3xl: 40px; /* 큰 숫자 (사용량) */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5; /* 본문 */
+  --leading-relaxed: 1.65; /* 편집기 · 긴 글 */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* 간격 — 4px 단위 */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 크기 */
+  --control-h-sm: 28px; /* 마우스 기준 최소 (desktop/design.md §2) */
+  --control-h-md: 32px;
+  --control-h-lg: 40px; /* 강조 버튼 */
+  --nav-w: 56px;
+  --focus-ring-w: 2px;
+  --focus-ring-offset: 2px;
+
+  /* 둥글기 — 시안이 --radius-card · --radius-control 를 덮어쓴다 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --radius-control: var(--radius-sm);
+  --radius-card: var(--radius-md);
+
+  /* 테두리 */
+  --border-w: 1px;
+  --border-w-strong: 1px; /* 시안 c 는 1.5px 잉크 선 */
+  --card-border: var(--color-border); /* 카드 테두리 색 — 시안 c 는 잉크 */
+  --card-border: var(--color-border); /* 카드 테두리 색 — 시안 c 는 잉크 */
+
+  /* 움직임 — Fluent 2 길이 · 곡선. 줄이기 설정이면 아래에서 0 */
+  --dur-instant: 50ms;
+  --dur-fast: 100ms; /* 누름 · 색 바뀜 */
+  --dur-normal: 200ms; /* 펼치기 · 탭 */
+  --dur-slow: 300ms; /* 화면 전환 (집 → 작업 공간) */
+  --dur-slower: 500ms;
+  --ease-standard: cubic-bezier(0.33, 0, 0.67, 1); /* 제자리 변화 */
+  --ease-enter: cubic-bezier(0.1, 0.9, 0.2, 1); /* 들어옴 · 감속 */
+  --ease-exit: cubic-bezier(0.7, 0, 1, 0.5); /* 나감 · 가속 */
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1); /* 고양이 전용 — 통통 튐 */
+
+  /* 고양이 움직임 (도구 영역보다 생생하게) */
+  --cat-dur-breathe: 3200ms;
+  --cat-dur-tail: 2400ms;
+  --cat-dur-ear: 5200ms;
+  --cat-dur-blink: 4800ms;
+  --cat-dur-step: 520ms; /* 걷기 한 걸음 */
+  /* 창이 숨거나 줄이기 설정이면 paused — 고양이 애니메이션은 animation-play-state 에 이것을 쓴다 */
+  --cat-play-state: running;
+}
+
+/* 줄이기 설정: 도구 영역 전환은 0, 고양이는 멈춤 (questions-design §3) */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-normal: 0ms;
+    --dur-slow: 0ms;
+    --dur-slower: 0ms;
+    --cat-play-state: paused;
+  }
+}
+
+/* 앱이 숨겨졌을 때(나중에 visibilitychange 로 붙임) · 설정 "움직임 줄이기" 를 켰을 때 */
+:root[data-motion="reduced"] {
+  --dur-instant: 0ms;
+  --dur-fast: 0ms;
+  --dur-normal: 0ms;
+  --dur-slow: 0ms;
+  --dur-slower: 0ms;
+  --cat-play-state: paused;
+}
+:root[data-hidden="true"] {
+  --cat-play-state: paused;
+}
+
+/* ───────────────────────── 도구 영역 중립색 — 밝게 ───────────────────────── */
+:root {
+  --color-bg: #fbf8f3; /* 크림 종이 */
+  --color-surface: #fffdf9; /* 카드 · 패널 */
+  --color-surface-sunken: #f3eee6; /* 탐색 · 입력 영역 바닥 */
+  --color-surface-raised: #ffffff; /* 떠 있는 것 (팝오버) */
+  --color-border: #e5ddd1; /* 장식 구분선 (대비 기준 없음) */
+  --color-border-strong: #8f8478; /* 입력칸 · 버튼 테두리 3:1 */
+  --color-text: #2b2620;
+  --color-text-muted: #6b6258;
+  --color-text-subtle: #776c61; /* bg · surface 위에서만 (sunken 위 4.43 — 쓰지 않음) */
+  --color-ink: #2b2620; /* 그림책 잉크 선 (시안 c) */
+  --ink-shadow: var(--color-ink); /* 잉크 오프셋 그림자 — 어둡게에서는 검정 (밝은 잉크가 빛나 보이지 않게) */
+
+  --color-danger: #b42318;
+  --color-success: #2e7d4f;
+  --color-warning: #8a5300;
+
+  --shadow-color: 52 38 22; /* rgb — 따뜻한 갈색 그림자 */
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / 0.08);
+  --shadow-md: 0 2px 6px rgb(var(--shadow-color) / 0.08), 0 8px 24px rgb(var(--shadow-color) / 0.08);
+  --shadow-lg: 0 4px 12px rgb(var(--shadow-color) / 0.1), 0 16px 40px rgb(var(--shadow-color) / 0.12);
+  --shadow-card: var(--shadow-sm);
+
+  /* 강조색 기본값 = 시안 a. 시안이 덮어쓴다 */
+  --accent: #e8602f; /* 채움 (버튼 · 지금 단계) — bg 위 3.23 */
+  --accent-hover: #d9542a;
+  --on-accent: #24130a; /* 채움 위 글자 5.24 */
+  --accent-strong: #b8431c; /* 글자 · 링크 · 포커스 링 — bg 위 5.14 */
+  --accent-soft: #fde7dd; /* 옅은 바탕 (선택된 줄) */
+  --accent-soft-text: #9e3412; /* 옅은 바탕 위 글자 5.98 */
+  --accent-border: transparent; /* 시안 c 는 잉크 */
+  --focus-ring: var(--accent-strong);
+}
+
+/* ───────────────────────── 도구 영역 중립색 — 어둡게 ───────────────────────── */
+/* 같은 이름, 값만 바꾼다 (HIG). OS 가 어둡게이고 강제 밝게가 아닐 때 + 강제 어둡게 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #1c1a17;
+    --color-surface: #24211d;
+    --color-surface-sunken: #171513;
+    --color-surface-raised: #2d2924;
+    --color-border: #3a342d;
+    --color-border-strong: #7a7065;
+    --color-text: #f1ece4;
+    --color-text-muted: #a89f93;
+    --color-text-subtle: #948a7e;
+    --color-ink: #d8cfc3;
+    --ink-shadow: rgb(0 0 0 / 0.7);
+    --color-danger: #f97066;
+    --color-success: #6ccb8f;
+    --color-warning: #f0b44c;
+    --shadow-color: 0 0 0;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.35);
+    --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.45);
+
+    --accent: #f07a4a;
+    --accent-hover: #f48b60;
+    --on-accent: #2a1408;
+    --accent-strong: #f59a73;
+    --accent-soft: #3a2219;
+    --accent-soft-text: #f59a73;
+  }
+}
+:root[data-theme="dark"] {
+  --color-bg: #1c1a17;
+  --color-surface: #24211d;
+  --color-surface-sunken: #171513;
+  --color-surface-raised: #2d2924;
+  --color-border: #3a342d;
+  --color-border-strong: #7a7065;
+  --color-text: #f1ece4;
+  --color-text-muted: #a89f93;
+  --color-text-subtle: #948a7e;
+  --color-ink: #d8cfc3;
+  --ink-shadow: rgb(0 0 0 / 0.7);
+  --color-danger: #f97066;
+  --color-success: #6ccb8f;
+  --color-warning: #f0b44c;
+  --shadow-color: 0 0 0;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.45);
+
+  --accent: #f07a4a;
+  --accent-hover: #f48b60;
+  --on-accent: #2a1408;
+  --accent-strong: #f59a73;
+  --accent-soft: #3a2219;
+  --accent-soft-text: #f59a73;
+}
+
+/* ───────────────────────── 시안별 덮어쓰기 ─────────────────────────
+ * a 들여다보는 창 — 감 주황, 큰 둥글기, 부드러운 그림자
+ * b 선반 위 띠   — 민트, 중간 둥글기, 그림자 없이 선
+ * c 다락 탑      — 해바라기 노랑 + 잉크 선, 작은 둥글기, 잉크 오프셋
+ * 고른 뒤에는 고른 값을 위 :root 로 옮기고 이 절을 지운다.
+ */
+/* var() 를 품은 변수는 선언한 곳에서 값이 정해진다 — 강조색이 바뀌는 시안 요소에서 다시 이어 준다 */
+[data-variant] {
+  --focus-ring: var(--accent-strong);
+}
+
+[data-variant="a"] {
+  --radius-control: 10px;
+  --radius-card: var(--radius-lg);
+  --shadow-card: var(--shadow-md);
+}
+
+[data-variant="b"] {
+  --radius-control: var(--radius-sm);
+  --radius-card: var(--radius-md);
+  --shadow-card: none;
+  --accent: #177a6c;
+  --accent-hover: #136a5e;
+  --on-accent: #ffffff;
+  --accent-strong: #157265;
+  --accent-soft: #e2f2ee;
+  --accent-soft-text: #0f5c51;
+}
+
+[data-variant="c"] {
+  --radius-control: var(--radius-xs);
+  --radius-card: 8px;
+  --border-w-strong: 1.5px;
+  --card-border: var(--color-ink);
+  --shadow-card: 2px 2px 0 var(--ink-shadow);
+  --accent: #f5b82e; /* bg 위 1.68 — 그래서 언제나 --accent-border(잉크)와 함께 */
+  --accent-hover: #f0aa10;
+  --on-accent: #2b2620;
+  --accent-strong: #8a5e00; /* 노랑 대신 글자에 쓰는 황토 */
+  --accent-soft: #fdf0cc;
+  --accent-soft-text: #6e4b00;
+  --accent-border: var(--color-ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-variant="b"] {
+    --accent: #4cc2ae;
+    --accent-hover: #63cdbb;
+    --on-accent: #0d2622;
+    --accent-strong: #5fcdb9;
+    --accent-soft: #17302b;
+    --accent-soft-text: #5fcdb9;
+  }
+  :root:not([data-theme="light"]) [data-variant="c"] {
+    --accent: #f7c548;
+    --accent-hover: #f9d06a;
+    --on-accent: #231c0a;
+    --accent-strong: #f7c548;
+    --accent-soft: #3a3018;
+    --accent-soft-text: #f7c548;
+  }
+}
+:root[data-theme="dark"] [data-variant="b"] {
+  --accent: #4cc2ae;
+  --accent-hover: #63cdbb;
+  --on-accent: #0d2622;
+  --accent-strong: #5fcdb9;
+  --accent-soft: #17302b;
+  --accent-soft-text: #5fcdb9;
+}
+:root[data-theme="dark"] [data-variant="c"] {
+  --accent: #f7c548;
+  --accent-hover: #f9d06a;
+  --on-accent: #231c0a;
+  --accent-strong: #f7c548;
+  --accent-soft: #3a3018;
+  --accent-soft-text: #f7c548;
+}
+
+/* ───────────────────────── 고양이 집 시간대 (테마와 따로) ─────────────────────────
+ * 시각: 아침 05–10시 · 낮 10–17시 · 저녁 17–20시 · 밤 20–05시
+ * 하늘(창밖) · 지평(창밖 아래 띠) · 빛(창으로 들어오는 빛, 반투명 덮개) · 벽 · 바닥
+ * 장면 위 글자는 --house-text (벽 위에서만), 고양이 이름표는 크림 알약 --house-tag-* (어느 시간대든 14.9:1)
+ */
+:root,
+[data-time="day"] {
+  --house-sky: #9fd3ec;
+  --house-horizon: #ddf0f5;
+  --house-light: #fff6da;
+  --house-light-alpha: 0.18;
+  --house-wall: #f6ebd9;
+  --house-wall-shade: #e9d7bc;
+  --house-floor: #d3a574;
+  --house-floor-shade: #b98a5c;
+  --house-frame: #a87650; /* 창틀 · 걸레받이 · 가구 나무 */
+  --house-line: #5a3e2b; /* 장면 그림 선 */
+  --house-text: #3a2a1e;
+  --house-tag-bg: #fff8ec;
+  --house-tag-text: #2b2118;
+  --house-tag-line: #5a3e2b;
+  --house-cat-shadow: rgb(70 45 25 / 0.18);
+  /* 집 사물 (src/assets/house, class h-*) */
+  --house-frame-shade: #8c5f3e;
+  --house-fabric: #e98a6f;
+  --house-fabric-shade: #c96f57;
+  --house-rope: #e2c491;
+  --house-rope-line: #b99668;
+  --house-metal: #dfe4e8;
+  --house-metal-shade: #aab3bb;
+  --house-food: #b5773f;
+  --house-sand: #ecdcb4;
+  --house-plastic: #a9c7b0;
+  --house-plastic-shade: #86a98f;
+  --house-box: #d9a86c;
+  --house-box-shade: #b88850;
+  --house-paper: #fbf3e4;
+  --house-art-1: #f0b847;
+  --house-art-2: #6e9ec0;
+  --house-plant: #7fae6a;
+  --house-plant-shade: #5d8c4f;
+  --house-pot: #d27b55;
+  --house-pot-shade: #b0603f;
+  --house-sun: #ffe27a;
+  --house-bulb: #fff1c4;
+  --house-lamp-glow: rgb(255 214 140 / 0);
+  --house-sun-display: inline;
+  --house-night-display: none;
+}
+
+[data-time="morning"] {
+  --house-sky: #cfe6ee;
+  --house-horizon: #f7d9c4;
+  --house-light: #ffe3b8;
+  --house-light-alpha: 0.3;
+  --house-wall: #f4e4cc;
+  --house-wall-shade: #e6d0b0;
+  --house-floor: #c99a6b;
+  --house-floor-shade: #b0835a;
+  --house-frame: #a0704b;
+  --house-line: #5a3e2b;
+  --house-text: #3a2a1e;
+  --house-cat-shadow: rgb(70 45 25 / 0.16);
+  --house-sun: #ffd58a;
+}
+
+[data-time="evening"] {
+  --house-sky: #f2a27a;
+  --house-horizon: #f7c98c;
+  --house-light: #ffb27a;
+  --house-light-alpha: 0.28;
+  --house-wall: #ebcdb0;
+  --house-wall-shade: #d6b08e;
+  --house-floor: #b57e55;
+  --house-floor-shade: #98653f;
+  --house-frame: #8a5a38;
+  --house-line: #4a3020;
+  --house-text: #3a2a1e;
+  --house-cat-shadow: rgb(70 35 20 / 0.24);
+  --house-sun: #ff9e5e;
+}
+
+[data-time="night"] {
+  --house-sky: #23284a;
+  --house-horizon: #3a3f6b;
+  --house-light: #ffd48a; /* 방 안 등불 */
+  --house-light-alpha: 0.22;
+  --house-wall: #5b5068;
+  --house-wall-shade: #4a4058;
+  --house-floor: #6b4e3d;
+  --house-floor-shade: #563d2f;
+  --house-frame: #4a3426;
+  --house-line: #241a14;
+  --house-text: #f6eedc;
+  --house-cat-shadow: rgb(10 8 20 / 0.35);
+  /* 밤: 사물은 어둡게, 해 대신 달 · 별, 천장 등이 켜짐 */
+  --house-frame-shade: #3a281d;
+  --house-fabric: #a8604f;
+  --house-fabric-shade: #8a4c3e;
+  --house-rope: #9e8866;
+  --house-rope-line: #7c6649;
+  --house-metal: #9aa2a9;
+  --house-metal-shade: #78818a;
+  --house-food: #7f5430;
+  --house-sand: #a39878;
+  --house-plastic: #74897a;
+  --house-plastic-shade: #5d7062;
+  --house-box: #98754c;
+  --house-box-shade: #7e5f3a;
+  --house-paper: #b9b1a4;
+  --house-art-1: #b08636;
+  --house-art-2: #4d6f88;
+  --house-plant: #587a4a;
+  --house-plant-shade: #435f38;
+  --house-pot: #93563b;
+  --house-pot-shade: #7a432d;
+  --house-bulb: #ffd48a;
+  --house-lamp-glow: rgb(255 214 140 / 0.28);
+  --house-sun-display: none;
+  --house-night-display: inline;
+}
+
+/* ───────────────────────── 고양이 털색 (cat-assets.md 프로필) ─────────────────────────
+ * 부위 SVG 의 class 가 이 변수를 쓴다: c-fur · c-fur-shade · c-belly · c-pattern · c-pattern-2 ·
+ * c-outline(선) · c-eye · c-eye-hi · c-nose · c-inner-ear · c-blush
+ * 기본값 = 나비(오케스트레이터)
+ */
+:root,
+[data-cat="nabi"] {
+  --cat-fur: #f2b36b;
+  --cat-fur-shade: #d9914a;
+  --cat-belly: #fce6c8;
+  --cat-pattern: #d27e3a;
+  --cat-pattern-2: #d27e3a;
+  --cat-line: #5a3a22;
+  --cat-eye: #2b1d14;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #e58a84;
+  --cat-inner-ear: #f4b2a6;
+  --cat-blush: #f29c8c;
+  --cat-scale: 1;
+
+  /* 소품 색 (고양이마다 같음) */
+  --prop-beret: #c8553d;
+  --prop-collar: #c6493a;
+  --prop-bell: #f0c040;
+  --prop-lens: #ffffff;
+}
+
+[data-cat="mulgam"] {
+  /* 삼색 — 흰 바탕 + 주황 · 검정 얼룩 */
+  --cat-fur: #fff9f0;
+  --cat-fur-shade: #e8ddcc;
+  --cat-belly: #ffffff;
+  --cat-pattern: #e39a4f;
+  --cat-pattern-2: #3b302a;
+  --cat-line: #4a3b30;
+  --cat-eye: #3a2a1e;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #f0a39b;
+  --cat-inner-ear: #f6c1b6;
+  --cat-blush: #f5b2a5;
+  --cat-scale: 1;
+}
+
+[data-cat="danchu"] {
+  /* 턱시도 — 검정 + 흰 가슴 · 흰 양말 */
+  --cat-fur: #34302d;
+  --cat-fur-shade: #24211f;
+  --cat-belly: #fbf6ee;
+  --cat-pattern: #fbf6ee;
+  --cat-pattern-2: #fbf6ee;
+  --cat-line: #141210;
+  --cat-eye: #9ccb7a;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #e9a39b;
+  --cat-inner-ear: #6a5652;
+  --cat-blush: #5a4744;
+  --cat-scale: 1;
+}
+
+[data-cat="mukmul"] {
+  /* 올블랙 — 노란 눈, 꼬리 끝 갈고리 */
+  --cat-fur: #2a2624;
+  --cat-fur-shade: #1c1918;
+  --cat-belly: #3a3532;
+  --cat-pattern: #2a2624;
+  --cat-pattern-2: #2a2624;
+  --cat-line: #0e0c0b;
+  --cat-eye: #f2c14e;
+  --cat-eye-hi: #fff7dc;
+  --cat-nose: #6e5a55;
+  --cat-inner-ear: #5a4846;
+  --cat-blush: #4a3a38;
+  --cat-scale: 1;
+}
+
+[data-cat="kkaebi"] {
+  /* 회색 고등어 — 진한 줄무늬 */
+  --cat-fur: #a9a39b;
+  --cat-fur-shade: #8e877f;
+  --cat-belly: #e4dfd8;
+  --cat-pattern: #5f5952;
+  --cat-pattern-2: #5f5952;
+  --cat-line: #3a3530;
+  --cat-eye: #2b2724;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #d98e88;
+  --cat-inner-ear: #e9b9b0;
+  --cat-blush: #e8a79e;
+  --cat-scale: 1;
+}
+
+[data-cat="dubu"] {
+  /* 순백 — 작은 몸 */
+  --cat-fur: #fffcf7;
+  --cat-fur-shade: #ede6db;
+  --cat-belly: #ffffff;
+  --cat-pattern: #fffcf7;
+  --cat-pattern-2: #fffcf7;
+  --cat-line: #8a7a6c;
+  --cat-eye: #3a2e26;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #f4a7a0;
+  --cat-inner-ear: #f8c6be;
+  --cat-blush: #f7b8ae;
+  --cat-scale: 0.8;
+}
+
+[data-cat="gureum"] {
+  /* 푸른 회색 단색 — 둥근 안경 */
+  --cat-fur: #7f8a93;
+  --cat-fur-shade: #66717a;
+  --cat-belly: #a9b2b9;
+  --cat-pattern: #7f8a93;
+  --cat-pattern-2: #7f8a93;
+  --cat-line: #2e3439;
+  --cat-eye: #9ccb7a;
+  --cat-eye-hi: #ffffff;
+  --cat-nose: #8e7f86;
+  --cat-inner-ear: #b49aa0;
+  --cat-blush: #9a8a90;
+  --cat-scale: 1;
+}
+
+/*
+ * 대비 확인 (WCAG 상대 휘도 공식으로 계산, 기준: 본문 4.5:1 · 큰 글자 · 아이콘 · 입력 테두리 3:1)
+ *
+ * 밝게                         값                     대비   기준
+ *  본문 text / bg              #2b2620 / #fbf8f3      14.15  4.5 ✓
+ *  본문 text / surface         #2b2620 / #fffdf9      14.76  4.5 ✓
+ *  보조 text-muted / bg        #6b6258 / #fbf8f3       5.64  4.5 ✓
+ *  보조 text-muted / sunken    #6b6258 / #f3eee6       5.18  4.5 ✓
+ *  옅은 text-subtle / bg       #776c61 / #fbf8f3       4.83  4.5 ✓ (sunken 위 4.43 — 쓰지 않음)
+ *  입력 테두리 / bg            #8f8478 / #fbf8f3       3.45  3   ✓
+ *  위험 · 성공 · 주의 / bg     #b42318 · #2e7d4f · #8a5300   6.21 · 4.76 · 5.97  4.5 ✓
+ * 어둡게
+ *  본문 text / bg              #f1ece4 / #1c1a17      14.77  4.5 ✓
+ *  본문 text / surface         #f1ece4 / #24211d      13.63  4.5 ✓
+ *  보조 text-muted / bg        #a89f93 / #1c1a17       6.65  4.5 ✓
+ *  보조 text-muted / raised    #a89f93 / #2d2924       5.53  4.5 ✓
+ *  옅은 text-subtle / bg       #948a7e / #1c1a17       5.12  4.5 ✓
+ *  입력 테두리 / bg            #7a7065 / #1c1a17       3.58  3   ✓
+ *  위험 · 성공 · 주의 / bg     #f97066 · #6ccb8f · #f0b44c   6.23 · 8.74 · 9.37  4.5 ✓
+ * 강조 a 감          on-accent/accent  accent-strong/bg  accent/bg(채움 경계)  soft-text/soft
+ *  밝게  #e8602f      5.24              5.14              3.23 ✓                5.98
+ *  어둡게 #f07a4a     6.31              8.06              6.27                  6.85
+ * 강조 b 민트
+ *  밝게  #177a6c      5.20 (흰 글자)    5.47              4.91                  6.80
+ *  어둡게 #4cc2ae     7.31              8.33 (surface)    7.97                  7.31
+ * 강조 c 해바라기
+ *  밝게  #f5b82e      8.41              5.38 (#8a5e00)    1.68 ✗ → 잉크 테두리 필수  6.93
+ *  어둡게 #f7c548     10.50             9.95 (surface)    높음                  8.07
+ * 고양이 집 (시간대)
+ *  이름표 tag-text / tag-bg    #2b2118 / #fff8ec      14.92  (모든 시간대 같음)
+ *  장면 글자 / 벽  아침 10.99 · 낮 11.64 · 저녁 9.08 · 밤 6.51 (#f6eedc / #5b5068)
+ *  장면 글자를 바닥 위에 두지 않는다 (저녁 바닥 3.97)
+ */

@@ -1,3 +1,6 @@
+/* 디자인 토큰 (P2-01). 화면은 tokens.css 의 변수만 쓴다 */
+@import "./styles/tokens.css";
+
 /* 앱 틀은 웹 페이지처럼 글자가 선택되지 않게, 본문 · 입력칸은 그대로 (design.md §3 웹 티 숨기기) */
 body {
   user-select: none;

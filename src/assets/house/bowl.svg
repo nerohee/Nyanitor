@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 32">
+  <!-- 밥그릇 — 바닥 y=31 -->
+  <path class="h-food" d="M14 13 C20 3 50 3 56 13 Z" fill="#b5773f"/>
+  <path class="h-metal h-outline" d="M6 12 H64 L58 27 C57 29.5 55 30.5 52.5 30.5 H17.5 C15 30.5 13 29.5 12 27 Z" fill="#dfe4e8" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+  <path class="h-metal-shade-stroke" d="M10.5 19 H59.5" fill="none" stroke="#aab3bb" stroke-width="3"/>
+</svg>

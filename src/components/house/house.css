@@ -1,0 +1,58 @@
+/* 집 사물 색 — class h-* → 시간대 변수 (tokens.css [data-time]) */
+.house-obj {
+  display: block;
+  overflow: visible;
+}
+.house-obj .h-outline,
+.house-obj .h-line,
+.house-obj .h-line-stroke,
+.house-obj .h-tread { stroke: var(--house-line); }
+.house-obj .h-frame { fill: var(--house-frame); }
+.house-obj .h-frame-stroke { stroke: var(--house-frame); }
+.house-obj .h-frame-shade { fill: var(--house-frame-shade); }
+.house-obj .h-spoke { stroke: var(--house-frame-shade); }
+.house-obj .h-sky { fill: var(--house-sky); }
+.house-obj .h-horizon { fill: var(--house-horizon); }
+.house-obj .h-sun { fill: var(--house-sun); display: var(--house-sun-display); }
+.house-obj .h-moon,
+.house-obj .h-star { display: var(--house-night-display); }
+.house-obj .h-rope { fill: var(--house-rope); }
+.house-obj .h-rope-line { stroke: var(--house-rope-line); }
+.house-obj .h-fabric,
+.house-obj .h-lampshade { fill: var(--house-fabric); }
+.house-obj .h-fabric-shade-stroke { stroke: var(--house-fabric-shade); }
+.house-obj .h-metal { fill: var(--house-metal); }
+.house-obj .h-metal-shade-stroke { stroke: var(--house-metal-shade); }
+.house-obj .h-food { fill: var(--house-food); }
+.house-obj .h-sand { fill: var(--house-sand); }
+.house-obj .h-plastic { fill: var(--house-plastic); }
+.house-obj .h-plastic-shade { fill: var(--house-plastic-shade); }
+.house-obj .h-box { fill: var(--house-box); }
+.house-obj .h-box-shade { fill: var(--house-box-shade); }
+.house-obj .h-paper { fill: var(--house-paper); }
+.house-obj .h-art-1 { fill: var(--house-art-1); }
+.house-obj .h-art-2 { fill: var(--house-art-2); }
+.house-obj .h-plant { fill: var(--house-plant); }
+.house-obj .h-plant-shade { fill: var(--house-plant-shade); }
+.house-obj .h-pot { fill: var(--house-pot); }
+.house-obj .h-pot-shade { fill: var(--house-pot-shade); }
+.house-obj .h-bulb { fill: var(--house-bulb); }
+.house-obj .h-wheel-back { fill: var(--house-wall-shade); }
+
+/* 캣휠 — 일하는 중이면 바퀴가 돈다 (고양이가 오른쪽으로 달리면 바퀴 아래가 왼쪽으로 = 시계 방향) */
+.house-obj--cat-wheel .h-rotor {
+  transform-box: view-box;
+  transform-origin: 120px 118px;
+}
+.house-obj--cat-wheel[data-spin="true"] .h-rotor {
+  animation: house-spin 2.4s linear infinite;
+  animation-play-state: var(--cat-play-state);
+}
+@keyframes house-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .house-obj * {
+    animation: none !important;
+  }
+}

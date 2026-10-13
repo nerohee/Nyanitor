@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 앉기 몸통 — 세운 몸 · 가슴 털(c-belly). 숨쉬기 축 82,146 -->
+  <path class="c-fur c-outline" d="M50 146 C38 120 50 86 80 80 C106 76 120 96 116 124 L114 146 Z" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse class="c-belly" cx="102" cy="114" rx="9" ry="18" fill="#fce6c8"/>
+</svg>

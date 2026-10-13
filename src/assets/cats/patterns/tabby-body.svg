@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 무늬: 고등어 줄무늬(몸통). 몸통 바로 위 층. 몸통 윤곽 안쪽에만 그린다 (clipPath · id 를 쓰지 않으려고) -->
+  <path class="c-pattern" d="M61 82 H70 L67.3 95 A1.6 1.6 0 0 1 64 95 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M75 82 H84 L81.3 97 A1.6 1.6 0 0 1 78 97 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M89 82 H97 L94.6 93 A1.5 1.5 0 0 1 91.6 93 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M46 86.5 C49 84 52 82.6 55 82 L52.5 93 A1.5 1.5 0 0 1 49.6 92.6 Z" fill="#d27e3a"/>
+</svg>

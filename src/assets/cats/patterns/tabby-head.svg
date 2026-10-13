@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 무늬: 고등어 줄무늬(머리). 머리 바로 위 층, 눈 아래 -->
+  <path class="c-pattern" d="M104.2 46.2 H108.2 L107 55 A0.9 0.9 0 0 1 105.4 55 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M110 45.6 H114 L112.8 57 A0.9 0.9 0 0 1 111.2 57 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M115.8 46.2 H119.8 L118.6 55 A0.9 0.9 0 0 1 117 55 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M83.6 67.5 L92.5 69.6 L83.8 71.8 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M84.6 75 L92 76.6 L85.6 79 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M140.4 67.5 L131.5 69.6 L140.2 71.8 Z" fill="#d27e3a"/>
+  <path class="c-pattern" d="M139.4 75 L132 76.6 L138.4 79 Z" fill="#d27e3a"/>
+</svg>

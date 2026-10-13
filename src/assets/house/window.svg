@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 170">
+  <!-- 창 — 창턱 윗면 y=146 (고양이 자리 100,146). 해 · 달 · 별은 시간대 CSS 가 보이고 숨긴다 -->
+  <rect class="h-frame h-outline" x="10" y="8" width="180" height="140" rx="10" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+  <rect class="h-sky" x="22" y="20" width="156" height="116" rx="4" fill="#9fd3ec"/>
+  <circle class="h-sun" cx="142" cy="50" r="13" fill="#ffe27a"/>
+  <path class="h-moon" d="M140 36 A15 15 0 1 0 154 60 A12 12 0 1 1 140 36 Z" fill="#fff3c8"/>
+  <circle class="h-star" cx="52" cy="38" r="2" fill="#fff3c8"/>
+  <circle class="h-star" cx="78" cy="56" r="1.6" fill="#fff3c8"/>
+  <circle class="h-star" cx="118" cy="32" r="1.8" fill="#fff3c8"/>
+  <path class="h-horizon" d="M22 110 C52 96 82 98 112 106 C136 112 158 104 178 98 V136 H22 Z" fill="#ddf0f5"/>
+  <rect class="h-frame" x="96" y="20" width="8" height="116" fill="#a87650"/>
+  <rect class="h-frame" x="22" y="74" width="156" height="8" fill="#a87650"/>
+  <rect class="h-frame h-outline" x="0" y="144" width="200" height="18" rx="6" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+</svg>

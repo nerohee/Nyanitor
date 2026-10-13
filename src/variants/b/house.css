@@ -1,0 +1,209 @@
+/* 시안 b 「선반 위 띠」 — 위는 방 세 칸이 이어진 띠, 아래는 그림자 없는 차분한 격자 (둥글기 10 · 선) */
+.hb {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+/* ── 왼쪽 탐색 — 면 한 단계 어둡게 (Linear: 탐색은 흐리게, 내용이 앞으로) ── */
+.hb-nav {
+  background: var(--color-surface-sunken);
+  border-right: 1px solid var(--color-border);
+}
+.hb-nav ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3) var(--space-1);
+  list-style: none;
+}
+.hb-nav a,
+.hb-nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-decoration: none;
+  cursor: default;
+}
+.hb-nav a:hover,
+.hb-nav button:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.hb-nav [aria-current="page"] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.hb-nav :focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.hb-main {
+  display: grid;
+  grid-template-rows: 55% 1fr;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── 띠 (방 세 칸) ── */
+.hb-strip {
+  container-type: size;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  border-bottom: 3px solid var(--house-line);
+  background: var(--house-wall);
+}
+.hb-room {
+  --u: min(calc(100cqh / 560), calc(100cqw / 1750), 1.1px);
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.hb-room--window {
+  flex-grow: 1;
+}
+.hb-room--living {
+  flex-grow: 1.5;
+}
+.hb-room--workshop {
+  flex-grow: 1.15;
+}
+.hb-room + .hb-room {
+  border-left: 8px solid var(--house-frame);
+}
+/* 바닥 (방마다) */
+.hb-room::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 27%;
+  border-top: 6px solid var(--house-frame);
+  background: var(--house-floor);
+}
+.hb-room--window::after {
+  /* 창으로 드는 빛 (밤에는 없음) */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--house-light);
+  opacity: var(--house-light-alpha);
+  clip-path: polygon(36% 38%, 72% 38%, 86% 100%, 30% 100%);
+  pointer-events: none;
+}
+[data-time="night"] .hb-room--window::after {
+  display: none;
+}
+.hb-room--workshop::after {
+  /* 밤 — 작업실 등불 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 62% 22%, var(--house-lamp-glow), transparent 60%);
+  pointer-events: none;
+}
+.hb-room__label {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-3);
+  margin: 0;
+  color: var(--house-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+/* 이름표: 평소엔 숨기고 마우스 · 포커스 · 고른 고양이만 (차분하게) */
+.hb .cat-tag {
+  opacity: 0;
+}
+.hb .cat-btn:hover .cat-tag,
+.hb .cat-btn:focus-visible .cat-tag,
+.hb .cat-btn[aria-expanded="true"] .cat-tag {
+  opacity: 1;
+}
+.hb .cat-tag__role {
+  display: none;
+}
+
+/* ── 아래 책상 (격자) ── */
+.hb-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px minmax(260px, 300px);
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3);
+}
+.hb-card {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+}
+.hb-card__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.hb-home__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+/* 한 줄 목록 (Linear 처럼 촘촘하게): 이름 · 단계 · 시각 */
+.hb-projects .projects__item {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "name phase when";
+  align-items: baseline;
+  padding: var(--space-2);
+}
+.hb-projects .projects__phase {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hb-roster__group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+.hb-roster__group .status-dot {
+  transform: translateY(-1px);
+}
+.hb-roster__hint {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hb-info .cat-info__summary {
+  display: none;
+}
+
+/* 작은 창 (최소 1024×640) — 띠를 조금 낮춰 아래 격자가 스크롤 없이 들어가게 */
+@media (max-height: 700px) {
+  .hb-main {
+    grid-template-rows: 50% 1fr;
+  }
+}

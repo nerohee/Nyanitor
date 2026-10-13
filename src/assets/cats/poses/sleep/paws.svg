@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 자기 앞발 — 턱 아래 (머리 위 층) -->
+  <ellipse class="c-fur c-outline" cx="102" cy="145" rx="10" ry="4.5" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse class="c-fur c-outline" cx="124" cy="145.5" rx="10" ry="4.5" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
+</svg>

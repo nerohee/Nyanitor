@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 볼 · 코 · 입 · 수염 (머리 묶음 안, 눈 위) -->
+  <ellipse class="c-blush" cx="94" cy="80" rx="4.5" ry="2.6" fill="#f29c8c" opacity="0.7"/>
+  <ellipse class="c-blush" cx="130" cy="80" rx="4.5" ry="2.6" fill="#f29c8c" opacity="0.7"/>
+  <path class="c-nose" d="M108.6 78.5 H115.4 A1 1 0 0 1 116.1 80.2 L112.8 83.2 A1.2 1.2 0 0 1 111.2 83.2 L107.9 80.2 A1 1 0 0 1 108.6 78.5 Z" fill="#e58a84"/>
+  <path class="c-line" d="M112 83.5 V86 M106.5 86 Q109.25 89.5 112 86 Q114.75 89.5 117.5 86" fill="none" stroke="#5a3a22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="c-line c-whisker" d="M93 82 L76 79 M93 86 L77 88 M131 82 L148 79 M131 86 L147 88" fill="none" stroke="#5a3a22" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+</svg>

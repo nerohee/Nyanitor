@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <!-- 무늬: 턱시도 — 흰 가슴 · 배 -->
+  <path class="c-pattern" d="M97 97 C101 89 113 87 120 92 L120.5 112 C116 122 105 124 99 116 Z" fill="#fbf6ee"/>
+  <ellipse class="c-pattern" cx="80" cy="120.5" rx="28" ry="6.5" fill="#fbf6ee"/>
+</svg>

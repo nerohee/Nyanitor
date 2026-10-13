@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 120">
+  <!-- 천장 등 — 위 끝 y=0 이 천장. 밤에는 전구가 켜진다 (h-bulb) -->
+  <path class="h-line" d="M35 0 V54" fill="none" stroke="#5a3e2b" stroke-width="2.5"/>
+  <circle class="h-bulb" cx="35" cy="84" r="10" fill="#fff1c4"/>
+  <path class="h-lampshade h-outline" d="M14 82 L24 54 H46 L56 82 Z" fill="#e98a6f" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+</svg>

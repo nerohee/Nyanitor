@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 250">
+  <!-- 캣휠 — 바퀴 중심(회전축) 120,118, 안쪽 바닥 y=214 (자리 120,214). 회전하는 층은 class h-rotor -->
+  <circle class="h-wheel-back" cx="120" cy="118" r="100" fill="#e9d7bc"/>
+  <g class="h-rotor">
+  <path class="h-spoke" d="M120 22 V214 M36.9 70 L203.1 166 M36.9 166 L203.1 70" fill="none" stroke="#8c5f3e" stroke-width="5" stroke-linecap="round"/>
+  <circle class="h-tread" cx="120" cy="118" r="96" fill="none" stroke="#5a3e2b" stroke-width="3" stroke-dasharray="7 15"/>
+  <circle class="h-frame h-outline" cx="120" cy="118" r="11" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <circle class="h-line-stroke" cx="120" cy="118" r="104" fill="none" stroke="#5a3e2b" stroke-width="14"/>
+  <circle class="h-frame-stroke" cx="120" cy="118" r="104" fill="none" stroke="#a87650" stroke-width="8"/>
+  <path class="h-frame-shade h-outline" d="M66 244 L106 128 H118 L84 244 Z" fill="#8c5f3e" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+  <path class="h-frame-shade h-outline" d="M174 244 L134 128 H122 L156 244 Z" fill="#8c5f3e" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+  <rect class="h-frame h-outline" x="44" y="236" width="152" height="12" rx="6" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
+</svg>

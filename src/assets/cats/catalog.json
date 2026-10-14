@@ -1,12 +1,12 @@
 {
-  "version": 1,
+  "version": 2,
   "cats": [
     {
       "id": "mukmul",
       "name": "먹물",
       "fur": "올 숯색 털, 노란 둥근 눈, 꼬리 끝이 갈고리처럼 굽음",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -30,31 +30,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -64,7 +76,7 @@
       "name": "나비",
       "fur": "치즈 고등어 — 살구 주황에 진한 주황 줄, 크림 주둥이 · 배, 빨간 목줄에 방울",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -88,31 +100,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -122,7 +146,7 @@
       "name": "물감",
       "fur": "삼색 — 흰 바탕에 주황 · 숯색 얼룩, 감 주황 베레모",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -146,31 +170,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -180,7 +216,7 @@
       "name": "단추",
       "fur": "턱시도 — 숯색에 흰 가슴 · 흰 양말, 초록 둥근 눈",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -204,31 +240,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -238,7 +286,7 @@
       "name": "깨비",
       "fur": "회색 고등어 — 연한 은회색에 굵은 짙은 회색 줄",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -262,31 +310,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -295,8 +355,8 @@
       "id": "dubu",
       "name": "두부",
       "fur": "따뜻한 흰색에 분홍 코 · 귀, 몸이 작음",
-      "scale": 0.8,
-      "bodyHeight": 362,
+      "scale": 0.85,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -320,31 +380,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }
@@ -354,7 +426,7 @@
       "name": "구름",
       "fur": "푸른 회색 단색, 둥근 가는 테 안경",
       "scale": 1,
-      "bodyHeight": 362,
+      "bodyHeight": 337,
       "poses": {
         "sit": {
           "frames": [
@@ -378,31 +450,43 @@
             "walk-2.webp"
           ]
         },
-        "eat": {
-          "frames": [
-            "eat.webp"
-          ]
-        },
-        "back": {
-          "frames": [
-            "back.webp"
-          ]
-        },
-        "play": {
-          "frames": [
-            "play-1.webp",
-            "play-2.webp"
-          ]
-        },
-        "run": {
-          "frames": [
-            "run-1.webp",
-            "run-2.webp"
-          ]
-        },
         "groom": {
           "frames": [
             "groom.webp"
+          ]
+        }
+      },
+      "with": {
+        "bowl": {
+          "frames": [
+            "with-bowl.webp"
+          ]
+        },
+        "cushion": {
+          "frames": [
+            "with-cushion.webp"
+          ]
+        },
+        "box": {
+          "frames": [
+            "with-box.webp"
+          ]
+        },
+        "ball": {
+          "frames": [
+            "with-ball-1.webp",
+            "with-ball-2.webp"
+          ]
+        },
+        "tower": {
+          "frames": [
+            "with-tower.webp"
+          ]
+        },
+        "wheel": {
+          "frames": [
+            "with-wheel-1.webp",
+            "with-wheel-2.webp"
           ]
         }
       }

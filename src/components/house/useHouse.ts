@@ -2,7 +2,6 @@
 // 실제 에이전트 상태와 묶는 것은 P5: `useFakeIntents` 대신 실제 `Intents` 를 `useHouseSchedule` 에 넣으면 된다.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CAT_IDS, type CatId } from "../cat/catalog";
-import type { PoseName } from "../cat/CatFigure";
 import {
   assignSpots,
   FAKE_PLANS,
@@ -16,7 +15,7 @@ import {
   type Intents,
   type Placements,
 } from "./schedule";
-import { SPOTS, type SpotId } from "./spots";
+import { SPOTS, type ScenePose, type SpotId } from "./spots";
 
 // ── 움직임 끔 · 창 숨김 ──
 
@@ -85,8 +84,8 @@ function spotsOf(placements: Placements): Assignment {
   return Object.fromEntries(CAT_IDS.map((cat) => [cat, placements[cat].spot])) as Assignment;
 }
 
-function posesOf(placements: Placements): Record<CatId, PoseName> {
-  return Object.fromEntries(CAT_IDS.map((cat) => [cat, placements[cat].pose])) as Record<CatId, PoseName>;
+function posesOf(placements: Placements): Record<CatId, ScenePose> {
+  return Object.fromEntries(CAT_IDS.map((cat) => [cat, placements[cat].pose])) as Record<CatId, ScenePose>;
 }
 
 /**

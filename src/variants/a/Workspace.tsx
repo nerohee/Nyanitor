@@ -30,7 +30,7 @@ const WINDOW_VIEW = { w: 620, h: 465 } as const;
 /** 일하는 자리 → 고양이의 의도 */
 function intentOf(activity: Activity) {
   if (activity === "wheel") return "making" as const;
-  if (activity === "towerTop" || activity === "towerMid") return "watching" as const;
+  if (activity === "tower") return "watching" as const;
   if (activity === "stone") return "wait" as const;
   return "rest" as const;
 }

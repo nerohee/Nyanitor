@@ -18,19 +18,15 @@ export type { CatId, PoseName } from "./catalog";
 
 /**
  * 자세 위의 CSS 움직임. 기본은 자세에서 정해진다 (`motionForPose`) —
- * 같은 자세라도 자리에 따라 다르게 (캣타워의 sit = look, 신발 돌의 sit = wait).
+ * 같은 자세라도 자리에 따라 다르게 (신발 돌의 sit = wait).
  */
 export type CatMotion =
   | "breathe"
   | "sleep"
   | "groom"
-  | "eat"
-  | "play"
-  | "run"
   | "walk"
   | "look"
   | "wait"
-  | "back"
   | "still";
 
 const MOTION_BY_POSE: Record<PoseName, CatMotion> = {
@@ -38,10 +34,6 @@ const MOTION_BY_POSE: Record<PoseName, CatMotion> = {
   loaf: "breathe",
   sleep: "sleep",
   walk: "walk",
-  eat: "eat",
-  back: "back",
-  play: "play",
-  run: "run",
   groom: "groom",
 };
 

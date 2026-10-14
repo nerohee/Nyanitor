@@ -79,35 +79,82 @@
   user-select: none;
   -webkit-user-drag: none;
 }
-/* 캣휠 판 — 바퀴 · 받침을 툇마루 방향(오른쪽 아래 약 26°)에 맞춰 기울인다: 가로를 줄이고 skewY. 안의 고양이는 기울지 않고 옆모습 그대로 */
-.hs-plane {
+/* 물건 자리 — 고양이가 들어오면 빈 물건 위로 합친 그림이 0.2초 겹쳐 흐려지고, 나가면 반대. 합친 그림이 덮으면 빈 물건은 치운다 */
+.hs-prop[data-covered="true"] {
+  opacity: 0;
+  transition: opacity 0s 200ms;
+}
+.hs-with {
   position: absolute;
-  transform: skewY(26deg) scaleX(0.89);
-  transform-origin: 50% 50%;
+  display: block;
   pointer-events: none;
+  transition: opacity 200ms var(--ease-standard);
 }
-/* 캣휠 — 고양이가 달리면 바퀴가 돈다 (오른쪽으로 달리면 바퀴 아래가 왼쪽으로 = 시계 방향), 3.2초에 한 바퀴 — 느긋하게 (P2-07 디자인 검수) */
-.hs-prop--wheel-ring[data-spin="true"] {
-  animation: hs-spin 3200ms linear infinite;
+.hs-with[data-on="true"] {
+  animation: hs-with-in 200ms var(--ease-standard) both;
+}
+.hs-with[data-on="false"] {
+  opacity: 0;
+}
+@keyframes hs-with-in {
+  from { opacity: 0; }
+}
+.hs-with__frame {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 프레임이 둘이면 첫 장만 보이다가 CSS 가 번갈아 보인다 — 캣휠은 0.3초 박자로 달리고, 공은 천천히 노리다 세 번 치고 쉰다 (4.5초) */
+.hs-with[data-frames="2"] .hs-with__frame:nth-child(2) {
+  opacity: 0;
+}
+.hs-with[data-kind="wheel"][data-frames="2"] .hs-with__frame:first-child {
+  animation: hs-flip-a 600ms steps(1, end) infinite;
+}
+.hs-with[data-kind="wheel"][data-frames="2"] .hs-with__frame:nth-child(2) {
+  animation: hs-flip-b 600ms steps(1, end) infinite;
+}
+.hs-with[data-kind="ball"][data-frames="2"] .hs-with__frame:first-child {
+  animation: hs-play-a 4500ms steps(1, end) infinite;
+}
+.hs-with[data-kind="ball"][data-frames="2"] .hs-with__frame:nth-child(2) {
+  animation: hs-play-b 4500ms steps(1, end) infinite;
+}
+.hs-with__frame {
   animation-play-state: var(--cat-play-state, running);
 }
-@keyframes hs-spin {
-  to { transform: rotate(360deg); }
+@keyframes hs-flip-a {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
 }
-/* 공 — 굴러갔다 쉬었다 (고양이가 공을 칠 때만) */
-.hs-prop--ball[data-roll="true"] {
-  animation: hs-roll 4500ms ease-in-out infinite;
-  animation-play-state: var(--cat-play-state, running);
+@keyframes hs-flip-b {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
 }
-/* 한 바퀴 4.5초: 공은 짧은 거리(18px 안)를 앞뒤로 조금씩 왔다 갔다 한다 — 멀리 굴러가지 않는다 */
-@keyframes hs-roll {
-  0%, 5%, 100% { transform: translateX(0) rotate(0); }
-  13% { transform: translateX(calc(16 * var(--u))) rotate(140deg); }
-  22% { transform: translateX(calc(4 * var(--u))) rotate(40deg); }
-  34% { transform: translateX(calc(18 * var(--u))) rotate(160deg); }
-  46%, 90% { transform: translateX(calc(2 * var(--u))) rotate(20deg); }
+@keyframes hs-play-a {
+  0% { opacity: 1; }
+  7.8% { opacity: 0; }
+  15.6% { opacity: 1; }
+  23.3% { opacity: 0; }
+  31.1% { opacity: 1; }
+  38.9% { opacity: 0; }
+  46.7% { opacity: 1; }
 }
-/* 풍경 · 앞 덤불 — 바람에 살랑 (풍경 ±6° 3초, 덤불은 아주 작게) */
+@keyframes hs-play-b {
+  0% { opacity: 0; }
+  7.8% { opacity: 1; }
+  15.6% { opacity: 0; }
+  23.3% { opacity: 1; }
+  31.1% { opacity: 0; }
+  38.9% { opacity: 1; }
+  46.7% { opacity: 0; }
+}
+/* 풍경 — 바람에 살랑 (±6° 3초) */
 .hs-prop--wind-chime {
   animation: hs-chime 3s ease-in-out infinite alternate;
   animation-play-state: var(--cat-play-state, running);
@@ -116,15 +163,6 @@
   from { transform: rotate(-6deg); }
   to { transform: rotate(6deg); }
 }
-.hs-prop--bush-front {
-  animation: hs-bush 3s ease-in-out infinite alternate;
-  animation-play-state: var(--cat-play-state, running);
-}
-@keyframes hs-bush {
-  from { transform: rotate(-0.6deg); }
-  to { transform: rotate(0.6deg); }
-}
-
 /* ── 고양이 ──
    .hs-cat 은 발 기준점에 놓인 크기 없는 점 — 쌓임 맥락을 만들지 않아야 안쪽 층(z-index)이 장면의 깊이로 섞인다 */
 .hs-cat {
@@ -170,17 +208,6 @@
 /* 밤 — 검은 털 윤곽이 어두운 바닥에 묻히지 않게 옅은 테 */
 .hs[data-time="night"] .hs-cat__plate {
   filter: drop-shadow(0 0 calc(1.6 * var(--u)) var(--scene-rim));
-}
-/* 상자: 가끔 쏙 들어갔다 나온다 */
-.hs-cat__lift[data-peek="true"] {
-  animation: hs-peek 17s ease-in-out infinite;
-  animation-play-state: var(--cat-play-state, running);
-}
-@keyframes hs-peek {
-  0%, 62%, 100% { transform: translateY(0); }
-  68%, 80% { transform: translateY(calc(180 * var(--k))); }
-  86% { transform: translateY(calc(-10 * var(--k))); }
-  92% { transform: translateY(0); }
 }
 /* 접지 그림자 — 납작한 타원, 바닥색을 짙게 (흐림 없음) */
 .hs-cat__shadow {
@@ -258,12 +285,18 @@
   .hs-cat__btn,
   .hs-cat__shadow,
   .hs-tag,
-  .hs-tint {
+  .hs-tint,
+  .hs-prop {
     transition: none;
   }
   .hs-prop,
+  .hs-with,
+  .hs-with__frame,
   .hs-cat__lift {
     animation: none !important;
+  }
+  .hs-with {
+    transition: none;
   }
 }
 :root[data-motion="reduced"] .hs-cat,
@@ -271,8 +304,13 @@
   transition: none;
 }
 :root[data-motion="reduced"] .hs-prop,
+:root[data-motion="reduced"] .hs-with,
+:root[data-motion="reduced"] .hs-with__frame,
 :root[data-motion="reduced"] .hs-cat__lift {
   animation: none !important;
+}
+:root[data-motion="reduced"] .hs-with {
+  transition: none;
 }
 
 /* 좌표 맞출 때만 (`debug`) */
@@ -293,10 +331,4 @@
   width: 2px;
   height: 16px;
   background: #f0f;
-}
-
-/* 캣휠 안의 고양이 — 판(skewY 26°) 안에서 발이 바퀴 바닥을 따르도록 절반(13°)만 살짝 기울인다 */
-.hs-cat[data-spot="wheel"] .hs-cat__lift {
-  transform: skewY(13deg);
-  transform-origin: 50% 94%;
 }

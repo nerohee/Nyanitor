@@ -19,7 +19,7 @@ describe("고양이 집 일정 훅", () => {
   it("처음에는 의도대로 자리에 서 있다", () => {
     const { result } = renderHook(() => useHouseSchedule(FAKE_PLANS[0], CALM));
     const byCat = Object.fromEntries(result.current.map((p) => [p.cat, p]));
-    expect(byCat.danchu).toMatchObject({ spot: "wheel", pose: "walk", walking: false });
+    expect(byCat.danchu).toMatchObject({ spot: "wheel", pose: "with", walking: false });
     expect(byCat.mukmul).toMatchObject({ spot: "stone", pose: "sit" });
   });
 

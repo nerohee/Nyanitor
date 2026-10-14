@@ -31,11 +31,18 @@ TOP_KEYS = {"version", "style", "references", "items"}
 ITEM_KEYS = {
     "id", "group", "prompt", "refs", "size", "background", "out",
     "then_ref_as", "anchor", "canvas", "final", "size_like",
+    "align_to", "nudge", "move_like", "crop_group", "align_scale", "align_range",
 }
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _DIM_RE = re.compile(r"^(\d{1,5})x(\d{1,5})$")
 _BAD_PATH_CHARS = re.compile(r'[<>:"|?*\\\x00-\x1f]')
+
+
+NUDGE_SCALE_RANGE = (0.5, 2.0)  # nudge 배율로 허용하는 범위 (실수로 큰 값을 넣는 것을 막는다)
+NUDGE_MAX_SHIFT = 4096  # nudge 이동(판 px)으로 허용하는 한도
+ALIGN_SCALE_BOUNDS = (0.5, 2.0)  # align_scale 로 허용하는 범위
+ALIGN_RANGE_MAX = 0.25  # align_range 로 허용하는 한도 (판 대비)
 
 
 class TableError(Exception):
@@ -60,6 +67,12 @@ class Item:
     canvas: tuple[int, int] | None = None
     final: Path | None = None  # 절대 경로 (src/assets/ 안)
     size_like: str | None = None  # 맞춘 내용 높이를 같게 할 다른 항목의 id (fit.py)
+    align_to: str | None = None  # 합친 그림을 겹쳐 맞출 빈 물건 항목의 id (fit.py, anchor none 전용)
+    nudge: tuple[float, float, float] | None = None  # 손으로 정한 이동 [dx, dy, 배율] (판 px, 판 가운데 기준) — 자동 찾기를 대신한다
+    move_like: str | None = None  # 다른 항목(align_to 나 nudge 가 있는)과 같은 이동을 쓴다 (예: 굴러간 공 그림)
+    align_scale: tuple[float, float] | None = None  # 이 항목의 맞춤 배율 범위 [최소, 최대] (인자 기본 0.95~1.05 보다 앞선다)
+    align_range: float | None = None  # 이 항목의 맞춤 이동 한도 (판 대비 비율, --align-range 보다 앞선다)
+    crop_group: str | None = None  # 같은 이름 항목들을 내용 합집합 상자 하나로 잘라낸다 (fit.py, anchor none 전용)
     index: int = 0  # 표 안 순서
 
 
@@ -94,6 +107,32 @@ def parse_dims(value: str) -> tuple[int, int] | None:
         return None
     w, h = int(m.group(1)), int(m.group(2))
     return (w, h) if w > 0 and h > 0 else None
+
+
+def parse_nudge(value: object) -> tuple[float, float, float] | None:
+    """[dx, dy, 배율] 이면 (dx, dy, 배율), 아니면 None. 숫자 셋 · 유한한 값 · 범위 안만 받는다."""
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return None
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf") for v in value):
+        return None
+    dx, dy, scale = (float(v) for v in value)
+    if abs(dx) > NUDGE_MAX_SHIFT or abs(dy) > NUDGE_MAX_SHIFT:
+        return None
+    if not NUDGE_SCALE_RANGE[0] <= scale <= NUDGE_SCALE_RANGE[1]:
+        return None
+    return (dx, dy, scale)
+
+
+def parse_align_scale(value: object) -> tuple[float, float] | None:
+    """[최소, 최대] 이면 (최소, 최대), 아니면 None. 최소 ≤ 1 ≤ 최대, 허용 범위 안."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf") for v in value):
+        return None
+    lo, hi = float(value[0]), float(value[1])
+    if not (ALIGN_SCALE_BOUNDS[0] <= lo <= 1 <= hi <= ALIGN_SCALE_BOUNDS[1]):
+        return None
+    return (lo, hi)
 
 
 def resolve_inside(root: Path, rel: object, base: str, label: str, errors: list[str]) -> Path | None:
@@ -259,6 +298,42 @@ def validate_table(data: object, root: Path) -> Table:
             errors.append(f"{label}: size_like 는 다른 항목의 id 문자열이어야 한다")
             size_like = None
 
+        align_to = raw.get("align_to")
+        if align_to is not None and (not isinstance(align_to, str) or not align_to):
+            errors.append(f"{label}: align_to 는 빈 물건 항목의 id 문자열이어야 한다")
+            align_to = None
+        move_like = raw.get("move_like")
+        if move_like is not None and (not isinstance(move_like, str) or not move_like):
+            errors.append(f"{label}: move_like 는 다른 항목의 id 문자열이어야 한다")
+            move_like = None
+        crop_group = raw.get("crop_group")
+        if crop_group is not None and (not isinstance(crop_group, str) or not _NAME_RE.match(crop_group)):
+            errors.append(f"{label}: crop_group 은 영문 · 숫자 · . _ - 이름이어야 한다")
+            crop_group = None
+        align_scale = None
+        if raw.get("align_scale") is not None:
+            align_scale = parse_align_scale(raw["align_scale"])
+            if align_scale is None:
+                errors.append(
+                    f"{label}: align_scale 은 [최소, 최대] 숫자 둘이어야 한다 (최소 ≤ 1 ≤ 최대, "
+                    f"{ALIGN_SCALE_BOUNDS[0]}~{ALIGN_SCALE_BOUNDS[1]} 안) — 지금 {raw['align_scale']!r}"
+                )
+        align_range = raw.get("align_range")
+        if align_range is not None and (
+            isinstance(align_range, bool) or not isinstance(align_range, (int, float))
+            or not 0 < align_range <= ALIGN_RANGE_MAX
+        ):
+            errors.append(f"{label}: align_range 는 0 보다 크고 {ALIGN_RANGE_MAX} 이하인 숫자여야 한다 (지금 {align_range!r})")
+            align_range = None
+        nudge = None
+        if raw.get("nudge") is not None:
+            nudge = parse_nudge(raw["nudge"])
+            if nudge is None:
+                errors.append(
+                    f"{label}: nudge 는 [dx, dy, 배율] 숫자 셋이어야 한다 (이동은 ±{NUDGE_MAX_SHIFT} 이내, "
+                    f"배율은 {NUDGE_SCALE_RANGE[0]}~{NUDGE_SCALE_RANGE[1]}) — 지금 {raw['nudge']!r}"
+                )
+
         canvas = None
         if raw.get("canvas") is not None:
             canvas = parse_dims(raw["canvas"])
@@ -291,7 +366,9 @@ def validate_table(data: object, root: Path) -> Table:
                 Item(
                     id=iid, group=raw["group"], prompt=raw["prompt"], size=raw["size"], out=out,
                     background=background, refs=list(refs), then_ref_as=then, anchor=anchor,
-                    canvas=canvas, final=final, size_like=size_like, index=idx,
+                    canvas=canvas, final=final, size_like=size_like, align_to=align_to, nudge=nudge,
+                    move_like=move_like, crop_group=crop_group, align_scale=align_scale,
+                    align_range=float(align_range) if align_range is not None else None, index=idx,
                 )
             )
 
@@ -332,6 +409,38 @@ def validate_table(data: object, root: Path) -> Table:
             cur = by_id[cur.size_like]
             if cur.id in seen:
                 errors.append(f"items[{it.index}] '{it.id}': size_like 가 돌고 돈다 ({it.id} -> ... -> {cur.id})")
+                break
+            seen.add(cur.id)
+
+    # align_to · move_like: 표에 있는 다른 id, 돌고 돌지 않기 (move_like 의 대상은 align_to 나 nudge 가 있어야 한다)
+    for it in items:
+        where = f"items[{it.index}] '{it.id}'"
+        if (it.align_scale is not None or it.align_range is not None) and it.align_to is None:
+            errors.append(f"{where}: align_scale · align_range 는 align_to 가 있는 항목에서만 쓴다")
+        if it.align_to is not None:
+            if it.align_to == it.id:
+                errors.append(f"{where}: align_to 가 자기 자신을 가리킨다")
+            elif it.align_to not in by_id:
+                errors.append(f"{where}: align_to '{it.align_to}' 가 표에 없는 id 다")
+        if it.move_like is not None:
+            target = by_id.get(it.move_like)
+            if it.move_like == it.id:
+                errors.append(f"{where}: move_like 가 자기 자신을 가리킨다")
+            elif target is None:
+                errors.append(f"{where}: move_like '{it.move_like}' 가 표에 없는 id 다")
+            elif target.align_to is None and target.nudge is None:
+                errors.append(f"{where}: move_like '{it.move_like}' 항목에 align_to 나 nudge 가 없다 (옮긴 값이 있는 항목이어야 한다)")
+            if it.align_to is not None or it.nudge is not None:
+                errors.append(f"{where}: move_like 는 align_to · nudge 와 같이 쓸 수 없다")
+
+    # align_to 는 다른 합친 그림(그 항목의 맞춘 뒤 모습) 을 가리킬 수 있다 — 돌고 돌지 않기
+    for it in items:
+        seen = {it.id}
+        cur = it
+        while cur.align_to and cur.align_to in by_id and cur.align_to != cur.id:
+            cur = by_id[cur.align_to]
+            if cur.id in seen:
+                errors.append(f"items[{it.index}] '{it.id}': align_to 가 돌고 돈다 ({it.id} -> ... -> {cur.id})")
                 break
             seen.add(cur.id)
 

@@ -12,12 +12,12 @@ afterEach(() => {
 const layers = (container: HTMLElement) => container.querySelectorAll<HTMLElement>(".cat-layer");
 
 describe("고양이 그림", () => {
-  it("프레임이 둘인 자세(걷기 · 달리기 · 공 치기)는 그림 둘을 쌓고, 하나인 자세는 하나", () => {
+  it("프레임이 둘인 자세(걷기)는 그림 둘을 쌓고, 하나인 자세는 하나", () => {
     const { container, rerender } = render(<CatSprite cat="nabi" pose="walk" />);
     expect(container.querySelectorAll(".cat-frame")).toHaveLength(2);
     expect(layers(container)[0]).toHaveAttribute("data-motion", "walk");
 
-    rerender(<CatSprite cat="nabi" pose="eat" />);
+    rerender(<CatSprite cat="nabi" pose="loaf" />);
     act(() => {
       vi.advanceTimersByTime(250);
     });
@@ -82,7 +82,7 @@ describe("고양이 그림", () => {
   it("자세마다 정해진 기본 움직임이 있고, 박자 씨앗은 마리마다 달라 한꺼번에 숨쉬지 않는다", () => {
     expect(motionForPose("sit")).toBe("breathe");
     expect(motionForPose("sleep")).toBe("sleep");
-    expect(motionForPose("run")).toBe("run");
+    expect(motionForPose("walk")).toBe("walk");
     expect(catSeed("nabi")).not.toBe(catSeed("mukmul"));
     expect(catSeed("nabi")).toBe(catSeed("nabi"));
   });

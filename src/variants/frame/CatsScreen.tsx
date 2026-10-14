@@ -2,7 +2,7 @@ import { CatFigure } from "../../components/cat/CatFigure";
 import { CAT_IDS, DEFAULT_CATALOG, POSES, resolvePose, type CatEntry } from "../../components/cat/catalog";
 import { t } from "../../i18n/ko";
 
-/** `?screen=cats` — 고양이 7마리 × 자세 9가지가 목록(catalog.json)대로 나오는지. 발은 모두 같은 바닥선 위에 선다. */
+/** `?screen=cats` — 고양이 7마리 × 기본 자세 5가지가 목록(catalog.json)대로 나오는지. 발은 모두 같은 바닥선 위에 선다. */
 export function CatsScreen() {
   return (
     <section className="vf-cats" aria-labelledby="vf-cats-title">

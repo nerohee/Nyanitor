@@ -1,8 +1,7 @@
 // 고양이 집 일정 — 누가 어느 자리에 있나. 화면 코드와 섞이지 않는 순수 함수들 (시험 가능).
 // P5 에서는 에이전트의 실제 상태를 `CatIntent` 로 바꿔 `assignSpots` 에 넣으면 된다.
 import { CAT_IDS, type CatId } from "../cat/catalog";
-import type { PoseName } from "../cat/CatFigure";
-import { SPOT_IDS, SPOTS, STAGE, type SpotId } from "./spots";
+import { SPOT_IDS, SPOTS, STAGE, type ScenePose, type SpotId } from "./spots";
 
 /** 고양이가 하고 싶은 것 — 실제 에이전트 상태가 이 넷 중 하나로 옮겨진다 (P5) */
 export type CatIntent =
@@ -23,7 +22,8 @@ export type Rng = () => number;
 export interface CatPlacement {
   cat: CatId;
   spot: SpotId;
-  pose: PoseName;
+  /** 기본 자세, 또는 물건 자리의 합친 그림(`with`) */
+  pose: ScenePose;
   facing: "right" | "left";
   /** 걸어서 자리로 가는 중 (왼쪽 · 위치가 CSS 로 미끄러진다) */
   walking: boolean;
@@ -57,17 +57,16 @@ export function staticPlacements(intents: Intents): CatPlacement[] {
 
 /** 프로필의 "좋아하는 자리" 에서 (cat-assets.md §A10). 쉴 때 먼저 찾아간다 */
 export const FAVORITE_SPOT: Readonly<Record<CatId, SpotId>> = {
-  mukmul: "room",
+  mukmul: "bowlRoom",
   nabi: "box",
   mulgam: "cushion",
   danchu: "sun",
   kkaebi: "ball",
-  dubu: "bowl",
-  gureum: "shade",
+  dubu: "bowlPorch",
+  gureum: "yard",
 };
 
 const REST_SPOTS = SPOT_IDS.filter((id) => SPOTS[id].kind === "rest");
-const TOWER_SPOTS: readonly SpotId[] = ["towerTop", "towerMid"];
 
 /** 고양이 목록 순서로 한 마리씩 자리를 정한다. 일 자리가 차면 쉬는 자리로 넘어간다. */
 export function assignSpots(
@@ -90,7 +89,7 @@ export function assignSpots(
   for (const cat of CAT_IDS) {
     const intent = intents[cat];
     if (intent === "making") claim(cat, ["wheel"]);
-    else if (intent === "watching") claim(cat, TOWER_SPOTS);
+    else if (intent === "watching") claim(cat, ["tower"]);
     else if (intent === "wait") claim(cat, ["stone"]);
   }
 
@@ -111,7 +110,7 @@ export function assignSpots(
 }
 
 /** 쉬는 고양이가 이 자리에서 다음에 할 동작 (지금과 다른 것). 하나뿐이면 그대로 */
-export function pickPose(spot: SpotId, current: PoseName, rng: Rng = Math.random): PoseName {
+export function pickPose(spot: SpotId, current: ScenePose, rng: Rng = Math.random): ScenePose {
   const options = SPOTS[spot].poses.filter((pose) => pose !== current);
   if (options.length === 0) return SPOTS[spot].poses[0];
   return options[Math.floor(rng() * options.length)];
@@ -120,13 +119,13 @@ export function pickPose(spot: SpotId, current: PoseName, rng: Rng = Math.random
 /** 가끔 일어나는 일 하나 — 쉬는 고양이가 다른 빈 쉬는 자리로 가거나, 제 자리에서 동작을 바꾼다 */
 export type Roam =
   | { kind: "move"; cat: CatId; to: SpotId }
-  | { kind: "pose"; cat: CatId; pose: PoseName }
+  | { kind: "pose"; cat: CatId; pose: ScenePose }
   | null;
 
 export function pickRoam(
   intents: Intents,
   spots: Assignment,
-  poses: Readonly<Record<CatId, PoseName>>,
+  poses: Readonly<Record<CatId, ScenePose>>,
   rng: Rng = Math.random,
   /** 정보 패널이 열려 있는 고양이 — 그 자리에 둔다 */
   pinned: CatId | null = null,

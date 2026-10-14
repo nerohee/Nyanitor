@@ -14,7 +14,7 @@ import {
   WALK_MAX,
   type Intents,
 } from "./schedule";
-import { depth, SPOT_IDS, SPOTS, spotDepth, STAGE } from "./spots";
+import { BASE_K, depth, PROP_SCALE, PROPS, SPOT_IDS, SPOTS, spotDepth, STAGE, WORLD_SCALE } from "./spots";
 
 const REST: Intents = {
   mukmul: "rest",
@@ -34,11 +34,11 @@ describe("자리 배정", () => {
     expect(assignSpots(FAKE_PLANS[0])).toEqual({
       mukmul: "stone",
       danchu: "wheel",
-      gureum: "towerTop",
+      gureum: "tower",
       nabi: "box",
       mulgam: "cushion",
       kkaebi: "ball",
-      dubu: "bowl",
+      dubu: "bowlPorch",
     });
   });
 
@@ -56,10 +56,9 @@ describe("자리 배정", () => {
     expect(SPOTS[result.dubu].kind).toBe("rest");
   });
 
-  it("캣타워는 위 · 가운데 두 자리 — 보는 일이 셋이면 셋째는 쉰다", () => {
-    const result = assignSpots({ ...REST, mukmul: "watching", mulgam: "watching", gureum: "watching" });
-    const onTower = [result.mukmul, result.mulgam, result.gureum].filter((s) => s === "towerTop" || s === "towerMid");
-    expect(onTower).toHaveLength(2);
+  it("캣타워는 한 마리 — 보는 일이 둘이면 둘째는 쉰다", () => {
+    const result = assignSpots({ ...REST, mukmul: "watching", gureum: "watching" });
+    expect(result.mukmul).toBe("tower");
     expect(SPOTS[result.gureum].kind).toBe("rest");
   });
 
@@ -71,9 +70,9 @@ describe("자리 배정", () => {
 
   it("좋아하는 자리가 이미 차 있으면 빈 쉬는 자리 아무 곳으로", () => {
     // 먹물(첫째)이 두부의 자리 밥그릇에 있다고 하면 두부는 다른 쉬는 자리로
-    const result = assignSpots(REST, { mukmul: "bowl" });
-    expect(result.mukmul).toBe("bowl");
-    expect(result.dubu).not.toBe("bowl");
+    const result = assignSpots(REST, { mukmul: "bowlPorch" });
+    expect(result.mukmul).toBe("bowlPorch");
+    expect(result.dubu).not.toBe("bowlPorch");
     expect(SPOTS[result.dubu].kind).toBe("rest");
   });
 
@@ -127,22 +126,24 @@ describe("가끔 일어나는 일", () => {
   it("동작은 이 자리의 다른 동작으로, 하나뿐인 자리는 그대로", () => {
     expect(pickPose("sun", "groom", fixed(0))).toBe("loaf");
     expect(pickPose("sun", "loaf", fixed(0))).toBe("groom");
-    expect(pickPose("bowl", "eat")).toBe("eat");
+    // 물건 자리는 합친 그림 하나뿐
+    expect(pickPose("bowlPorch", "with")).toBe("with");
+    expect(SPOTS.cushion.poses).toEqual(["with"]);
   });
 });
 
 describe("자리 옮기기", () => {
   it("가까운 쉬는 자리끼리는 걷고, 왼쪽으로 가면 왼쪽을 본다", () => {
-    const toRight = travel("box", "cushion");
+    const toRight = travel("cushion", "box");
     expect(toRight).toMatchObject({ mode: "walk", facing: "right" });
-    expect(travel("cushion", "box")).toMatchObject({ mode: "walk", facing: "left" });
+    expect(travel("box", "cushion")).toMatchObject({ mode: "walk", facing: "left" });
     if (toRight.mode === "walk") expect(toRight.ms).toBeLessThanOrEqual(4000);
   });
 
   it("캣휠 · 캣타워에 오르내리거나 무대 폭 25% 를 넘으면 사라졌다 나타난다", () => {
     expect(travel("ball", "wheel").mode).toBe("jump");
-    expect(travel("towerTop", "stone").mode).toBe("jump");
-    expect(travel("shade", "bowl").mode).toBe("jump");
+    expect(travel("tower", "stone").mode).toBe("jump");
+    expect(travel("yard", "bowlPorch").mode).toBe("jump");
     expect(WALK_MAX).toBe(STAGE.width * 0.25);
   });
 });
@@ -151,7 +152,7 @@ describe("일정이 바뀔 때 엇갈려 옮기기", () => {
   it("고양이마다 0.5~4초 사이로 시작한다", () => {
     const moves = [
       { cat: "danchu" as const, from: "wheel" as const, to: "sun" as const },
-      { cat: "gureum" as const, from: "towerTop" as const, to: "shade" as const },
+      { cat: "gureum" as const, from: "tower" as const, to: "yard" as const },
     ];
     expect(staggerDelays(moves, fixed(0))).toEqual({ danchu: STAGGER_MIN_MS, gureum: STAGGER_MIN_MS });
     const late = staggerDelays(moves, fixed(0.999));
@@ -173,7 +174,7 @@ describe("일정이 바뀔 때 엇갈려 옮기기", () => {
     const chain = staggerDelays(
       [
         { cat: "nabi", from: "cushion", to: "sun" },
-        { cat: "mulgam", from: "sun", to: "shade" },
+        { cat: "mulgam", from: "sun", to: "yard" },
       ],
       fixed(0),
     );
@@ -183,47 +184,64 @@ describe("일정이 바뀔 때 엇갈려 옮기기", () => {
 
 describe("자리 옮기기 — 세로", () => {
   it("세로로 크게 오르내리는 길은 걷지 않는다 (상자 ↔ 방 안, 마루 ↔ 마당)", () => {
-    expect(travel("sun", "room").mode).toBe("jump");
+    expect(travel("sun", "bowlRoom").mode).toBe("jump");
     expect(travel("cushion", "sun").mode).toBe("jump");
     expect(travel("box", "cushion").mode).toBe("walk");
   });
 });
 
 describe("자리 · 깊이 데이터", () => {
-  it("오른쪽 위가 몰리지 않는다 — 방 안 · 캣타워 두 자리가 동시에 차도 150px 이상 떨어져 있다", () => {
+  it("오른쪽 위가 몰리지 않는다 — 방 안 밥 · 캣타워 · 툇마루 끝 밥이 동시에 차도 150px 이상 떨어져 있다", () => {
     const near = (a: keyof typeof SPOTS, b: keyof typeof SPOTS) =>
       Math.hypot(SPOTS[a].feet.x - SPOTS[b].feet.x, SPOTS[a].feet.y - SPOTS[b].feet.y);
-    expect(near("room", "towerTop")).toBeGreaterThan(150);
-    expect(near("room", "towerMid")).toBeGreaterThan(150);
-    expect(near("towerTop", "towerMid")).toBeGreaterThan(100);
-    expect(SPOTS.room.feet.x).toBeLessThan(1120);
-    expect(SPOTS.wheel.poses).toEqual(["walk"]);
+    expect(near("bowlRoom", "tower")).toBeGreaterThan(150);
+    expect(near("bowlRoom", "bowlPorch")).toBeGreaterThan(150);
+    expect(near("bowlPorch", "tower")).toBeGreaterThan(150);
   });
 
-  it("모든 자리가 안전 영역(x · y 0.09~0.91) 안에 있고, 아래 카드 띠(y 0.80~)에는 닿지 않는다", () => {
+  it("물건 자리는 합친 그림 하나, 바닥 자리는 기본 자세만 — 일 자리는 캣휠 · 캣타워뿐", () => {
+    for (const id of SPOT_IDS) {
+      const spot = SPOTS[id];
+      if (spot.prop) expect(spot.poses, id).toEqual(["with"]);
+      else expect(spot.poses, id).not.toContain("with");
+    }
+    expect(SPOT_IDS.filter((id) => SPOTS[id].kind === "work").sort()).toEqual(["tower", "wheel"]);
+    expect(SPOT_IDS.filter((id) => SPOTS[id].prop).sort()).toEqual(
+      ["ball", "bowlPorch", "bowlRoom", "box", "cushion", "tower", "wheel"],
+    );
+  });
+
+  it("모든 자리가 안전 영역(x 0.09~0.91 · y 0.09~0.80) 안에 있다 — 아래 카드 띠(y 0.80~)에는 닿지 않는다", () => {
     for (const id of SPOT_IDS) {
       const { x, y } = SPOTS[id].feet;
       expect(x / STAGE.width, `${id} x`).toBeGreaterThanOrEqual(0.09);
       expect(x / STAGE.width, `${id} x`).toBeLessThanOrEqual(0.91);
       expect(y / STAGE.height, `${id} y`).toBeGreaterThanOrEqual(0.09);
-      expect(y / STAGE.height, `${id} y`).toBeLessThanOrEqual(0.77);
+      expect(y / STAGE.height, `${id} y`).toBeLessThanOrEqual(0.8);
     }
   });
 
-  it("깊이는 발 y 순서 — 앞(아래)에 있는 고양이가 위에 그려진다", () => {
-    expect(spotDepth(SPOTS.ball)).toBeGreaterThan(spotDepth(SPOTS.stone));
-    expect(spotDepth(SPOTS.stone)).toBeGreaterThan(spotDepth(SPOTS.bowl));
+  it("깊이는 발 y 순서 — 앞(아래)에 있는 것이 위에 그려진다. 방 안 자리는 툇마루보다 늘 뒤", () => {
+    expect(spotDepth(SPOTS.tower)).toBeGreaterThan(spotDepth(SPOTS.stone));
+    expect(spotDepth(SPOTS.path)).toBeGreaterThan(spotDepth(SPOTS.lawn));
     expect(spotDepth(SPOTS.box)).toBeLessThan(spotDepth(SPOTS.sun));
-    expect(spotDepth(SPOTS.room)).toBeLessThan(spotDepth(SPOTS.box));
+    for (const id of ["cushion", "box", "sun", "bowlPorch"] as const) {
+      expect(spotDepth(SPOTS.bowlRoom), id).toBeLessThan(spotDepth(SPOTS[id]));
+    }
   });
 
-  it("물건 위에 앉는 고양이는 그 물건보다 위, 캣타워 위 두 자리도 타워보다 위", () => {
-    expect(spotDepth(SPOTS.towerTop)).toBeGreaterThan(depth(668));
-    expect(spotDepth(SPOTS.towerMid)).toBeGreaterThan(depth(668));
-    expect(spotDepth(SPOTS.cushion)).toBeGreaterThan(depth(385));
-    expect(SPOTS.box.clip?.length).toBeGreaterThan(3);
-    // 밥 먹는 고양이는 그릇보다 위 층, 그릇에 붙어 있다 (Q57)
-    expect(spotDepth(SPOTS.bowl)).toBeGreaterThan(depth(552));
-    expect(Math.abs(SPOTS.bowl.feet.x - 1227)).toBeLessThan(60);
+  it("물건 자리의 깊이와 빈 물건의 깊이는 같은 물건 바닥 기준점 y — 합친 그림도 같은 층", () => {
+    for (const prop of PROPS) {
+      expect(prop.z + 1).toBe(spotDepth(SPOTS[prop.id as keyof typeof SPOTS]));
+    }
+    expect(spotDepth(SPOTS.tower)).toBe(depth(SPOTS.tower.prop?.at.y ?? 0) + 1);
+  });
+
+  it("합친 그림 속 고양이가 기본 자세 고양이와 같은 크기로 보이게 — 물건 종류마다 배율이 다르다", () => {
+    expect(PROP_SCALE.wheel).toBeGreaterThan(1);
+    expect(PROP_SCALE.bowl).toBeLessThan(PROP_SCALE.cushion);
+    // 앉은 고양이 키 = 배경 높이의 약 1/12
+    expect(300 * WORLD_SCALE).toBeCloseTo(STAGE.height / 12, -1);
+    expect(BASE_K).toBeCloseTo((WORLD_SCALE * 300) / 337);
   });
 });

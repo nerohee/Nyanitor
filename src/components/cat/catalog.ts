@@ -6,8 +6,12 @@ import catalogJson from "../../assets/cats/catalog.json";
 export const CAT_IDS = ["mukmul", "nabi", "mulgam", "danchu", "kkaebi", "dubu", "gureum"] as const;
 export type CatId = (typeof CAT_IDS)[number];
 
-export const POSES = ["sit", "loaf", "sleep", "walk", "eat", "back", "play", "run", "groom"] as const;
+export const POSES = ["sit", "loaf", "sleep", "walk", "groom"] as const;
 export type PoseName = (typeof POSES)[number];
+
+/** 물건과 한 장으로 그린 합친 그림 — 자리(물건)마다 하나 (cat-assets.md §A8) */
+export const WITH_KEYS = ["bowl", "cushion", "box", "ball", "tower", "wheel"] as const;
+export type WithKey = (typeof WITH_KEYS)[number];
 
 export interface PoseEntry {
   /** 순서대로 돌리는 그림 파일 (한 장이면 그대로 서 있음) */
@@ -20,11 +24,13 @@ export interface CatEntry {
   id: string;
   name: string;
   fur: string;
-  /** 표시 배율 — 두부 0.8 */
+  /** 기본 자세 표시 배율 — 두부 0.85. 합친 그림에는 쓰지 않는다 */
   scale?: number;
-  /** 맞춘 `sit` 그림에서 고양이가 차지하는 높이(px). 마리마다 키를 맞추는 데 쓴다 */
+  /** 맞춘 `sit` 그림에서 고양이가 차지하는 높이(px). 기본 자세에만 쓴다 */
   bodyHeight?: number;
   poses: Partial<Record<PoseName, PoseEntry>>;
+  /** 합친 그림 (물건 자리용). 없는 물건 자리에는 가지 않는다 */
+  with?: Partial<Record<WithKey, PoseEntry>>;
 }
 
 export interface Catalog {
@@ -37,7 +43,50 @@ export interface AgentLinks {
   agents: Readonly<Record<string, string>>;
 }
 
-export const DEFAULT_CATALOG: Catalog = catalogJson;
+function readEntry(raw: unknown): PoseEntry | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { frames, blink } = raw as { frames?: unknown; blink?: unknown };
+  if (!Array.isArray(frames) || !frames.every((file) => typeof file === "string")) return null;
+  return { frames: frames as string[], ...(typeof blink === "string" ? { blink } : {}) };
+}
+
+/**
+ * 목록 파일(JSON)을 읽는다 — 모르는 자세 · 물건 이름은 무시한다.
+ * `version: 1` 목록(1판 — `eat` · `back` · `play` · `run` 자세)은 `with` 없이 5가지 기본 자세만 읽어 사용자 고양이를 깨뜨리지 않는다.
+ * 고양이 하나가 깨져 있으면(id · 이름 없음) 그 고양이만 건너뛴다.
+ */
+export function readCatalog(raw: unknown): Catalog {
+  const source = raw as { version?: unknown; cats?: unknown };
+  const cats: CatEntry[] = [];
+  for (const item of Array.isArray(source?.cats) ? source.cats : []) {
+    const cat = item as Record<string, unknown>;
+    if (typeof cat?.id !== "string" || typeof cat.name !== "string") continue;
+    const poses: Partial<Record<PoseName, PoseEntry>> = {};
+    for (const pose of POSES) {
+      const entry = readEntry((cat.poses as Record<string, unknown> | undefined)?.[pose]);
+      if (entry) poses[pose] = entry;
+    }
+    const withArt: Partial<Record<WithKey, PoseEntry>> = {};
+    if (source.version === 2) {
+      for (const key of WITH_KEYS) {
+        const entry = readEntry((cat.with as Record<string, unknown> | undefined)?.[key]);
+        if (entry) withArt[key] = entry;
+      }
+    }
+    cats.push({
+      id: cat.id,
+      name: cat.name,
+      fur: typeof cat.fur === "string" ? cat.fur : "",
+      ...(typeof cat.scale === "number" ? { scale: cat.scale } : {}),
+      ...(typeof cat.bodyHeight === "number" ? { bodyHeight: cat.bodyHeight } : {}),
+      poses,
+      ...(Object.keys(withArt).length > 0 ? { with: withArt } : {}),
+    });
+  }
+  return { version: typeof source?.version === "number" ? source.version : 1, cats };
+}
+
+export const DEFAULT_CATALOG: Catalog = readCatalog(catalogJson);
 export const DEFAULT_LINKS: AgentLinks = agentCatsJson;
 
 /** 연결이 모두 어긋났을 때 마지막으로 돌아가는 고양이 (D-37 — 오케스트레이터) */
@@ -48,12 +97,8 @@ const POSE_FALLBACK: Record<PoseName, readonly PoseName[]> = {
   sit: [],
   walk: ["sit"],
   loaf: ["sit"],
-  back: ["sit"],
   groom: ["sit"],
-  eat: ["sit"],
-  play: ["sit"],
   sleep: ["loaf", "sit"],
-  run: ["walk", "sit"],
 };
 
 export interface ResolvedPose {
@@ -70,6 +115,12 @@ export function resolvePose(cat: CatEntry, pose: PoseName): ResolvedPose | null 
     if (entry && entry.frames.length > 0) return { pose: candidate, frames: entry.frames, blink: entry.blink };
   }
   return null;
+}
+
+/** 그 고양이의 합친 그림. 없으면 null (그 물건 자리에는 가지 않는다) */
+export function resolveWith(cat: CatEntry, key: WithKey): PoseEntry | null {
+  const entry = cat.with?.[key];
+  return entry && entry.frames.length > 0 ? entry : null;
 }
 
 /** 카탈로그에서 고양이 한 마리. 없으면 undefined */

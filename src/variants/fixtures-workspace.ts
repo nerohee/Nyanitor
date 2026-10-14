@@ -255,11 +255,11 @@ export function workspaceFixture(state: WorkState): WorkspaceFixture {
     working: waiting
       ? [
           { cat: "mukmul", activity: "stone" },
-          { cat: "gureum", activity: "towerTop" },
+          { cat: "gureum", activity: "tower" },
         ]
       : [
           { cat: "danchu", activity: "wheel" },
-          { cat: "gureum", activity: "towerTop" },
+          { cat: "gureum", activity: "tower" },
         ],
     log: waiting ? [...LOG, { time: "09:58", cat: "mukmul", textKey: "variant.fixture.log.5" }] : LOG,
     raw: RAW,

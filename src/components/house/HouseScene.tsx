@@ -1,10 +1,20 @@
-// 고양이 집 장면 — 한옥 마당 그림 위에 물건 · 고양이를 겹침 순서(발 y)대로 놓는다 (cat-art-guide.md §2 · §4).
+// 고양이 집 장면 — 한옥 마당 그림 위에 물건 · 고양이를 겹침 순서(발 y)대로 놓는다 (cat-art-guide.md §4).
 // 모든 위치는 배경 원본 픽셀(1536 × 1024)이고, `--u` (배경 1px 가 화면에서 얼마인가) 한 값으로 창 크기에 맞춘다.
 // 배경은 상자를 꽉 채우고 넘치는 쪽을 자른다 (`crop` 으로 일부만 보일 수도 있다 — 작업 공간의 둥근 창문).
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { catScale, findCat, FALLBACK_CAT, PLATE, type CatEntry, type CatId } from "../cat/catalog";
-import { CatSprite, motionForPose, type PoseName } from "../cat/CatFigure";
+import {
+  catImageUrl,
+  catScale,
+  findCat,
+  FALLBACK_CAT,
+  PLATE,
+  resolveWith,
+  type CatEntry,
+  type CatId,
+  type PoseName,
+} from "../cat/catalog";
+import { CatSprite, motionForPose } from "../cat/CatFigure";
 import { t } from "../../i18n/ko";
 import type { CatPanel } from "./useCatPanel";
 import { PANEL_ID } from "./useCatPanel";
@@ -18,11 +28,12 @@ import {
   PROPS,
   SPOTS,
   spotDepth,
+  spotPropK,
   STAGE,
   WORLD_SCALE,
-  WHEEL_PLANE,
   type Prop,
   type Spot,
+  type SpotId,
 } from "./spots";
 import "./house.css";
 
@@ -44,39 +55,31 @@ function bg(n: number): string {
 /** 이름표는 장면의 맨 위층 (시간대 덧씌우기 위) */
 const TAG_Z = 100_002;
 
-/** 자세마다 고양이가 차지하는 판 안 크기 (맞춘 그림에서 잰 값 — 누르는 자리의 크기) */
+/** 자세마다 고양이가 차지하는 판 안 크기 (맞춘 그림에서 7마리 중 가장 큰 값 — 누르는 자리의 크기) */
 const POSE_BOX: Record<PoseName, { w: number; h: number }> = {
-  sit: { w: 366, h: 362 },
-  loaf: { w: 372, h: 253 },
-  sleep: { w: 421, h: 305 },
-  walk: { w: 466, h: 309 },
-  eat: { w: 472, h: 299 },
-  back: { w: 306, h: 380 },
-  play: { w: 472, h: 343 },
-  run: { w: 472, h: 267 },
-  groom: { w: 424, h: 407 },
+  sit: { w: 301, h: 337 },
+  loaf: { w: 466, h: 288 },
+  sleep: { w: 374, h: 246 },
+  walk: { w: 472, h: 359 },
+  groom: { w: 364, h: 383 },
 };
 
 /** 그림자 타원 폭 (판 px) — 그림 폭의 약 55% (cat-assets.md §A6) */
 const SHADOW_W: Record<PoseName, number> = {
-  sit: 200,
-  loaf: 200,
-  sleep: 230,
-  walk: 240,
-  eat: 250,
-  back: 160,
-  play: 250,
-  run: 250,
-  groom: 230,
+  sit: 165,
+  loaf: 250,
+  sleep: 205,
+  walk: 260,
+  groom: 200,
 };
 const SHADOW_RATIO = 0.22;
 
 /**
- * 누운 자세(자기 · 식빵)는 몸 아래가 둥글어 바닥에 닿는 면이 좁아 붕 떠 보인다 —
- * 판을 이만큼(판 px) 내려 바닥 · 방석에 가라앉히고, 그림자는 작게 몸 아래로 바짝 붙인다. 다른 자세는 그대로.
+ * 누운 자세(자기 · 식빵)는 몸 아래가 둥글어 바닥에 닿는 면이 좁아 붕 떠 보일 수 있다 —
+ * 판을 이만큼(판 px) 내려 바닥에 가라앉히고, 그림자는 작게 몸 아래로 바짝 붙인다. 다른 자세는 그대로.
  */
-const SINK: Partial<Record<PoseName, number>> = { sleep: 16, loaf: 12 };
-const SHADOW_TIGHT: Partial<Record<PoseName, number>> = { sleep: 175, loaf: 165 };
+const SINK: Partial<Record<PoseName, number>> = { sleep: 8, loaf: 6 };
+const SHADOW_TIGHT: Partial<Record<PoseName, number>> = { sleep: 190, loaf: 230 };
 
 export interface Crop {
   /** 보여 줄 배경 영역 (배경 px) */
@@ -113,40 +116,75 @@ interface HouseSceneProps {
 
 // ── 물건 ──
 
-function PropImage({ prop, spin, roll }: { prop: Prop; spin?: boolean; roll?: boolean }) {
+function propStyle(prop: Prop): CSSProperties {
   const art = ART[prop.art];
-  const k = WORLD_SCALE * (prop.scale ?? 1);
-  // 캣휠은 장면 각도(툇마루 방향)에 맞춰 기울인 판 안에 놓는다 — 바퀴와 받침이 같은 판을 쓴다
-  const plane = prop.plane ? WHEEL_PLANE : null;
-  const origin = plane ?? { x: 0, y: 0 };
-  const style: CSSProperties = {
-    left: bg(prop.at.x - art.ax * k - origin.x),
-    top: bg(prop.at.y - art.ay * k - origin.y),
-    width: bg(art.w * k),
-    height: bg(art.h * k),
-    zIndex: plane ? undefined : prop.z,
-    transformOrigin: `${(art.ax / art.w) * 100}% ${(art.ay / art.h) * 100}%`,
+  return {
+    left: bg(prop.at.x - art.ax * prop.k),
+    top: bg(prop.at.y - art.ay * prop.k),
+    width: bg(art.w * prop.k),
+    height: bg(art.h * prop.k),
+    zIndex: prop.z,
   };
-  const image = (
+}
+
+/** 장식 물건 하나 (풍경) */
+function PropImage({ prop }: { prop: Prop }) {
+  return (
     <img
       className={`hs-prop hs-prop--${prop.id}`}
-      data-spin={spin ? "true" : undefined}
-      data-roll={roll ? "true" : undefined}
-      src={houseImageUrl(art.file)}
+      src={houseImageUrl(ART[prop.art].file)}
       alt=""
       aria-hidden="true"
       draggable={false}
-      style={style}
+      style={propStyle(prop)}
     />
   );
-  if (!plane) return image;
+}
+
+/**
+ * 물건 자리 — 빈 물건 그림 ↔ 그 자리에 든 고양이의 합친 그림 (0.2초 겹쳐 흐리기).
+ * 합친 그림은 빈 물건과 같은 판 · 같은 배율이라 물건은 그대로, 고양이만 생긴다. 프레임이 둘이면 CSS 가 번갈아 보인다.
+ */
+function SpotProp({ prop, spot, cat }: { prop: Prop; spot: Spot; cat: CatId | null }) {
+  const [shown, setShown] = useState<CatId | null>(cat);
+  // 다른 고양이가 들어오면 바로 바꾸고, 비면 흐려진 뒤 치운다 (렌더 중 파생 상태 갱신)
+  if (cat !== null && cat !== shown) setShown(cat);
+  useEffect(() => {
+    if (cat !== null) return;
+    const id = window.setTimeout(() => setShown(null), 260);
+    return () => window.clearTimeout(id);
+  }, [cat]);
+
+  const kind = (spot.prop as NonNullable<Spot["prop"]>).kind;
+  const entry = shown ? findCat(shown) : undefined;
+  const frames = entry ? resolveWith(entry, kind)?.frames : undefined;
   return (
-    <div
-      className="hs-plane"
-      style={{ left: bg(plane.x), top: bg(plane.y), width: bg(plane.w), height: bg(plane.h), zIndex: prop.z }}
-    >
-      {image}
-    </div>
+    <>
+      <img
+        className={`hs-prop hs-prop--${prop.id}`}
+        data-covered={cat !== null ? "true" : undefined}
+        src={houseImageUrl(ART[prop.art].file)}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        style={propStyle(prop)}
+      />
+      {entry && frames && (
+        <span
+          key={entry.id}
+          className="hs-with"
+          data-kind={kind}
+          data-frames={frames.length}
+          data-on={cat !== null ? "true" : "false"}
+          aria-hidden="true"
+          style={propStyle(prop)}
+        >
+          {frames.map((file) => (
+            <img key={file} className="hs-with__frame" src={catImageUrl(entry.id, file)} alt="" draggable={false} />
+          ))}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -200,12 +238,14 @@ function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
   const spot = SPOTS[spotId];
   const entry = findCat(catId) ?? (findCat(FALLBACK_CAT) as CatEntry);
   const k = WORLD_SCALE * catScale(entry);
-  const box = POSE_BOX[pose];
+  // 물건 자리에서 합친 그림으로 있는 중 — 그림은 SpotProp 이 그리고, 여기는 누르는 자리 · 이름표만.
+  // 합친 그림이 없는 고양이는 앉은 모습으로 (cat-assets.md §A8)
+  const merged = Boolean(spot.prop) && pose === "with" && !walking && resolveWith(entry, spot.prop?.kind ?? "bowl") !== null;
+  const basePose: PoseName = pose === "with" ? "sit" : pose;
+  const box = POSE_BOX[basePose];
   // 걷는 동안은 가는 자리의 깊이로 (옮겨 가는 길의 깊이는 따로 바꾸지 않는다)
   const z = walking ? depth(spot.feet.y) : spotDepth(spot);
-  const motion = spot.motion?.[pose] ?? motionForPose(pose);
-  // 상자에 "들어가 있는" 모습은 자리에 앉은 뒤부터 — 걸어 들어오는 동안은 몸이 다 보여야 한다
-  const clip = walking ? undefined : spot.clip;
+  const motion = spot.motion?.[basePose] ?? motionForPose(basePose);
   const name = t(`cat.${catId}.name`);
   const role = t(`cat.${catId}.role`);
   const doing = t(`cat.activity.${activityTextKey(walking ? "walk" : spotId)}`);
@@ -233,37 +273,43 @@ function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
     transitionDuration: walking ? `${walkMs}ms` : undefined,
     ["--walk-ms" as string]: `${walkMs}ms`,
   };
-  const sink = SINK[pose] ?? 0;
-  const hitStyle: CSSProperties = {
-    left: `calc(${-box.w / 2} * var(--k))`,
-    top: `calc(${-box.h + sink} * var(--k))`,
-    width: `calc(${box.w} * var(--k))`,
-    height: `calc(${box.h} * var(--k))`,
-    zIndex: z,
-  };
+  const sink = merged ? 0 : (SINK[basePose] ?? 0);
+  const hit = spot.prop?.hit;
+  const seat = spot.prop?.seat;
+  const pk = spotPropK(spot);
+  // 합친 그림 속 고양이가 있는 곳을 누르는 자리로 (물건 판 좌표 → 발 기준)
+  const hitStyle: CSSProperties =
+    merged && hit && seat
+      ? {
+          left: bg((hit.x - seat.x) * pk),
+          top: bg((hit.y - seat.y) * pk),
+          width: bg(hit.w * pk),
+          height: bg(hit.h * pk),
+          zIndex: z,
+        }
+      : {
+          left: `calc(${-box.w / 2} * var(--k))`,
+          top: `calc(${-box.h + sink} * var(--k))`,
+          width: `calc(${box.w} * var(--k))`,
+          height: `calc(${box.h} * var(--k))`,
+          zIndex: z,
+        };
   // 판(512)은 누르는 상자 안에서 발 기준점이 상자 아래 가운데에 오도록
   const plateStyle: CSSProperties = {
     left: `calc(${box.w / 2 - PLATE.feetX} * var(--k))`,
     top: `calc(${box.h - PLATE.feetY + sink} * var(--k))`,
     width: `calc(${PLATE.size} * var(--k))`,
     height: `calc(${PLATE.size} * var(--k))`,
-    // 상자: 앞 테두리(V) 아래는 잘라서 "들어가 있는" 모습
-    clipPath:
-      clip === undefined
-        ? undefined
-        : `polygon(${clip
-            .map((pt) => `calc(${PLATE.feetX} * var(--k) + ${pt.x} * var(--u)) calc(${PLATE.feetY} * var(--k) + ${pt.y} * var(--u))`)
-            .join(", ")})`,
   };
-  const sprite = (
+  const sprite = merged ? null : (
     <span className="hs-cat__plate" style={plateStyle}>
-      <span className="hs-cat__lift" data-peek={spot.peek && !walking ? "true" : undefined}>
-        <CatSprite cat={catId} pose={pose} motion={motion} facing={facing} />
+      <span className="hs-cat__lift">
+        <CatSprite cat={catId} pose={basePose} motion={motion} facing={facing} />
       </span>
     </span>
   );
 
-  const shadowW = SHADOW_TIGHT[pose] ?? SHADOW_W[pose];
+  const shadowW = SHADOW_TIGHT[basePose] ?? SHADOW_W[basePose];
   const shadowStyle: CSSProperties = {
     left: `calc(${-shadowW / 2} * var(--k))`,
     top: `calc(${(-shadowW * SHADOW_RATIO) / 2 + sink * 0.7} * var(--k))`,
@@ -283,7 +329,7 @@ function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
       data-open={open ? "true" : undefined}
       style={wrapperStyle}
     >
-      {clip === undefined && <span className="hs-cat__shadow" aria-hidden="true" style={shadowStyle} />}
+      {!merged && <span className="hs-cat__shadow" aria-hidden="true" style={shadowStyle} />}
       {interaction ? (
         <button
           ref={(el) => {
@@ -345,8 +391,15 @@ export function HouseScene({
     "--cy": view.y + view.h / 2,
   } as CSSProperties;
 
-  const spinning = placements.some((p) => p.spot === "wheel" && !p.walking);
-  const rolling = placements.some((p) => p.spot === "ball" && p.pose === "play");
+  // 물건 자리마다 합친 그림으로 들어가 있는 고양이 (걸어 들어오는 중 · 사라지는 중이면 아직 · 이미 아님)
+  const occupants = new Map<string, CatId>();
+  for (const p of placements) {
+    const kind = SPOTS[p.spot].prop?.kind;
+    const entry = findCat(p.cat);
+    if (kind && p.pose === "with" && !p.walking && p.fade !== "out" && entry && resolveWith(entry, kind)) {
+      occupants.set(p.spot, p.cat);
+    }
+  }
   const showTags = tags ?? interaction !== undefined;
 
   return (
@@ -363,12 +416,7 @@ export function HouseScene({
         <div className="hs-tint hs-tint--bg" aria-hidden="true" />
 
         {PROPS.map((prop) => (
-          <PropImage
-            key={prop.id}
-            prop={prop}
-            spin={prop.id === "wheel-ring" && spinning}
-            roll={prop.id === "ball" && rolling}
-          />
+          <SpotProp key={prop.id} prop={prop} spot={SPOTS[prop.id as SpotId]} cat={occupants.get(prop.id) ?? null} />
         ))}
         <PropImage prop={CHIME} />
 

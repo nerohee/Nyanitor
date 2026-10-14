@@ -33,18 +33,25 @@ describe("고양이 집 장면", () => {
     expect(z(/^두부,/)).toBeLessThan(z(/^먹물,/));
     const towerZ = zOf(document.querySelector<HTMLElement>(".hs-prop--tower") as HTMLElement);
     expect(z(/^구름,/)).toBeGreaterThan(towerZ);
-    // 앞 덤불은 모든 고양이보다 앞
-    const bush = zOf(document.querySelector<HTMLElement>(".hs-prop--bush-front") as HTMLElement);
-    for (const button of screen.getAllByRole("button")) expect(bush).toBeGreaterThan(zOf(button));
+    // 방 안 밥 자리(먹물이 좋아하는 곳) 물건은 툇마루 물건 · 마당보다 뒤
+    const room = zOf(document.querySelector<HTMLElement>(".hs-prop--bowlRoom") as HTMLElement);
+    expect(room).toBeLessThan(zOf(document.querySelector<HTMLElement>(".hs-prop--box") as HTMLElement));
   });
 
-  it("고양이가 달리면 캣휠이 돌고, 공을 치면 공이 구른다 — 그 자리에 없으면 멈춰 있다", () => {
+  it("고양이가 자리에 들면 빈 물건이 합친 그림으로 바뀌고(프레임이 둘이면 번갈아), 나가면 빈 물건으로 돌아온다", () => {
     const { container, rerender } = render(<HouseScene time="day" placements={staticPlacements(FAKE_PLANS[0])} />);
-    expect(container.querySelector(".hs-prop--wheel-ring")).toHaveAttribute("data-spin", "true");
-    expect(container.querySelector(".hs-prop--ball")).toHaveAttribute("data-roll", "true");
+    const wheel = container.querySelector<HTMLElement>('.hs-with[data-kind="wheel"]');
+    expect(wheel).toHaveAttribute("data-frames", "2");
+    expect(wheel).toHaveAttribute("data-on", "true");
+    expect(wheel?.querySelectorAll("img")).toHaveLength(2);
+    expect(container.querySelector(".hs-prop--wheel")).toHaveAttribute("data-covered", "true");
+    expect(container.querySelector('.hs-with[data-kind="tower"]')).toHaveAttribute("data-frames", "1");
+    // 합친 그림 속 고양이는 따로 그리지 않는다 (누르는 자리만)
+    expect(container.querySelector('.hs-cat[data-cat="danchu"] .hs-cat__plate')).toBeNull();
 
     rerender(<HouseScene time="day" placements={staticPlacements(FAKE_PLANS[3])} />);
-    expect(container.querySelector(".hs-prop--wheel-ring")).not.toHaveAttribute("data-spin");
+    expect(container.querySelector('.hs-with[data-kind="wheel"]')).toHaveAttribute("data-on", "false");
+    expect(container.querySelector(".hs-prop--wheel")).not.toHaveAttribute("data-covered");
   });
 
   it("장식으로만 쓰면 단추도 이름표도 없고 화면 읽기 프로그램에서 숨는다 (작업 공간의 창문)", () => {
@@ -66,16 +73,18 @@ describe("고양이 집 장면", () => {
     expect(root.style.getPropertyValue("--cy")).toBe("425");
   });
 
-  it("상자의 고양이는 앞 테두리(V) 아래가 잘려 들어가 있는 모습 — 걸어 들어오는 동안은 몸이 다 보인다", () => {
+  it("물건 자리로 걸어 들어오는 동안은 고양이가 따로 보이고, 앉은 뒤에 합친 그림이 된다", () => {
     const sitting = staticPlacements(FAKE_PLANS[0]);
     const { container, rerender } = render(<HouseScene time="day" placements={sitting} />);
-    const plate = () => container.querySelector<HTMLElement>('.hs-cat[data-cat="nabi"] .hs-cat__plate') as HTMLElement;
-    expect(plate().style.clipPath).toContain("polygon(");
+    const plate = () => container.querySelector('.hs-cat[data-cat="nabi"] .hs-cat__plate');
+    expect(plate()).toBeNull();
+    expect(container.querySelector('.hs-with[data-kind="box"]')).toHaveAttribute("data-on", "true");
 
     rerender(
       <HouseScene time="day" placements={sitting.map((p) => (p.cat === "nabi" ? { ...p, pose: "walk", walking: true, walkMs: 1500 } : p))} />,
     );
-    expect(plate().style.clipPath).toBe("");
+    expect(plate()).not.toBeNull();
+    expect(container.querySelector('.hs-with[data-kind="box"]')).toHaveAttribute("data-on", "false");
   });
 
   it("정보 패널은 장면 밖 위층에 놓이고, 고양이를 누르면 열리고 다시 누르면 닫힌다", () => {

@@ -128,14 +128,6 @@
   10%, 20%, 30%, 40%, 50% { transform: rotate(2deg); }
 }
 
-/* 밥: 아래로 2px 끄덕 (오물오물) 0.6초 */
-.cat-layer[data-motion="eat"] .cat-layer__pose {
-  animation: cat-nod 600ms ease-in-out infinite alternate;
-}
-@keyframes cat-nod {
-  to { transform: translateY(1.4%); }
-}
-
 /* 둘러보기 (캣타워): 몸 ±3° 천천히 4초 */
 .cat-layer[data-motion="look"] .cat-layer__pose {
   animation: cat-look 4s ease-in-out var(--cat-offset) infinite alternate;
@@ -155,29 +147,13 @@
   94% { transform: translateY(-0.7%); }
 }
 
-/* 뒷모습 (방 안): 아주 느린 좌우 1° */
-.cat-layer[data-motion="back"] .cat-layer__pose {
-  animation: cat-sway 6s ease-in-out var(--cat-offset) infinite alternate;
-  transform-origin: 50% 94%;
-}
-@keyframes cat-sway {
-  from { transform: rotate(-1deg); }
-  to { transform: rotate(1deg); }
-}
-
 /* ── 프레임 번갈기 ── */
-/* 걷기 0.28초 박자 · 달리기 0.3초 박자 — 두 프레임이 계속 번갈아 (통통한 고양이답게 느긋하게, P2-07 디자인 검수) */
+/* 걷기 0.28초 박자 — 두 프레임이 계속 번갈아 (통통한 고양이답게 느긋하게, P2-07 디자인 검수) */
 .cat-layer[data-motion="walk"][data-frames="2"] .cat-frame:first-child {
   animation: cat-flip-a 560ms steps(1, end) infinite;
 }
 .cat-layer[data-motion="walk"][data-frames="2"] .cat-frame:nth-child(2) {
   animation: cat-flip-b 560ms steps(1, end) infinite;
-}
-.cat-layer[data-motion="run"][data-frames="2"] .cat-frame:first-child {
-  animation: cat-flip-a 600ms steps(1, end) infinite;
-}
-.cat-layer[data-motion="run"][data-frames="2"] .cat-frame:nth-child(2) {
-  animation: cat-flip-b 600ms steps(1, end) infinite;
 }
 @keyframes cat-flip-a {
   0% { opacity: 1; }
@@ -187,46 +163,13 @@
   0% { opacity: 0; }
   50% { opacity: 1; }
 }
-/* 걸을 때 몸 위아래 1px, 달릴 때 2px */
+/* 걸을 때 몸 위아래 1px */
 .cat-layer[data-motion="walk"] .cat-layer__pose {
   animation: cat-bob 280ms ease-in-out infinite alternate;
-}
-.cat-layer[data-motion="run"] .cat-layer__pose {
-  animation: cat-bob-big 300ms ease-in-out infinite alternate;
 }
 @keyframes cat-bob {
   to { transform: translateY(-0.7%); }
 }
-@keyframes cat-bob-big {
-  to { transform: translateY(-1.4%); }
-}
-
-/* 공 치기: 0.35초 × 3번 번갈아 치고, 쉬었다 다시 (4.5초 한 바퀴) */
-.cat-layer[data-motion="play"][data-frames="2"] .cat-frame:first-child {
-  animation: cat-play-a 4500ms steps(1, end) infinite;
-}
-.cat-layer[data-motion="play"][data-frames="2"] .cat-frame:nth-child(2) {
-  animation: cat-play-b 4500ms steps(1, end) infinite;
-}
-@keyframes cat-play-a {
-  0% { opacity: 1; }
-  7.8% { opacity: 0; }
-  15.6% { opacity: 1; }
-  23.3% { opacity: 0; }
-  31.1% { opacity: 1; }
-  38.9% { opacity: 0; }
-  46.7% { opacity: 1; }
-}
-@keyframes cat-play-b {
-  0% { opacity: 0; }
-  7.8% { opacity: 1; }
-  15.6% { opacity: 0; }
-  23.3% { opacity: 1; }
-  31.1% { opacity: 0; }
-  38.9% { opacity: 1; }
-  46.7% { opacity: 0; }
-}
-
 /* 창이 숨으면 멈춤 — 위의 animation 줄임 표기가 play-state 를 되돌리므로 마지막에 !important 로 */
 .cat-sprite .cat-layer,
 .cat-sprite .cat-layer__body,

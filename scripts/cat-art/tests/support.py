@@ -80,9 +80,11 @@ class FakeImages:
     def _respond(self, kind: str, kwargs: dict):
         record = {"kind": kind, **{k: v for k, v in kwargs.items() if k != "image"}}
         if "image" in kwargs:
+            # generate.py 는 (이름, 파일, 파일 종류) 묶음으로 보낸다
             files = kwargs["image"]
-            record["image_names"] = [Path(f.name).as_posix() for f in files]
-            record["image_heads"] = [f.read(8) for f in files]
+            record["image_names"] = [Path(f[1].name).as_posix() for f in files]
+            record["image_types"] = [f[2] for f in files]
+            record["image_heads"] = [f[1].read(8) for f in files]
         self.owner.calls.append(record)
         behavior = self.owner.behaviors.pop(0) if self.owner.behaviors else None
         if isinstance(behavior, BaseException):

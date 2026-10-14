@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 100">
-  <!-- 상자 앞판 (고양이 앞 층) — 고양이 아랫몸을 가린다. 바닥 y=98 -->
-  <rect class="h-box h-outline" x="8" y="56" width="124" height="42" rx="4" fill="#d9a86c" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <rect class="h-box-shade" x="62" y="57.5" width="16" height="39" fill="#b88850"/>
-  <path class="h-box-shade h-outline" d="M8 56 L2 44 H58 L64 56 Z" fill="#b88850" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-</svg>

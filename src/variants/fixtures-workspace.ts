@@ -1,6 +1,6 @@
 // 작업 공간 시안 가짜 데이터 (P2-03). fixtures.ts 와 함께 시안을 고른 뒤 지운다.
 // 상태 3가지 — running(진행 중) · waiting(기다리는 카드가 있음, D-25) · empty(빈 프로젝트)
-import type { CatId } from "../components/cat/looks";
+import type { CatId } from "../components/cat/catalog";
 import type { TextKey } from "../i18n/ko";
 import { PROJECTS, type Activity, type ProjectFixture } from "./fixtures";
 
@@ -186,13 +186,13 @@ const WAITING_TAIL: ChatItem[] = [
 ];
 
 const PHASE_BASE: Omit<Phase, "status">[] = [
-  { id: "P0", labelKey: "variant.fixture.phase.p0", owners: ["nabi"] },
-  { id: "P1", labelKey: "variant.fixture.phase.p1", owners: ["mukmul"] },
+  { id: "P0", labelKey: "variant.fixture.phase.p0", owners: ["mukmul"] },
+  { id: "P1", labelKey: "variant.fixture.phase.p1", owners: ["nabi"] },
   { id: "P2", labelKey: "variant.fixture.phase.p2", owners: ["mulgam"] },
   { id: "P3", labelKey: "variant.fixture.phase.p3", owners: ["danchu", "gureum"] },
-  { id: "P4", labelKey: "variant.fixture.phase.p4", owners: ["mukmul"] },
+  { id: "P4", labelKey: "variant.fixture.phase.p4", owners: ["nabi"] },
   { id: "P5", labelKey: "variant.fixture.phase.p5", owners: ["gureum", "kkaebi"] },
-  { id: "P6", labelKey: "variant.fixture.phase.p6", owners: ["mukmul"] },
+  { id: "P6", labelKey: "variant.fixture.phase.p6", owners: ["nabi"] },
 ];
 
 function phases(current: PhaseStatus | null): Phase[] {
@@ -203,7 +203,7 @@ function phases(current: PhaseStatus | null): Phase[] {
 }
 
 const LOG: LogItem[] = [
-  { time: "09:40", cat: "nabi", textKey: "variant.fixture.log.1" },
+  { time: "09:40", cat: "mukmul", textKey: "variant.fixture.log.1" },
   { time: "09:41", cat: "danchu", textKey: "variant.fixture.log.2" },
   { time: "09:52", cat: "danchu", textKey: "variant.fixture.log.3" },
   { time: "09:53", cat: "gureum", textKey: "variant.fixture.log.4" },
@@ -254,14 +254,14 @@ export function workspaceFixture(state: WorkState): WorkspaceFixture {
     phases: phases(waiting ? "waiting" : "running"),
     working: waiting
       ? [
-          { cat: "nabi", activity: "window" },
-          { cat: "gureum", activity: "tower" },
+          { cat: "mukmul", activity: "stone" },
+          { cat: "gureum", activity: "towerTop" },
         ]
       : [
           { cat: "danchu", activity: "wheel" },
-          { cat: "gureum", activity: "tower" },
+          { cat: "gureum", activity: "towerTop" },
         ],
-    log: waiting ? [...LOG, { time: "09:58", cat: "nabi", textKey: "variant.fixture.log.5" }] : LOG,
+    log: waiting ? [...LOG, { time: "09:58", cat: "mukmul", textKey: "variant.fixture.log.5" }] : LOG,
     raw: RAW,
     orchestrator: waiting ? "waiting" : "thinking",
     pending: waiting ? 1 : 0,

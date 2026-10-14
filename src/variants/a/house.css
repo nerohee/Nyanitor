@@ -57,54 +57,23 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  container-type: size;
-  background: var(--house-wall);
+  background: var(--scene-ground);
 }
+/* 한옥 마당 그림이 장면 전체 — 카드는 그 위에 (왼쪽 위 담장 · 아래 잔디의 빈 곳) */
 .ha-room {
-  /* 고양이 판 160 = 160u. 창 크기에 맞춰 커지되 큰 모니터에서 너무 커지지 않게 */
-  --u: min(calc((100cqh - var(--slab-h)) / 640), calc(100cqw / 1250), 1.25px);
   position: absolute;
-  inset: 0 0 var(--slab-h) 0;
+  inset: 0;
   z-index: 0;
 }
-/* 말풍선이 열리면 장면이 카드들보다 앞으로 */
-.ha-room:has(.cat-slot[data-open="true"]) {
-  z-index: 2;
-}
-.ha-floor {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 30%;
-  border-top: 10px solid var(--house-frame);
-  background: repeating-linear-gradient(
-    90deg,
-    var(--house-floor) 0 calc(180 * var(--u)),
-    var(--house-floor-shade) calc(180 * var(--u)) calc(180 * var(--u) + 2px)
-  );
-}
-/* 창으로 드는 빛 — 창(38%, 바닥 위)에서 바닥으로. 밤에는 없음 */
-.ha-beam {
+/* 정보 패널 층 — 장면 · 카드보다 앞. 비어 있을 때는 아래를 가리지 않는다 */
+.ha-bubbles {
   position: absolute;
   inset: 0;
-  background: var(--house-light);
-  opacity: var(--house-light-alpha);
-  clip-path: polygon(33% 30%, 47% 30%, 56% 100%, 32% 100%);
+  z-index: 3;
   pointer-events: none;
 }
-[data-time="night"] .ha-beam {
-  display: none;
-}
-/* 밤 — 천장 등 불빛 */
-.ha-glow {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 18%, var(--house-lamp-glow), transparent 55%);
-  pointer-events: none;
-}
-
-/* 이름표: 늘 보임 (역할까지) */
-.ha .cat-tag__role {
-  font-weight: var(--weight-regular);
+.ha-bubbles > * {
+  pointer-events: auto;
 }
 
 /* ── 종이 카드 ── */
@@ -134,7 +103,7 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* ── 바닥 단면 (앞판) 위 카드 줄 ── */
+/* ── 아래 잔디 띠 위 카드 줄 (카드 자리 B — 고양이 자리가 없는 곳) ── */
 .ha-slab {
   position: absolute;
   z-index: 1;
@@ -145,9 +114,11 @@
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-5);
-  /* 바닥을 자른 단면 — 이름표 크림 글자가 어느 시간대든 5:1 이상 */
-  background: var(--house-frame-shade);
-  border-top: 3px solid var(--house-line);
+  /* 띠 자체는 비어 있다 — 카드 사이의 잔디를 눌러도 장면이 받는다 */
+  pointer-events: none;
+}
+.ha-slab > * {
+  pointer-events: auto;
 }
 .ha-new {
   flex: none;
@@ -163,10 +134,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 .ha-recent__title {
   margin: 0;
-  color: var(--house-tag-bg);
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
 }
@@ -179,15 +155,15 @@
   min-width: 0;
 }
 .ha-projects .projects__item {
-  height: 72px;
+  height: 60px;
   align-content: center;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
 }
 .ha-projects .projects__item:hover {
   background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
 }
 .ha-projects .projects__name,
 .ha-projects .projects__phase {

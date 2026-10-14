@@ -1,15 +1,16 @@
-// 시안 틀이 읽는 주소 쿼리: ?variant=a|b|c &screen=house|workspace|cats &time=morning|day|evening|night
+// 시안 틀이 읽는 주소 쿼리: ?variant=a (없는 시안은 a 로) &screen=house|workspace|cats &time=morning|day|evening|night
 // &theme=light|dark (없으면 OS 따라) &bar=off (아래 시안 막대 숨김 — 스크린샷용)
 // &usage=unavailable (사용량을 못 받은 상태 보기) &state=running|waiting|empty (작업 공간 상태)
 
+import { TIMES, timeOfDay, type TimeOfDay } from "../components/house/time";
 import { WORK_STATES, type WorkState } from "./fixtures-workspace";
 
+export { TIMES, timeOfDay, type TimeOfDay };
+
 export const SCREENS = ["house", "workspace", "cats"] as const;
-export const TIMES = ["morning", "day", "evening", "night"] as const;
 export const THEMES = ["system", "light", "dark"] as const;
 
 export type ScreenId = (typeof SCREENS)[number];
-export type TimeOfDay = (typeof TIMES)[number];
 export type ThemeChoice = (typeof THEMES)[number];
 
 export interface FrameQuery {
@@ -24,15 +25,6 @@ export interface FrameQuery {
   usage: "ok" | "unavailable";
   /** 작업 공간 상태 — 진행 중 / 기다리는 카드 / 빈 프로젝트 */
   work: WorkState;
-}
-
-/** 고양이 집 시간대 — 아침 05–10시 · 낮 10–17시 · 저녁 17–20시 · 밤 20–05시 (tokens.css 와 같음) */
-export function timeOfDay(date: Date): TimeOfDay {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 10) return "morning";
-  if (hour >= 10 && hour < 17) return "day";
-  if (hour >= 17 && hour < 20) return "evening";
-  return "night";
 }
 
 function pick<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {

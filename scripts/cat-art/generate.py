@@ -453,13 +453,25 @@ class _Failed(Exception):
     pass
 
 
+_REF_MIMETYPES = {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+def _ref_mimetype(path) -> str:
+    """참조 그림의 파일 종류. API 가 받는 png · webp · jpeg 만 — 그 밖은 png 로 본다."""
+    return _REF_MIMETYPES.get(Path(path).suffix.lower(), "image/png")
+
+
 def _call_with_retry(client, call, params, ref_paths, settings, sleep, warn, item_id):
     attempts = len(RETRY_DELAYS_S) + 1
     for attempt in range(1, attempts + 1):
         try:
             with contextlib.ExitStack() as stack:
                 if call == "edit":
-                    files = [stack.enter_context(open(p, "rb")) for p in ref_paths]
+                    # 파일 종류를 함께 보낸다 — 없으면 SDK 가 WebP 를 application/octet-stream 으로 보내 400 이 난다.
+                    files = [
+                        (Path(p).name, stack.enter_context(open(p, "rb")), _ref_mimetype(p))
+                        for p in ref_paths
+                    ]
                     return client.images.edit(image=files, **params)
                 return client.images.generate(**params)
         except KeyboardInterrupt:

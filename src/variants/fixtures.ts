@@ -1,32 +1,45 @@
 // 시안 공통 가짜 데이터 (P2). 실제 데이터 · IPC 와 연결하지 않는다. 시안을 고른 뒤 같이 지운다.
 // 에이전트 값은 ~/.claude/agents/harness-*.md 앞머리(model · effort)를 옮겨 왔다. 문구는 ko.ts 에.
-import type { CatId } from "../components/cat/looks";
+import { catForAgent, type CatId } from "../components/cat/catalog";
+import { isWorkSpot, type Activity } from "../components/house/spots";
 import type { TextKey } from "../i18n/ko";
 
-/** 고양이가 지금 있는 자리 = 하는 일 (cat-assets.md §4). 캣휠 · 캣타워 = 일하는 중 */
-export type Activity = "wheel" | "tower" | "window" | "sleep" | "eat" | "box" | "walk" | "idle";
+export type { Activity };
 
 export interface AgentFixture {
+  /** 이 에이전트를 가리키는 고양이 (기본 연결 — agent-cats.json) */
   cat: CatId;
+  /** 에이전트 이름 (메인 대화는 main) */
+  agent: string;
   /** agents 폴더의 파일 이름. 오케스트레이터는 파일이 아니라 메인 대화 */
   agentFile: string | null;
   model: "Opus" | "Sonnet" | "Haiku";
   effort: "low" | "medium" | "high";
-  activity: Activity;
 }
 
-export const AGENTS: readonly AgentFixture[] = [
-  { cat: "nabi", agentFile: null, model: "Opus", effort: "high", activity: "window" },
-  { cat: "mulgam", agentFile: "harness-designer.md", model: "Opus", effort: "high", activity: "sleep" },
-  { cat: "danchu", agentFile: "harness-builder-ui.md", model: "Sonnet", effort: "medium", activity: "wheel" },
-  { cat: "mukmul", agentFile: "harness-builder-system.md", model: "Sonnet", effort: "high", activity: "box" },
-  { cat: "kkaebi", agentFile: "harness-tester.md", model: "Sonnet", effort: "medium", activity: "walk" },
-  { cat: "dubu", agentFile: "harness-helper.md", model: "Haiku", effort: "low", activity: "eat" },
-  { cat: "gureum", agentFile: "harness-reviewer.md", model: "Opus", effort: "high", activity: "tower" },
+type AgentRow = Omit<AgentFixture, "cat">;
+
+const AGENT_ROWS: readonly AgentRow[] = [
+  { agent: "main", agentFile: null, model: "Opus", effort: "high" },
+  { agent: "designer", agentFile: "harness-designer.md", model: "Opus", effort: "high" },
+  { agent: "builder-ui", agentFile: "harness-builder-ui.md", model: "Sonnet", effort: "medium" },
+  { agent: "builder-system", agentFile: "harness-builder-system.md", model: "Sonnet", effort: "high" },
+  { agent: "tester", agentFile: "harness-tester.md", model: "Sonnet", effort: "medium" },
+  { agent: "helper", agentFile: "harness-helper.md", model: "Haiku", effort: "low" },
+  { agent: "reviewer", agentFile: "harness-reviewer.md", model: "Opus", effort: "high" },
 ];
 
+export const AGENTS: readonly AgentFixture[] = AGENT_ROWS.map((row) => ({
+  ...row,
+  // 기본 연결은 모두 기본 7마리를 가리킨다
+  cat: catForAgent(row.agent) as CatId,
+}));
+
+/** 오케스트레이터(메인 대화)를 가리키는 고양이 — 기본은 먹물 (D-37) */
+export const ORCHESTRATOR: CatId = AGENTS[0].cat;
+
 export function isWorking(activity: Activity): boolean {
-  return activity === "wheel" || activity === "tower";
+  return isWorkSpot(activity);
 }
 
 export function agentOf(cat: CatId): AgentFixture {

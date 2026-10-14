@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
 import { t } from "../../i18n/ko";
+import { ORCHESTRATOR } from "../fixtures";
 import type { ChatItem, Question } from "../fixtures-workspace";
 import { Icon } from "./icons";
 
@@ -218,12 +219,12 @@ function Message({ item }: { item: CardItem<"user"> | CardItem<"orch"> }) {
     <div className={`wmsg wmsg--${mine ? "user" : "orch"}`}>
       {!mine && (
         <span className="wmsg__avatar" aria-hidden="true">
-          <CatFigure cat="nabi" crop="face" motion="still" />
+          <CatFigure cat={ORCHESTRATOR} crop="face" />
         </span>
       )}
       <div className="wmsg__bubble">
         <p className="wmsg__who">
-          {mine ? t("variant.ws.chat.you") : t("cat.nabi.name")}
+          {mine ? t("variant.ws.chat.you") : t(`cat.${ORCHESTRATOR}.name`)}
           <time>{item.time}</time>
         </p>
         <p className="wmsg__text selectable">

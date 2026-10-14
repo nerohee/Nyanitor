@@ -1,5 +1,5 @@
 // 시안 공통 선 아이콘 (20 × 20, currentColor). 이모지를 아이콘으로 쓰지 않는다.
-export type IconName = "house" | "workspace" | "custom" | "settings" | "plus" | "close" | "back" | "check" | "alert";
+export type IconName = "house" | "workspace" | "custom" | "settings" | "plus" | "close" | "check" | "alert";
 
 const PATHS: Record<IconName, string> = {
   house: "M3.5 9.5 10 4l6.5 5.5V16.5h-13z M8.5 16.5V12.5h3v4",
@@ -8,7 +8,6 @@ const PATHS: Record<IconName, string> = {
   settings: "M3.5 6.5h13 M3.5 13.5h13 M7.5 4.5v4 M12.5 11.5v4",
   plus: "M10 4.5v11 M4.5 10h11",
   close: "M5.5 5.5l9 9 M14.5 5.5l-9 9",
-  back: "M11.5 4.5 6 10l5.5 5.5 M6.5 10H16",
   check: "M4.5 10.5l3.5 3.5 7.5-8",
   alert: "M10 6v5 M10 13.6v.4 M10 2.8a7.2 7.2 0 1 1 0 14.4 7.2 7.2 0 0 1 0-14.4z",
 };

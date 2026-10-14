@@ -1,12 +1,11 @@
-// 시안 틀 (P2). 주소 쿼리로 시안 · 화면 · 시간대 · 테마를 골라 띄운다 (query.ts).
-// 시안을 고른 뒤에는 `src/variants/` 폴더째, `App.tsx` 의 연결 몇 줄, `ko.ts` 의 `variant.` 키를 지운다.
+// 시안 틀 (P2). 주소 쿼리로 화면 · 시간대 · 테마를 골라 띄운다 (query.ts). 시안은 a 로 정했다 (D-30) — b · c 는 지웠다.
+// 앱 화면이 이 틀을 대신하면 `src/variants/` 폴더째, `App.tsx` 의 연결 몇 줄, `ko.ts` 의 `variant.` 키를 지운다.
 import { useEffect, useLayoutEffect, useState } from "react";
 import { t } from "../i18n/ko";
 import { USAGE_OK, USAGE_UNAVAILABLE } from "./fixtures";
 import { parseFrameQuery, type ScreenId } from "./query";
 import { variantIds, variants } from "./registry";
 import { CatsScreen } from "./frame/CatsScreen";
-import { TokenPreview } from "./frame/TokenPreview";
 import { VariantBar } from "./frame/VariantBar";
 import "./frame/frame.css";
 
@@ -49,8 +48,7 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
   function renderScreen(screen: ScreenId) {
     if (screen === "cats") return <CatsScreen />;
     const Screen = screen === "house" ? mod?.House : mod?.Workspace;
-    if (Screen) return <Screen time={query.time} usage={query.usage === "ok" ? USAGE_OK : USAGE_UNAVAILABLE} work={query.work} />;
-    return mod ? <TokenPreview meta={mod.meta} screen={screen} /> : null;
+    return Screen ? <Screen time={query.time} usage={query.usage === "ok" ? USAGE_OK : USAGE_UNAVAILABLE} work={query.work} /> : null;
   }
 
   return (

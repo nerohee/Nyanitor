@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 무늬: 삼색 — 몸통 (주황 c-pattern · 검정 c-pattern-2) -->
-  <path class="c-pattern" d="M40 92 C46 84 56 82 66 82 C68 92 60 100 48 100 C44 100 40 97 40 92 Z" fill="#e39a4f"/>
-  <path class="c-pattern-2" d="M84 82 H100 C102 92 94 98 86 96 C82 94 82 88 84 82 Z" fill="#3b302a"/>
-</svg>

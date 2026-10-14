@@ -39,12 +39,14 @@ export function VariantBar({ search, query, variantIds, currentName }: VariantBa
   return (
     <nav className="vf-bar" aria-label={t("variant.bar.label")}>
       <strong className="vf-bar__current">{currentName}</strong>
-      <Group
-        label="variant.bar.variant"
-        param="variant"
-        search={search}
-        options={variantIds.map((id) => ({ value: id, label: id, current: id === query.variant }))}
-      />
+      {variantIds.length > 1 && (
+        <Group
+          label="variant.bar.variant"
+          param="variant"
+          search={search}
+          options={variantIds.map((id) => ({ value: id, label: id, current: id === query.variant }))}
+        />
+      )}
       <Group
         label="variant.bar.screen"
         param="screen"

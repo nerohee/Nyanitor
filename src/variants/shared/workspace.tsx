@@ -2,13 +2,13 @@
 // 배치 · 크기는 시안 CSS 가 정한다.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
-import type { CatId } from "../../components/cat/looks";
+import { activityTextKey } from "../../components/house/spots";
 import { t, tf } from "../../i18n/ko";
-import { AGENTS, type Activity } from "../fixtures";
+import { ORCHESTRATOR } from "../fixtures";
 import type { Phase, WorkspaceFixture } from "../fixtures-workspace";
 import { ChatItemView, isPending, PENDING_CARD_ID } from "./cards";
 import { Icon } from "./icons";
-import type { CatAgent } from "./scene";
+import "./shared.css";
 import "./workspace.css";
 
 /** 넓은 창(1280px 이상)이면 나란히, 아니면 탭 (plan §5) */
@@ -210,9 +210,9 @@ export function OrchestratorStatus({ fx }: { fx: WorkspaceFixture }) {
   return (
     <p className="wstatus" data-state={fx.orchestrator}>
       <span className="wstatus__avatar" aria-hidden="true">
-        <CatFigure cat="nabi" crop="face" motion="still" />
+        <CatFigure cat={ORCHESTRATOR} crop="face" />
       </span>
-      <b>{t("cat.nabi.name")}</b>
+      <b>{t(`cat.${ORCHESTRATOR}.name`)}</b>
       <span className="status-dot" aria-hidden="true" />
       <span>{t(`variant.ws.chat.status.${fx.orchestrator}`)}</span>
     </p>
@@ -243,7 +243,7 @@ function Composer({ running }: { running: boolean }) {
 }
 
 /** 채팅 칸: 상태 · (기다리는 카드 안내) · 대화 · 입력줄 */
-export function ChatPane({ fx, showStatus = true, below }: { fx: WorkspaceFixture; showStatus?: boolean; below?: ReactNode }) {
+export function ChatPane({ fx }: { fx: WorkspaceFixture }) {
   const pendingIndex = fx.chat.findIndex(isPending);
   const log = useRef<HTMLDivElement>(null);
   // 채팅은 맨 아래(가장 최근 · 기다리는 카드)부터 보인다
@@ -258,7 +258,7 @@ export function ChatPane({ fx, showStatus = true, below }: { fx: WorkspaceFixtur
   };
   return (
     <div className="wchat">
-      {showStatus && <OrchestratorStatus fx={fx} />}
+      <OrchestratorStatus fx={fx} />
       {fx.pending > 0 && (
         <div className="wchat__waiting" role="status">
           <span>{t("variant.ws.chat.waitingBanner")}</span>
@@ -279,7 +279,6 @@ export function ChatPane({ fx, showStatus = true, below }: { fx: WorkspaceFixtur
           ))
         )}
       </div>
-      {below}
       <Composer running={fx.orchestrator === "thinking"} />
     </div>
   );
@@ -310,7 +309,7 @@ export function ProgressLog({ fx }: { fx: WorkspaceFixture }) {
         <li key={`${item.time}-${item.textKey}`}>
           <time>{item.time}</time>
           <span className="wlog__face" aria-hidden="true">
-            <CatFigure cat={item.cat} crop="face" motion="still" />
+            <CatFigure cat={item.cat} crop="face" />
           </span>
           <span>{t(item.textKey)}</span>
         </li>
@@ -335,10 +334,10 @@ export function RawOutput({ fx }: { fx: WorkspaceFixture }) {
 
 // ── 프로젝트 목록 ──
 
-export function ProjectNavList({ fx, className, layout = "list" }: { fx: WorkspaceFixture; className?: string; layout?: "list" | "chips" }) {
+export function ProjectNavList({ fx, className }: { fx: WorkspaceFixture; className?: string }) {
   return (
-    <nav className={`wproj wproj--${layout}${className ? ` ${className}` : ""}`} aria-label={t("variant.ws.projects")}>
-      {layout === "list" && <h2 className="wproj__title">{t("variant.ws.projects")}</h2>}
+    <nav className={`wproj${className ? ` ${className}` : ""}`} aria-label={t("variant.ws.projects")}>
+      <h2 className="wproj__title">{t("variant.ws.projects")}</h2>
       <ul>
         {fx.projects.map((project) => (
           <li key={project.id}>
@@ -350,7 +349,7 @@ export function ProjectNavList({ fx, className, layout = "list" }: { fx: Workspa
                   {t("variant.ws.running")}
                 </span>
               ) : (
-                layout === "list" && <span className="wproj__when">{t(project.openedKey)}</span>
+                <span className="wproj__when">{t(project.openedKey)}</span>
               )}
             </button>
           </li>
@@ -360,38 +359,24 @@ export function ProjectNavList({ fx, className, layout = "list" }: { fx: Workspa
         <Icon name="plus" size={16} />
         {t("variant.ws.newProject")}
       </button>
-      {layout === "list" && <p className="wproj__note">{t("variant.ws.oneAtATime")}</p>}
+      <p className="wproj__note">{t("variant.ws.oneAtATime")}</p>
     </nav>
   );
 }
 
 // ── 고양이 ──
 
-/** 작업 공간에서의 고양이 7마리 — 일하는 고양이는 fixture 대로, 나머지는 집 자리 그대로 (빈 프로젝트면 아무도 일하지 않음) */
-export function workspaceAgents(fx: WorkspaceFixture): CatAgent[] {
-  const working = new Map<CatId, Activity>(fx.working.map((w) => [w.cat, w.activity]));
-  return AGENTS.map((agent) => {
-    const now = working.get(agent.cat);
-    if (now) return { cat: agent.cat, activity: now };
-    if (agent.activity === "wheel" || agent.activity === "tower" || agent.activity === "window") {
-      return { cat: agent.cat, activity: "idle" as Activity };
-    }
-    return { cat: agent.cat, activity: agent.activity };
-  });
-}
-
 /** 일하는 고양이 이름 한 줄 (그림 옆 글로도 — 색 · 그림만으로 알리지 않음) */
-export function WorkingLine({ fx, inline = false }: { fx: WorkspaceFixture; inline?: boolean }) {
-  const Tag = inline ? "span" : "p";
-  if (fx.working.length === 0) return <Tag className="wworking">{t("variant.ws.noWorking")}</Tag>;
+export function WorkingLine({ fx }: { fx: WorkspaceFixture }) {
+  if (fx.working.length === 0) return <p className="wworking">{t("variant.ws.noWorking")}</p>;
   return (
-    <Tag className="wworking">
+    <p className="wworking">
       {fx.working.map((w, i) => (
         <Fragment key={w.cat}>
           {i > 0 && " · "}
-          <b>{t(`cat.${w.cat}.name`)}</b> {t(`cat.activity.${w.activity}`)}
+          <b>{t(`cat.${w.cat}.name`)}</b> {t(`cat.activity.${activityTextKey(w.activity)}`)}
         </Fragment>
       ))}
-    </Tag>
+    </p>
   );
 }

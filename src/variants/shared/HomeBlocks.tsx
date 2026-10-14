@@ -2,6 +2,7 @@
 import { t, tf } from "../../i18n/ko";
 import { formatTokens, PROJECTS, READINESS, type UsageFixture, type UsageWindow } from "../fixtures";
 import { Icon } from "./icons";
+import "./shared.css";
 
 function Meter({ label, window: w }: { label: string; window: UsageWindow }) {
   return (
@@ -47,7 +48,7 @@ export function UsageUnavailable() {
 }
 
 /** 5시간 · 주간 한도 막대 + 앱 세션 토큰 추정. 못 받으면 "확인할 수 없음" (D-24) */
-export function UsageBars({ usage, showTokens = true }: { usage: UsageFixture; showTokens?: boolean }) {
+export function UsageBars({ usage }: { usage: UsageFixture }) {
   return (
     <div className="usage">
       {usage.status === "ok" ? (
@@ -58,7 +59,7 @@ export function UsageBars({ usage, showTokens = true }: { usage: UsageFixture; s
       ) : (
         <UsageUnavailable />
       )}
-      {showTokens && <TokenEstimate usage={usage} />}
+      <TokenEstimate usage={usage} />
     </div>
   );
 }

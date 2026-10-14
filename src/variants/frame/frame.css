@@ -41,283 +41,12 @@ body:has(.vf) {
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
 }
-[data-variant="c"] .vf-h1 {
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-}
-.vf-h2 {
-  margin: var(--space-4) 0 var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-muted);
-}
-.vf-h2:first-child {
-  margin-top: 0;
-}
 .vf-muted {
   color: var(--color-text-muted);
 }
-.vf-small {
-  font-size: var(--text-xs);
-}
-.vf-eyebrow {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--accent-strong);
-}
-.vf-accent-text {
-  color: var(--accent-strong);
-  font-weight: var(--weight-semibold);
-}
-
-/* ── 카드 · 버튼 ── */
-.vf-card {
-  background: var(--color-surface);
-  border: var(--border-w-strong) solid var(--card-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: var(--space-6);
-}
-.vf-card > p {
-  margin: var(--space-2) 0;
-}
-
-.vf-btn {
-  height: var(--control-h-md);
-  padding: 0 var(--space-3);
-  border: var(--border-w-strong) solid var(--color-border-strong);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-weight: var(--weight-medium);
-  transition: background-color var(--dur-fast) var(--ease-standard);
-}
-.vf-btn:hover {
-  background: var(--color-surface-sunken);
-}
-.vf-btn--primary {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-5);
-  border-color: var(--accent-border);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: var(--weight-semibold);
-}
-[data-variant="c"] .vf-btn--primary {
-  box-shadow: 2px 2px 0 var(--ink-shadow);
-}
-.vf-btn--primary:hover {
-  background: var(--accent-hover);
-}
-
 .vf :focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
-}
-
-/* ── 작은 방 (시간대 토큰) ── */
-.vf-room {
-  position: relative;
-  overflow: hidden;
-  background: var(--house-wall);
-  border-radius: var(--radius-card);
-  border: var(--border-w-strong) solid var(--card-border);
-  min-height: 280px;
-}
-.vf-room__window {
-  position: absolute;
-  top: 10%;
-  left: 10%;
-  width: 22%;
-  aspect-ratio: 4 / 3;
-  display: flex;
-  flex-direction: column;
-  border: 6px solid var(--house-frame);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.vf-room__sky {
-  flex: 7;
-  background: var(--house-sky);
-}
-.vf-room__horizon {
-  flex: 3;
-  background: var(--house-horizon);
-}
-/* 창으로 드는 빛 — 창에서 바닥으로 비스듬히 */
-.vf-room__light {
-  position: absolute;
-  inset: 0;
-  background: var(--house-light);
-  opacity: var(--house-light-alpha);
-  clip-path: polygon(10% 10%, 32% 10%, 52% 100%, 22% 100%);
-  pointer-events: none;
-}
-.vf-room__floor {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 36%;
-  border-top: 8px solid var(--house-frame);
-  /* 나무 마루 — 판자 사이 선 (그라데이션이 아니라 딱 끊기는 줄) */
-  background: repeating-linear-gradient(
-    90deg,
-    var(--house-floor) 0 120px,
-    var(--house-floor-shade) 120px 122px
-  );
-}
-.vf-room__stage {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: var(--space-6);
-}
-
-/* 이름표 — 크림 알약, 시간대와 상관없이 같은 대비 */
-.vf-tag {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--house-tag-line);
-  border-radius: var(--radius-md);
-  background: var(--house-tag-bg);
-  color: var(--house-tag-text);
-  font-size: var(--text-xs);
-  line-height: var(--leading-tight);
-  white-space: nowrap;
-}
-.vf-tag b {
-  font-size: var(--text-sm);
-}
-.vf-tag small {
-  font-size: var(--text-xs);
-}
-
-/* ── ?screen=cats ── */
-.vf-cats {
-  box-sizing: border-box;
-  height: 100%;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: var(--space-4);
-  padding: var(--space-6) var(--space-8);
-}
-.vf-cats__head p {
-  margin: var(--space-1) 0 0;
-}
-.vf-cats__grid {
-  display: grid;
-  grid-template-columns: 1fr 248px;
-  gap: var(--space-6);
-  min-height: 0;
-}
-.vf-cats__row {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.vf-cats__cat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-}
-.vf-cats__side {
-  min-height: 0;
-  overflow: auto;
-}
-.vf-cats__spec {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-2);
-  background: var(--color-surface);
-  border: var(--border-w-strong) solid var(--card-border);
-  border-radius: var(--radius-card);
-}
-.vf-cats__spec + p {
-  margin: var(--space-2) 0 0;
-}
-.vf-times {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.vf-times__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--color-text-muted);
-}
-.vf-times__swatch {
-  width: 100%;
-  aspect-ratio: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-.vf-times__sky {
-  flex: 3;
-  background: var(--house-sky);
-}
-.vf-times__wall {
-  flex: 4;
-  background: var(--house-wall);
-}
-.vf-times__floor {
-  flex: 3;
-  background: var(--house-floor);
-}
-
-/* ── 아직 화면이 없는 시안: 토큰 미리보기 ── */
-.vf-preview {
-  box-sizing: border-box;
-  height: 100%;
-  display: grid;
-  grid-template-columns: 1fr minmax(360px, 420px);
-  gap: var(--space-6);
-  padding: var(--space-6);
-}
-.vf-preview__card {
-  overflow: auto;
-}
-.vf-preview__cats {
-  display: flex;
-  gap: var(--space-6);
-}
-.vf-preview__actions {
-  display: flex;
-  gap: var(--space-2);
-  margin: var(--space-5) 0 var(--space-4);
-}
-.vf-preview__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--color-border);
-}
-.vf-preview__row {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}
-.vf-preview__row.is-selected {
-  background: var(--accent-soft);
-  color: var(--accent-soft-text);
-  font-weight: var(--weight-semibold);
 }
 
 /* ── 아래 시안 막대 ── */
@@ -365,16 +94,73 @@ body:has(.vf) {
   box-shadow: inset 0 0 0 1px var(--color-border-strong);
 }
 
-/* 7마리 줄 — 최소 폭에서도 이름표가 잘리지 않게 */
-.vf-cats__room .vf-room__stage {
-  padding-left: var(--space-2);
-  padding-right: var(--space-2);
+/* ── ?screen=cats — 7마리 × 자세 9가지 ── */
+.vf-cats {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: var(--space-6) var(--space-8);
+}
+.vf-cats__head p {
+  margin: var(--space-1) 0 var(--space-4);
+}
+.vf-cats__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .vf-cats__row {
-  width: 100%;
-  justify-content: space-around;
-  gap: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-w-strong) solid var(--card-border);
+  border-radius: var(--radius-card);
 }
-.vf-cats__row .vf-tag {
-  padding: var(--space-1) var(--space-2);
+.vf-cats__who {
+  flex: none;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+.vf-cats__face {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+}
+.vf-cats__poses {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vf-cats__pose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+/* 발 기준점 = 아래 94% — 같은 바닥선 위에 서는지 보이게 얇은 선 */
+.vf-cats__frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 120px;
+  background: linear-gradient(to bottom, transparent calc(94% - 1px), var(--color-border-strong) calc(94% - 1px), var(--color-border-strong) 94%, transparent 94%);
 }

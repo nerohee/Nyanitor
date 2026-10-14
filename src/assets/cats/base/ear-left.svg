@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 왼쪽 귀(보는 사람 기준) · 회전축 96,50 · 머리보다 먼저 그려 밑동이 머리에 가려진다 -->
-  <path class="c-fur c-outline" d="M86 62 L88.6 37 Q89.4 30.5 94.4 34.6 L108 48 Z" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
-  <path class="c-inner-ear" d="M92 54 L93.4 41 Q93.8 38.6 95.6 40 L102 47 Z" fill="#f4b2a6"/>
-</svg>

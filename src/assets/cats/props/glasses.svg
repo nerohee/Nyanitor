@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 소품: 둥근 안경 (구름) — 머리 묶음, 눈 위 층 -->
-  <path class="c-line" d="M93.5 70 L86 66 M130.5 70 L138 66 M108.5 70.5 Q112 67.5 115.5 70.5" fill="none" stroke="#5a3a22" stroke-width="2" stroke-linecap="round"/>
-  <circle class="p-lens c-outline" cx="101" cy="71.5" r="7.5" fill="#ffffff" fill-opacity="0.25" stroke="#5a3a22" stroke-width="2"/>
-  <circle class="p-lens c-outline" cx="123" cy="71.5" r="7.5" fill="#ffffff" fill-opacity="0.25" stroke="#5a3a22" stroke-width="2"/>
-</svg>

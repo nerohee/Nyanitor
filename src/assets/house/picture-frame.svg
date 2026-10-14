@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 90">
-  <!-- 벽 그림 액자 -->
-  <rect class="h-frame h-outline" x="4" y="4" width="102" height="82" rx="6" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <rect class="h-paper" x="14" y="14" width="82" height="62" rx="2" fill="#fbf3e4"/>
-  <circle class="h-art-1" cx="40" cy="36" r="11" fill="#f0b847"/>
-  <path class="h-art-2" d="M14 76 L44 48 L62 64 L74 54 L96 76 Z" fill="#6e9ec0"/>
-</svg>

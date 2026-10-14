@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 40">
-  <!-- 방석 — 윗면 y≈12 (자는 고양이 자리 75,26 — 살짝 파묻힘) -->
-  <path class="h-fabric h-outline" d="M10 26 C10 12 30 8 75 8 C120 8 140 12 140 26 C140 34 130 37 75 37 C20 37 10 34 10 26 Z" fill="#e98a6f" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <path class="h-fabric-shade-stroke" d="M22 27 C50 33 100 33 128 27" fill="none" stroke="#c96f57" stroke-width="3" stroke-linecap="round"/>
-</svg>

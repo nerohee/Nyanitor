@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 몸통 · 숨쉬기 축 80,128 · 배(c-belly)는 몸통 안쪽 -->
-  <rect class="c-fur c-outline" x="34" y="80" width="88" height="48" rx="24" fill="#f2b36b" stroke="#5a3a22" stroke-width="3" stroke-linejoin="round"/>
-  <ellipse class="c-belly" cx="80" cy="120" rx="25" ry="5.5" fill="#fce6c8"/>
-</svg>

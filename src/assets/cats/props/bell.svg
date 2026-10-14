@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 소품: 방울 목걸이 (나비) — 머리 묶음, 턱 아래 -->
-  <path class="p-collar" d="M97 95.5 Q112 103 127 95.5" fill="none" stroke="#c6493a" stroke-width="5" stroke-linecap="round"/>
-  <circle class="p-bell c-outline" cx="112" cy="103" r="4.6" fill="#f0c040" stroke="#5a3a22" stroke-width="2"/>
-  <path class="c-line" d="M112 104.5 V107" fill="none" stroke="#5a3a22" stroke-width="1.6" stroke-linecap="round"/>
-</svg>

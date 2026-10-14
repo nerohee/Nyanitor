@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 130">
-  <!-- 화분 — 바닥 y=126 -->
-  <path class="h-plant h-outline" d="M40 82 C20 72 8 52 14 30 C30 36 40 56 40 82 Z" fill="#7fae6a" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <path class="h-plant-shade h-outline" d="M40 82 C58 68 72 48 66 26 C50 34 40 56 40 82 Z" fill="#5d8c4f" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <path class="h-plant h-outline" d="M40 84 C35 62 37 32 46 12 C53 34 49 62 40 84 Z" fill="#7fae6a" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <path class="h-pot h-outline" d="M18 82 H62 L56 126 H24 Z" fill="#d27b55" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <rect class="h-pot-shade h-outline" x="14" y="78" width="52" height="11" rx="4" fill="#b0603f" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-</svg>

@@ -1,58 +1,302 @@
-/* 집 사물 색 — class h-* → 시간대 변수 (tokens.css [data-time]) */
-.house-obj {
+/* 고양이 집 장면 — 배경 그림 한 장 + 물건 · 고양이 (발 y 순서) + 시간대 덧씌우기.
+   `--u` = 배경 원본 1px 가 화면에서 몇 px 인가. 상자를 꽉 채우고 넘치는 쪽을 자른다 (cat-art-guide.md §2.4). */
+.hs {
+  position: relative;
+  container-type: size;
+  overflow: hidden;
+  background: var(--scene-ground);
+  /* 보여 줄 영역 — HouseScene 이 정한다. 기본은 배경 전체 */
+  --cw: 1536;
+  --ch: 1024;
+  --cx: 768;
+  --cy: 512;
+}
+.hs-stage {
+  --u: max(calc(100cqw / var(--cw)), calc(100cqh / var(--ch)));
+  position: absolute;
+  left: calc(50cqw - var(--cx) * var(--u));
+  top: calc(50cqh - var(--cy) * var(--u));
+  width: calc(1536 * var(--u));
+  height: calc(1024 * var(--u));
+  /* z-index 가 장면 밖(카드)으로 새지 않게, 덧씌우기(multiply · screen)가 장면 안만 섞이게 */
+  isolation: isolate;
+}
+.hs-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: block;
-  overflow: visible;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
 }
-.house-obj .h-outline,
-.house-obj .h-line,
-.house-obj .h-line-stroke,
-.house-obj .h-tread { stroke: var(--house-line); }
-.house-obj .h-frame { fill: var(--house-frame); }
-.house-obj .h-frame-stroke { stroke: var(--house-frame); }
-.house-obj .h-frame-shade { fill: var(--house-frame-shade); }
-.house-obj .h-spoke { stroke: var(--house-frame-shade); }
-.house-obj .h-sky { fill: var(--house-sky); }
-.house-obj .h-horizon { fill: var(--house-horizon); }
-.house-obj .h-sun { fill: var(--house-sun); display: var(--house-sun-display); }
-.house-obj .h-moon,
-.house-obj .h-star { display: var(--house-night-display); }
-.house-obj .h-rope { fill: var(--house-rope); }
-.house-obj .h-rope-line { stroke: var(--house-rope-line); }
-.house-obj .h-fabric,
-.house-obj .h-lampshade { fill: var(--house-fabric); }
-.house-obj .h-fabric-shade-stroke { stroke: var(--house-fabric-shade); }
-.house-obj .h-metal { fill: var(--house-metal); }
-.house-obj .h-metal-shade-stroke { stroke: var(--house-metal-shade); }
-.house-obj .h-food { fill: var(--house-food); }
-.house-obj .h-sand { fill: var(--house-sand); }
-.house-obj .h-plastic { fill: var(--house-plastic); }
-.house-obj .h-plastic-shade { fill: var(--house-plastic-shade); }
-.house-obj .h-box { fill: var(--house-box); }
-.house-obj .h-box-shade { fill: var(--house-box-shade); }
-.house-obj .h-paper { fill: var(--house-paper); }
-.house-obj .h-art-1 { fill: var(--house-art-1); }
-.house-obj .h-art-2 { fill: var(--house-art-2); }
-.house-obj .h-plant { fill: var(--house-plant); }
-.house-obj .h-plant-shade { fill: var(--house-plant-shade); }
-.house-obj .h-pot { fill: var(--house-pot); }
-.house-obj .h-pot-shade { fill: var(--house-pot-shade); }
-.house-obj .h-bulb { fill: var(--house-bulb); }
-.house-obj .h-wheel-back { fill: var(--house-wall-shade); }
 
-/* 캣휠 — 일하는 중이면 바퀴가 돈다 (고양이가 오른쪽으로 달리면 바퀴 아래가 왼쪽으로 = 시계 방향) */
-.house-obj--cat-wheel .h-rotor {
-  transform-box: view-box;
-  transform-origin: 120px 118px;
+/* ── 시간대 덧씌우기 (tokens.css `--scene-*`) ── */
+.hs-tint {
+  position: absolute;
+  inset: 0;
+  background: var(--scene-tint);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  transition: opacity 2s var(--ease-standard), background-color 2s var(--ease-standard);
 }
-.house-obj--cat-wheel[data-spin="true"] .h-rotor {
-  animation: house-spin 2.4s linear infinite;
-  animation-play-state: var(--cat-play-state);
+.hs-tint--bg {
+  z-index: 1;
+  opacity: var(--scene-tint-bg);
 }
-@keyframes house-spin {
+.hs-tint--all {
+  z-index: 100000;
+  opacity: var(--scene-tint-all);
+}
+/* 불빛 층 — 아침 왼쪽 위 · 저녁 왼쪽 낮은 해 · 밤 방 안 등불 + 장지 */
+.hs-light {
+  --glow: color-mix(in srgb, var(--scene-light) calc(var(--scene-light-alpha) * 100%), transparent);
+  position: absolute;
+  inset: 0;
+  z-index: 100001;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.hs[data-time="morning"] .hs-light {
+  background: radial-gradient(ellipse 75% 65% at 0% 0%, var(--glow), transparent 70%);
+}
+.hs[data-time="evening"] .hs-light {
+  background: radial-gradient(ellipse 80% 55% at 0% 72%, var(--glow), transparent 72%);
+}
+.hs[data-time="night"] .hs-light {
+  background:
+    radial-gradient(ellipse 15% 22% at 77% 30%, var(--glow), transparent 100%),
+    radial-gradient(ellipse 9% 24% at 61% 18%, var(--glow), transparent 100%);
+}
+
+/* ── 물건 ── */
+.hs-prop {
+  position: absolute;
+  display: block;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 캣휠 판 — 바퀴 · 받침을 툇마루 방향(오른쪽 아래 약 26°)에 맞춰 기울인다: 가로를 줄이고 skewY. 안의 고양이는 기울지 않고 옆모습 그대로 */
+.hs-plane {
+  position: absolute;
+  transform: skewY(26deg) scaleX(0.89);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+/* 캣휠 — 고양이가 달리면 바퀴가 돈다 (오른쪽으로 달리면 바퀴 아래가 왼쪽으로 = 시계 방향), 3.2초에 한 바퀴 — 느긋하게 (P2-07 디자인 검수) */
+.hs-prop--wheel-ring[data-spin="true"] {
+  animation: hs-spin 3200ms linear infinite;
+  animation-play-state: var(--cat-play-state, running);
+}
+@keyframes hs-spin {
   to { transform: rotate(360deg); }
 }
+/* 공 — 굴러갔다 쉬었다 (고양이가 공을 칠 때만) */
+.hs-prop--ball[data-roll="true"] {
+  animation: hs-roll 4500ms ease-in-out infinite;
+  animation-play-state: var(--cat-play-state, running);
+}
+/* 한 바퀴 4.5초: 공은 짧은 거리(18px 안)를 앞뒤로 조금씩 왔다 갔다 한다 — 멀리 굴러가지 않는다 */
+@keyframes hs-roll {
+  0%, 5%, 100% { transform: translateX(0) rotate(0); }
+  13% { transform: translateX(calc(16 * var(--u))) rotate(140deg); }
+  22% { transform: translateX(calc(4 * var(--u))) rotate(40deg); }
+  34% { transform: translateX(calc(18 * var(--u))) rotate(160deg); }
+  46%, 90% { transform: translateX(calc(2 * var(--u))) rotate(20deg); }
+}
+/* 풍경 · 앞 덤불 — 바람에 살랑 (풍경 ±6° 3초, 덤불은 아주 작게) */
+.hs-prop--wind-chime {
+  animation: hs-chime 3s ease-in-out infinite alternate;
+  animation-play-state: var(--cat-play-state, running);
+}
+@keyframes hs-chime {
+  from { transform: rotate(-6deg); }
+  to { transform: rotate(6deg); }
+}
+.hs-prop--bush-front {
+  animation: hs-bush 3s ease-in-out infinite alternate;
+  animation-play-state: var(--cat-play-state, running);
+}
+@keyframes hs-bush {
+  from { transform: rotate(-0.6deg); }
+  to { transform: rotate(0.6deg); }
+}
+
+/* ── 고양이 ──
+   .hs-cat 은 발 기준점에 놓인 크기 없는 점 — 쌓임 맥락을 만들지 않아야 안쪽 층(z-index)이 장면의 깊이로 섞인다 */
+.hs-cat {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transition-property: left, top;
+  transition-timing-function: linear;
+}
+.hs-cat[data-instant="true"] {
+  transition: none;
+}
+.hs-cat__btn {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+.hs-cat__btn--static {
+  pointer-events: none;
+}
+/* 장면 위 포커스 — 어느 시간대 위에서도 보이게 짙은 선 + 크림 테 두 겹 */
+.hs-cat__btn:focus-visible {
+  outline: 2px solid var(--house-tag-text);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--house-tag-bg);
+}
+.hs-cat__plate {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+.hs-cat__lift {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+/* 밤 — 검은 털 윤곽이 어두운 바닥에 묻히지 않게 옅은 테 */
+.hs[data-time="night"] .hs-cat__plate {
+  filter: drop-shadow(0 0 calc(1.6 * var(--u)) var(--scene-rim));
+}
+/* 상자: 가끔 쏙 들어갔다 나온다 */
+.hs-cat__lift[data-peek="true"] {
+  animation: hs-peek 17s ease-in-out infinite;
+  animation-play-state: var(--cat-play-state, running);
+}
+@keyframes hs-peek {
+  0%, 62%, 100% { transform: translateY(0); }
+  68%, 80% { transform: translateY(calc(180 * var(--k))); }
+  86% { transform: translateY(calc(-10 * var(--k))); }
+  92% { transform: translateY(0); }
+}
+/* 접지 그림자 — 납작한 타원, 바닥색을 짙게 (흐림 없음) */
+.hs-cat__shadow {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: var(--house-cat-shadow);
+  pointer-events: none;
+}
+/* 사라졌다 나타나는 자리 바꾸기 */
+.hs-cat__btn,
+.hs-cat__shadow,
+.hs-tag {
+  transition: opacity 200ms var(--ease-standard);
+}
+/* 걷는 동안 깊이는 지나가는 y 를 따라 서서히 (z-index 가 발 y 에 비례) */
+.hs-cat[data-walking="true"] .hs-cat__btn,
+.hs-cat[data-walking="true"] .hs-cat__shadow {
+  transition: opacity 200ms var(--ease-standard), z-index var(--walk-ms) linear;
+}
+/* 이름표 — 평소엔 숨김, 마우스를 올리거나 키보드 포커스 · 정보 패널이 열렸을 때만 (접근 이름은 단추에 늘 있다) */
+.hs-tag {
+  opacity: 0;
+}
+.hs-cat__btn:hover ~ .hs-tag,
+.hs-cat__btn:focus-visible ~ .hs-tag,
+.hs-cat[data-open="true"] .hs-tag {
+  opacity: 1;
+}
+.hs-cat[data-fade="out"] .hs-cat__btn,
+.hs-cat[data-fade="out"] .hs-cat__shadow,
+.hs-cat[data-fade="out"] .hs-tag {
+  opacity: 0;
+}
+
+/* 이름표 — 크림 알약 (시간대와 상관없이 14.9:1). 덧씌우지 않는 맨 위층 */
+.hs-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, 6px);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--house-tag-line);
+  border-radius: var(--radius-pill);
+  background: var(--house-tag-bg);
+  color: var(--house-tag-text);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hs-tag b {
+  font-weight: var(--weight-bold);
+}
+.hs-tag__role {
+  font-weight: var(--weight-regular);
+}
+.hs-cat[data-open="true"] .hs-tag {
+  border-color: var(--house-tag-text);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* 정보 패널(말풍선) — 장면 밖 위층에 놓이고, 위치는 HouseScene 이 정한다 */
+.hs-bubble {
+  position: absolute;
+  width: 296px;
+}
+
+/* 걷는 동안 · 움직임 줄이기 */
 @media (prefers-reduced-motion: reduce) {
-  .house-obj * {
+  .hs-cat,
+  .hs-cat__btn,
+  .hs-cat__shadow,
+  .hs-tag,
+  .hs-tint {
+    transition: none;
+  }
+  .hs-prop,
+  .hs-cat__lift {
     animation: none !important;
   }
+}
+:root[data-motion="reduced"] .hs-cat,
+:root[data-motion="reduced"] .hs-tint {
+  transition: none;
+}
+:root[data-motion="reduced"] .hs-prop,
+:root[data-motion="reduced"] .hs-cat__lift {
+  animation: none !important;
+}
+
+/* 좌표 맞출 때만 (`debug`) */
+.hs-debug {
+  position: absolute;
+  left: -8px;
+  top: -1px;
+  width: 16px;
+  height: 2px;
+  background: #f0f;
+  pointer-events: none;
+}
+.hs-debug::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: -7px;
+  width: 2px;
+  height: 16px;
+  background: #f0f;
+}
+
+/* 캣휠 안의 고양이 — 판(skewY 26°) 안에서 발이 바퀴 바닥을 따르도록 절반(13°)만 살짝 기울인다 */
+.hs-cat[data-spot="wheel"] .hs-cat__lift {
+  transform: skewY(13deg);
+  transform-origin: 50% 94%;
 }

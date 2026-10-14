@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 100">
-  <!-- 상자 뒤쪽 (고양이 뒤 층). 고양이 자리 70,92 -->
-  <path class="h-box h-outline" d="M16 34 L30 10 H110 L124 34 Z" fill="#d9a86c" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <rect class="h-box-shade h-outline" x="16" y="32" width="108" height="30" fill="#b88850" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-</svg>

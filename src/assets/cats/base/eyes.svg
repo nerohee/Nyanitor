@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 눈 · 깜빡임 축 112,71 (세로로 접힘) -->
-  <ellipse class="c-eye" cx="101" cy="71" rx="4" ry="5.5" fill="#2b1d14"/>
-  <ellipse class="c-eye" cx="123" cy="71" rx="4" ry="5.5" fill="#2b1d14"/>
-  <circle class="c-eye-hi" cx="102.4" cy="69" r="1.6" fill="#ffffff"/>
-  <circle class="c-eye-hi" cx="124.4" cy="69" r="1.6" fill="#ffffff"/>
-</svg>

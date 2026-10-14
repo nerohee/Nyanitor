@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "agents": {
+    "main": "mukmul",
+    "designer": "mulgam",
+    "builder-ui": "danchu",
+    "builder-system": "nabi",
+    "tester": "kkaebi",
+    "helper": "dubu",
+    "reviewer": "gureum"
+  }
+}

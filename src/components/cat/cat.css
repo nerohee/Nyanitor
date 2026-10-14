@@ -1,214 +1,271 @@
-/* 고양이 부위 색 — 부위 SVG 의 class 에 털색 변수를 입힌다 (tokens.css [data-cat]).
-   CSS 가 SVG 의 fill · stroke 속성보다 우선이라, 그림 파일 안의 색은 "파일만 따로 열어 볼 때" 기본값일 뿐이다. */
-.cat {
+/* 자세 그림 고양이 — 판(512)이 부모 상자를 꽉 채운다. 발 기준점은 (50%, 94%).
+   움직임은 CSS 만: 숨쉬기 · 깜빡임 · 프레임 번갈기 · 끄덕임. 박자는 cat-art-guide.md §3.
+   멈춤: 창이 숨으면(`--cat-play-state: paused`) 그대로 멈추고, 움직임 줄이기면 첫 프레임에서 애니메이션 없음. */
+
+.cat-figure {
+  position: relative;
   display: block;
-  overflow: visible;
+  flex: none;
 }
-/* 얼굴만 — 판 밖(몸)을 자른다 */
-.cat.cat--face {
-  overflow: hidden;
+.cat-sprite {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* 숨쉬기 · 꼬리 박자를 마리마다 어긋나게 (--seed 0~1, CatFigure 가 정한다) */
+  --cat-offset: calc(var(--seed, 0) * -9s);
 }
-.cat .c-fur { fill: var(--cat-fur); }
-.cat .c-fur-shade { fill: var(--cat-fur-shade); }
-.cat .c-belly { fill: var(--cat-belly); }
-.cat .c-pattern { fill: var(--cat-pattern); }
-.cat .c-pattern-2 { fill: var(--cat-pattern-2); }
-.cat .c-eye { fill: var(--cat-eye); }
-.cat .c-eye-hi { fill: var(--cat-eye-hi); }
-.cat .c-nose { fill: var(--cat-nose); }
-.cat .c-inner-ear { fill: var(--cat-inner-ear); }
-.cat .c-blush { fill: var(--cat-blush); }
-.cat .c-outline { stroke: var(--cat-line); }
-.cat .c-line { stroke: var(--cat-line); fill: none; }
-.cat .c-outline-stroke { stroke: var(--cat-line); }
-.cat .c-fur-stroke { stroke: var(--cat-fur); }
-/* 소품 색은 고양이마다 같다 */
-.cat .p-beret { fill: var(--prop-beret); }
-.cat .p-collar { stroke: var(--prop-collar); }
-.cat .p-bell { fill: var(--prop-bell); }
-.cat .p-lens { fill: var(--prop-lens); fill-opacity: 0.3; }
-
-.cat__shadow {
-  fill: var(--house-cat-shadow);
+.cat-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
 }
-
-/* 몸 크기 (두부는 0.8) — 기준점(발)을 축으로 */
-.cat__figure {
-  transform-box: view-box;
-  transform-origin: 80px 148px;
-  transform: scale(var(--cat-scale, 1));
+.cat-layer[data-facing="left"] {
+  transform: scaleX(-1);
 }
-
-/* 규격 확인용 선 */
-.cat__guides rect,
-.cat__guides line {
-  fill: none;
-  stroke: var(--color-border-strong);
-  stroke-width: 0.6;
-  stroke-dasharray: 3 3;
+.cat-layer__body,
+.cat-layer__pose {
+  position: absolute;
+  inset: 0;
+  display: block;
 }
-.cat__anchor {
-  fill: var(--accent-strong);
+/* 숨쉬기는 발 기준점이 축 (판 아래 94%) */
+.cat-layer__body {
+  transform-origin: 50% 94%;
+}
+.cat-frame,
+.cat-blink {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 프레임이 여럿이면 첫 장만 보이다가 CSS 가 번갈아 보인다 */
+.cat-layer[data-frames="2"] .cat-frame:nth-child(2) {
+  opacity: 0;
+}
+.cat-blink {
+  opacity: 0;
 }
 
-/* ── 움직임 공통 (cat-assets.md §4). 축은 규격의 회전축 ── */
-.cat .cat__tail,
-.cat .cat__torso,
-.cat .cat__head,
-.cat .cat__ear,
-.cat .cat__eyes,
-.cat .cat__leg {
-  transform-box: view-box;
-  animation-iteration-count: infinite;
-  animation-play-state: var(--cat-play-state);
+/* 자세가 바뀔 때 0.2초 겹쳐 흐리기 */
+.cat-layer--entering {
+  animation: cat-fade-in 200ms var(--ease-standard) both;
 }
-.cat .cat__tail { transform-origin: 44px 104px; }
-.cat .cat__torso { transform-origin: 80px 128px; }
-.cat .cat__head { transform-origin: 112px 96px; }
-.cat .cat__ear--left { transform-origin: 96px 50px; }
-.cat .cat__ear--right { transform-origin: 128px 50px; }
-.cat .cat__eyes { transform-origin: 112px 71px; }
-.cat .cat__leg--back-far { transform-origin: 47px 112px; }
-.cat .cat__leg--front-far { transform-origin: 103px 112px; }
-.cat .cat__leg--back-near { transform-origin: 61px 114px; }
-.cat .cat__leg--front-near { transform-origin: 115px 114px; }
-.cat[data-pose="sit"] .cat__tail { transform-origin: 60px 138px; }
-.cat[data-pose="sit"] .cat__torso { transform-origin: 82px 146px; }
-.cat[data-pose="sleep"] .cat__tail { transform-origin: 30px 128px; }
-.cat[data-pose="sleep"] .cat__torso { transform-origin: 80px 148px; }
-
-/* 꼬리 · 숨 · 귀 · 깜빡임 — still 이 아니면 늘 */
-.cat:not([data-motion="still"]) .cat__tail {
-  animation-name: cat-tail;
-  animation-duration: var(--cat-dur-tail);
-  animation-timing-function: ease-in-out;
-  animation-direction: alternate;
+.cat-layer--leaving {
+  animation: cat-fade-out 200ms var(--ease-standard) both;
 }
-.cat:not([data-motion="still"]) .cat__torso {
-  animation-name: cat-breathe;
-  animation-duration: var(--cat-dur-breathe);
-  animation-timing-function: ease-in-out;
+@keyframes cat-fade-in {
+  from { opacity: 0; }
 }
-.cat:not([data-motion="still"]) .cat__ear--left {
-  animation-name: cat-ear-left;
-  animation-duration: var(--cat-dur-ear);
-}
-.cat:not([data-motion="still"]) .cat__ear--right {
-  animation-name: cat-ear-right;
-  animation-duration: calc(var(--cat-dur-ear) * 1.37);
-}
-.cat:not([data-motion="still"]):not([data-pose="sleep"]) .cat__eyes {
-  animation-name: cat-blink;
-  animation-duration: var(--cat-dur-blink);
-}
-.cat[data-motion="idle"]:not([data-pose="sleep"]) .cat__head {
-  animation-name: cat-head;
-  animation-duration: var(--cat-dur-breathe);
-  animation-timing-function: ease-in-out;
-}
-/* 자는 고양이: 숨이 느리고 깊다, 꼬리는 아주 조금 */
-.cat[data-pose="sleep"]:not([data-motion="still"]) .cat__torso {
-  animation-name: cat-breathe-deep;
-  animation-duration: calc(var(--cat-dur-breathe) * 1.5);
-}
-.cat[data-pose="sleep"]:not([data-motion="still"]) .cat__tail,
-.cat[data-pose="sit"]:not([data-motion="still"]) .cat__tail {
-  animation-name: cat-tail-small;
+@keyframes cat-fade-out {
+  to { opacity: 0; }
 }
 
-/* 걷기 · 달리기 — 대각선 다리끼리 같이 */
-.cat[data-motion="walk"] .cat__leg,
-.cat[data-motion="run"] .cat__leg {
-  animation-duration: var(--cat-dur-step);
-  animation-timing-function: ease-in-out;
+/* ── 숨쉬기: 세로 1.00 ↔ 1.03 (쉬는 자세 모두) ── */
+.cat-layer[data-motion="breathe"] .cat-layer__body,
+.cat-layer[data-motion="wait"] .cat-layer__body,
+.cat-layer[data-motion="look"] .cat-layer__body {
+  animation: cat-breathe var(--cat-dur-breathe) ease-in-out var(--cat-offset) infinite;
 }
-.cat[data-motion="run"] .cat__leg {
-  animation-duration: calc(var(--cat-dur-step) * 0.55);
-}
-.cat[data-motion="walk"] .cat__leg--front-far,
-.cat[data-motion="walk"] .cat__leg--back-near,
-.cat[data-motion="run"] .cat__leg--front-far,
-.cat[data-motion="run"] .cat__leg--back-near {
-  animation-name: cat-leg-a;
-}
-.cat[data-motion="walk"] .cat__leg--front-near,
-.cat[data-motion="walk"] .cat__leg--back-far,
-.cat[data-motion="run"] .cat__leg--front-near,
-.cat[data-motion="run"] .cat__leg--back-far {
-  animation-name: cat-leg-b;
-}
-.cat[data-motion="walk"] .cat__head,
-.cat[data-motion="run"] .cat__head {
-  animation-name: cat-bob;
-  animation-duration: calc(var(--cat-dur-step) / 2);
-  animation-timing-function: ease-in-out;
-}
-.cat[data-motion="run"] .cat__head {
-  animation-duration: calc(var(--cat-dur-step) * 0.275);
-}
-
-/* 밥 — 머리를 숙여 오물오물 */
-.cat[data-motion="eat"] .cat__head {
-  animation-name: cat-eat;
-  animation-duration: 900ms;
-  animation-timing-function: ease-in-out;
-}
-
-@keyframes cat-tail {
-  from { transform: rotate(-7deg); }
-  to { transform: rotate(9deg); }
-}
-@keyframes cat-tail-small {
-  from { transform: rotate(-2deg); }
-  to { transform: rotate(3deg); }
+.cat-layer[data-motion="sleep"] .cat-layer__body {
+  animation: cat-breathe 4500ms ease-in-out var(--cat-offset) infinite;
 }
 @keyframes cat-breathe {
   0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.035); }
-}
-@keyframes cat-breathe-deep {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.06); }
-}
-@keyframes cat-head {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1.2px); }
-}
-@keyframes cat-ear-left {
-  0%, 90%, 96%, 100% { transform: rotate(0); }
-  93% { transform: rotate(-14deg); }
-}
-@keyframes cat-ear-right {
-  0%, 60%, 66%, 100% { transform: rotate(0); }
-  63% { transform: rotate(12deg); }
-}
-@keyframes cat-blink {
-  0%, 94%, 100% { transform: scaleY(1); }
-  97% { transform: scaleY(0.1); }
-}
-@keyframes cat-leg-a {
-  0%, 100% { transform: rotate(18deg); }
-  50% { transform: rotate(-18deg); }
-}
-@keyframes cat-leg-b {
-  0%, 100% { transform: rotate(-18deg); }
-  50% { transform: rotate(18deg); }
-}
-@keyframes cat-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
-@keyframes cat-eat {
-  0%, 100% { transform: translate(6px, 26px) rotate(22deg); }
-  50% { transform: translate(6px, 28px) rotate(25deg); }
+  50% { transform: scaleY(1.03); }
 }
 
+/* 자기: 가끔 몸 뒤척임 (2°) */
+.cat-layer[data-motion="sleep"] .cat-layer__pose {
+  animation: cat-turn 21s ease-in-out var(--cat-offset) infinite;
+  transform-origin: 50% 94%;
+}
+@keyframes cat-turn {
+  0%, 82%, 100% { transform: rotate(0); }
+  88%, 94% { transform: rotate(2deg); }
+}
+
+/* 식빵: 가끔 0.5px 흔들림 */
+.cat-layer[data-pose="loaf"][data-motion="breathe"] .cat-layer__pose {
+  animation: cat-shake 13s ease-in-out var(--cat-offset) infinite;
+}
+@keyframes cat-shake {
+  0%, 90%, 100% { transform: translateX(0); }
+  93% { transform: translateX(0.3%); }
+  96% { transform: translateX(-0.3%); }
+}
+
+/* 깜빡임: 3~7초마다 0.15초 (sit ↔ sit-blink). 박자는 마리마다 다르다 */
+.cat-layer[data-pose="sit"] .cat-blink {
+  animation: cat-blink calc(3s + var(--seed, 0) * 4s) steps(1, end) var(--cat-offset) infinite;
+}
+.cat-layer[data-pose="sit"] .cat-frame:first-child {
+  animation: cat-blink-base calc(3s + var(--seed, 0) * 4s) steps(1, end) var(--cat-offset) infinite;
+}
+@keyframes cat-blink {
+  0%, 96% { opacity: 0; }
+  96.01%, 99% { opacity: 1; }
+  99.01%, 100% { opacity: 0; }
+}
+@keyframes cat-blink-base {
+  0%, 96% { opacity: 1; }
+  96.01%, 99% { opacity: 0; }
+  99.01%, 100% { opacity: 1; }
+}
+
+/* 몸 단장: 머리 쪽을 축으로 ±2° 0.5초 × 6번, 쉬었다 반복 */
+.cat-layer[data-motion="groom"] .cat-layer__pose {
+  animation: cat-groom 5s ease-in-out infinite;
+  transform-origin: 50% 45%;
+}
+@keyframes cat-groom {
+  0%, 60%, 100% { transform: rotate(0); }
+  5%, 15%, 25%, 35%, 45%, 55% { transform: rotate(-2deg); }
+  10%, 20%, 30%, 40%, 50% { transform: rotate(2deg); }
+}
+
+/* 밥: 아래로 2px 끄덕 (오물오물) 0.6초 */
+.cat-layer[data-motion="eat"] .cat-layer__pose {
+  animation: cat-nod 600ms ease-in-out infinite alternate;
+}
+@keyframes cat-nod {
+  to { transform: translateY(1.4%); }
+}
+
+/* 둘러보기 (캣타워): 몸 ±3° 천천히 4초 */
+.cat-layer[data-motion="look"] .cat-layer__pose {
+  animation: cat-look 4s ease-in-out var(--cat-offset) infinite alternate;
+  transform-origin: 50% 94%;
+}
+@keyframes cat-look {
+  from { transform: rotate(-3deg); }
+  to { transform: rotate(3deg); }
+}
+
+/* 기다림 (신발 돌): 가끔 위로 1px 들썩 */
+.cat-layer[data-motion="wait"] .cat-layer__pose {
+  animation: cat-hop 7s ease-out var(--cat-offset) infinite;
+}
+@keyframes cat-hop {
+  0%, 90%, 100% { transform: translateY(0); }
+  94% { transform: translateY(-0.7%); }
+}
+
+/* 뒷모습 (방 안): 아주 느린 좌우 1° */
+.cat-layer[data-motion="back"] .cat-layer__pose {
+  animation: cat-sway 6s ease-in-out var(--cat-offset) infinite alternate;
+  transform-origin: 50% 94%;
+}
+@keyframes cat-sway {
+  from { transform: rotate(-1deg); }
+  to { transform: rotate(1deg); }
+}
+
+/* ── 프레임 번갈기 ── */
+/* 걷기 0.28초 박자 · 달리기 0.3초 박자 — 두 프레임이 계속 번갈아 (통통한 고양이답게 느긋하게, P2-07 디자인 검수) */
+.cat-layer[data-motion="walk"][data-frames="2"] .cat-frame:first-child {
+  animation: cat-flip-a 560ms steps(1, end) infinite;
+}
+.cat-layer[data-motion="walk"][data-frames="2"] .cat-frame:nth-child(2) {
+  animation: cat-flip-b 560ms steps(1, end) infinite;
+}
+.cat-layer[data-motion="run"][data-frames="2"] .cat-frame:first-child {
+  animation: cat-flip-a 600ms steps(1, end) infinite;
+}
+.cat-layer[data-motion="run"][data-frames="2"] .cat-frame:nth-child(2) {
+  animation: cat-flip-b 600ms steps(1, end) infinite;
+}
+@keyframes cat-flip-a {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes cat-flip-b {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+}
+/* 걸을 때 몸 위아래 1px, 달릴 때 2px */
+.cat-layer[data-motion="walk"] .cat-layer__pose {
+  animation: cat-bob 280ms ease-in-out infinite alternate;
+}
+.cat-layer[data-motion="run"] .cat-layer__pose {
+  animation: cat-bob-big 300ms ease-in-out infinite alternate;
+}
+@keyframes cat-bob {
+  to { transform: translateY(-0.7%); }
+}
+@keyframes cat-bob-big {
+  to { transform: translateY(-1.4%); }
+}
+
+/* 공 치기: 0.35초 × 3번 번갈아 치고, 쉬었다 다시 (4.5초 한 바퀴) */
+.cat-layer[data-motion="play"][data-frames="2"] .cat-frame:first-child {
+  animation: cat-play-a 4500ms steps(1, end) infinite;
+}
+.cat-layer[data-motion="play"][data-frames="2"] .cat-frame:nth-child(2) {
+  animation: cat-play-b 4500ms steps(1, end) infinite;
+}
+@keyframes cat-play-a {
+  0% { opacity: 1; }
+  7.8% { opacity: 0; }
+  15.6% { opacity: 1; }
+  23.3% { opacity: 0; }
+  31.1% { opacity: 1; }
+  38.9% { opacity: 0; }
+  46.7% { opacity: 1; }
+}
+@keyframes cat-play-b {
+  0% { opacity: 0; }
+  7.8% { opacity: 1; }
+  15.6% { opacity: 0; }
+  23.3% { opacity: 1; }
+  31.1% { opacity: 0; }
+  38.9% { opacity: 1; }
+  46.7% { opacity: 0; }
+}
+
+/* 창이 숨으면 멈춤 — 위의 animation 줄임 표기가 play-state 를 되돌리므로 마지막에 !important 로 */
+.cat-sprite .cat-layer,
+.cat-sprite .cat-layer__body,
+.cat-sprite .cat-layer__pose,
+.cat-sprite .cat-frame,
+.cat-sprite .cat-blink {
+  animation-play-state: var(--cat-play-state, running) !important;
+}
+
+/* 움직임 줄이기: 애니메이션 없이 첫 프레임 (창이 숨은 경우는 위의 paused 로 충분) */
 @media (prefers-reduced-motion: reduce) {
-  .cat * {
+  .cat-layer,
+  .cat-layer__body,
+  .cat-layer__pose,
+  .cat-layer .cat-frame,
+  .cat-layer .cat-blink {
     animation: none !important;
   }
-  /* 밥 먹는 고양이는 멈춰도 숙인 자세 그대로 */
-  .cat[data-motion="eat"] .cat__head {
-    transform: translate(6px, 26px) rotate(22deg);
-  }
+}
+:root[data-motion="reduced"] .cat-layer,
+:root[data-motion="reduced"] .cat-layer__body,
+:root[data-motion="reduced"] .cat-layer__pose,
+:root[data-motion="reduced"] .cat-layer .cat-frame,
+:root[data-motion="reduced"] .cat-layer .cat-blink {
+  animation: none !important;
+}
+
+/* ── 얼굴 아바타 (채팅 · 목록) — sit 그림의 머리 부분만 ── */
+.cat-face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+}
+.cat-face img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }

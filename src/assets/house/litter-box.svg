@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 60">
-  <!-- 모래 화장실 — 바닥 y=58 -->
-  <path class="h-sand" d="M14 22 C40 13 90 13 116 22 V30 H14 Z" fill="#ecdcb4"/>
-  <path class="h-plastic h-outline" d="M6 22 H124 L118 53 C117 56.5 114 57.5 111 57.5 H19 C16 57.5 13 56.5 12 53 Z" fill="#a9c7b0" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <rect class="h-plastic-shade" x="9" y="23.5" width="112" height="6" rx="3" fill="#86a98f"/>
-</svg>

@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <!-- 꼬리 · 기준점(회전축) 44,104 · 선 두 겹: 바깥 선(c-outline-stroke) 위에 털(c-fur-stroke) -->
-  <path class="c-outline-stroke" d="M44 104 C27 103 16 88 19 68 C21 57 27 50 34 52" fill="none" stroke="#5a3a22" stroke-width="13" stroke-linecap="round"/>
-  <path class="c-fur-stroke" d="M44 104 C27 103 16 88 19 68 C21 57 27 50 34 52" fill="none" stroke="#f2b36b" stroke-width="7" stroke-linecap="round"/>
-</svg>

@@ -1,24 +1,24 @@
 import { useEffect, useRef } from "react";
-import { CatFigure } from "../../components/cat/CatFigure";
+import { PANEL_ID } from "../../components/house/useCatPanel";
+import { activityTextKey } from "../../components/house/spots";
 import { t } from "../../i18n/ko";
-import { isWorking, type AgentFixture } from "../fixtures";
+import { isWorking, type Activity, type AgentFixture } from "../fixtures";
 import { Icon } from "./icons";
-import { PANEL_ID } from "./scene";
+import "./shared.css";
 
 interface CatInfoProps {
   agent: AgentFixture;
+  /** 지금 있는 자리 = 하는 일 */
+  activity: Activity;
   onClose: () => void;
-  /** 닫기 단추 모양 — x 아이콘 / "집으로" 글자 단추 */
-  closeStyle?: "icon" | "back";
-  portrait?: boolean;
   className?: string;
 }
 
 /** 고양이 정보 패널 내용: 이름 · 에이전트 · 역할 · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일 · 고치기 (D-07) */
-export function CatInfo({ agent, onClose, closeStyle = "icon", portrait = false, className }: CatInfoProps) {
+export function CatInfo({ agent, activity, onClose, className }: CatInfoProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const cat = agent.cat;
-  const working = isWorking(agent.activity);
+  const working = isWorking(activity);
 
   // 열리면 제목으로 포커스 — 화면 읽기 프로그램이 바로 읽고, Tab 이 패널 안으로 이어진다
   useEffect(() => {
@@ -27,18 +27,7 @@ export function CatInfo({ agent, onClose, closeStyle = "icon", portrait = false,
 
   return (
     <section id={PANEL_ID} className={`cat-info${className ? ` ${className}` : ""}`} aria-labelledby={`${PANEL_ID}-title`}>
-      {closeStyle === "back" && (
-        <button type="button" className="hbtn hbtn--ghost cat-info__back" onClick={onClose}>
-          <Icon name="back" size={18} />
-          {t("variant.c.back")}
-        </button>
-      )}
       <header className="cat-info__head">
-        {portrait && (
-          <span className="cat-info__portrait" aria-hidden="true">
-            <CatFigure cat={cat} pose="sit" motion="idle" shadow={false} />
-          </span>
-        )}
         <div className="cat-info__title">
           <h2 id={`${PANEL_ID}-title`} ref={heading} tabIndex={-1}>
             {t(`cat.${cat}.name`)}
@@ -49,17 +38,15 @@ export function CatInfo({ agent, onClose, closeStyle = "icon", portrait = false,
             <code>{agent.agentFile ?? t("cat.info.main")}</code>
           </p>
         </div>
-        {closeStyle === "icon" && (
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("cat.info.close")}>
-            <Icon name="close" size={18} />
-          </button>
-        )}
+        <button type="button" className="icon-btn" onClick={onClose} aria-label={t("cat.info.close")}>
+          <Icon name="close" size={18} />
+        </button>
       </header>
 
       <p className="cat-info__status" data-working={working ? "true" : undefined}>
         <span className="status-dot" aria-hidden="true" />
         <span>
-          {t(working ? "cat.info.working" : "cat.info.resting")} — {t(`cat.activity.${agent.activity}`)}
+          {t(working ? "cat.info.working" : "cat.info.resting")} — {t(`cat.activity.${activityTextKey(activity)}`)}
         </span>
       </p>
 

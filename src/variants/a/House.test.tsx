@@ -7,16 +7,16 @@ describe("시안 a 고양이 집 — 키보드", () => {
   it("Tab 으로 고양이를 왼쪽부터 차례로 고르고, Enter 로 정보 패널을 열고, Esc 로 닫으면 그 고양이로 포커스가 돌아온다", () => {
     render(<House time="day" usage={USAGE_OK} work="running" />);
 
-    // 고양이 7마리가 모두 Tab 으로 닿는 단추이고, 순서는 화면 왼쪽 → 오른쪽
+    // 고양이 7마리가 모두 Tab 으로 닿는 단추이고, 순서는 처음 모습의 화면 왼쪽 → 오른쪽 (자리를 옮겨 다녀도 바뀌지 않는다)
     const scene = screen.getByRole("region", { name: "고양이들" });
     const cats = within(scene).getAllByRole("button");
     expect(cats.map((button) => button.getAttribute("aria-label")?.split(",")[0])).toEqual([
-      "먹물",
+      "단추",
       "깨비",
       "나비",
-      "두부",
       "물감",
-      "단추",
+      "먹물",
+      "두부",
       "구름",
     ]);
     cats.forEach((button) => expect(button).not.toHaveAttribute("tabindex", "-1"));
@@ -30,7 +30,7 @@ describe("시안 a 고양이 집 — 키보드", () => {
 
     const panel = screen.getByRole("region", { name: "나비" });
     expect(nabi).toHaveAttribute("aria-expanded", "true");
-    expect(within(panel).getByText("Opus")).toBeInTheDocument();
+    expect(within(panel).getByText("Sonnet")).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: /고치기/ })).toBeInTheDocument();
     expect(within(panel).getByRole("heading", { name: "나비" })).toHaveFocus();
 

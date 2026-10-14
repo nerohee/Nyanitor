@@ -314,6 +314,14 @@ class CallShape(GenerateCase):
         self.assertEqual(call["kind"], "edit")
         self.assertEqual([n.rsplit("/", 1)[-1] for n in call["image_names"]], ["style-cat.png", "style-scene.png"])
         self.assertTrue(all(h.startswith(b"\x89PNG") for h in call["image_heads"]))
+        self.assertEqual(call["image_types"], ["image/png", "image/png"])
+
+    def test_webp_reference_is_sent_with_webp_type(self):
+        # WebP 참조를 종류 없이 보내면 API 가 application/octet-stream 으로 거부한다 (2026-10-14 실제 400)
+        from generate import _ref_mimetype
+        self.assertEqual(_ref_mimetype("scripts/cat-art/refs/bg-hanok.webp"), "image/webp")
+        self.assertEqual(_ref_mimetype("a/b.PNG"), "image/png")
+        self.assertEqual(_ref_mimetype("a/b.jpeg"), "image/jpeg")
 
     def test_then_ref_as_uses_previous_result_in_same_run(self):
         client = FakeClient(png=make_png(6, 6))

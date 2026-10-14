@@ -24,7 +24,6 @@ export interface ScreenProps {
 /**
  * 시안 폴더 `src/variants/<한 글자>/index.tsx` 가 내보내는 것.
  * 폴더를 더하면 registry 가 알아서 붙이고, 폴더째 지우면 빠진다.
- * House · Workspace 가 아직 없으면 틀이 토큰 미리보기를 대신 보여 준다.
  */
 export interface VariantModule {
   meta: VariantMeta;

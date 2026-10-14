@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 30">
-  <!-- 벽 선반 — 윗면 y=6 (자리 x, 6) -->
-  <rect class="h-frame h-outline" x="4" y="6" width="142" height="12" rx="4" fill="#a87650" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-  <path class="h-frame-shade h-outline" d="M22 18 L30 28 H36 L32 18 Z M128 18 L120 28 H114 L118 18 Z" fill="#8c5f3e" stroke="#5a3e2b" stroke-width="3" stroke-linejoin="round"/>
-</svg>

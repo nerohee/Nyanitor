@@ -1,0 +1,1721 @@
+{
+  "version": 1,
+  "style": "Cozy 2D casual mobile game illustration. Simple soft flat illustration with thin, even, warm dark-brown outlines (never black, never sketchy), flat pastel warm colors, minimal shading (at most one slightly darker flat tone on undersides), no gradients, no paper or noise texture, no glossy highlights, no 3D rendering, no realistic fur. Clean, charming and calm, gentle afternoon light. Match the drawing style of the reference images exactly. No text, no letters, no numbers, no logos, no watermark, no signature, no sparkle or star marks.",
+  "references": {
+    "style-scene": "docs/01-planning/design/reference/style-scene.png",
+    "style-cat": "docs/01-planning/design/reference/style-cat-sheet.png",
+    "layout-draft": "docs/01-planning/design/reference/bg-layout-draft-japanese.png",
+    "nabi-pose-sit": "art/raw/cats/nabi/sit.png",
+    "nabi-pose-sit-blink": "art/raw/cats/nabi/sit-blink.png",
+    "nabi-pose-loaf": "art/raw/cats/nabi/loaf.png",
+    "nabi-pose-sleep": "art/raw/cats/nabi/sleep.png",
+    "nabi-pose-walk-1": "art/raw/cats/nabi/walk-1.png",
+    "nabi-pose-walk-2": "art/raw/cats/nabi/walk-2.png",
+    "nabi-pose-eat": "art/raw/cats/nabi/eat.png",
+    "nabi-pose-back": "art/raw/cats/nabi/back.png",
+    "nabi-pose-play-1": "art/raw/cats/nabi/play-1.png",
+    "nabi-pose-play-2": "art/raw/cats/nabi/play-2.png",
+    "nabi-pose-run-1": "art/raw/cats/nabi/run-1.png",
+    "nabi-pose-run-2": "art/raw/cats/nabi/run-2.png",
+    "nabi-pose-groom": "art/raw/cats/nabi/groom.png",
+    "ref-sheet-nabi": "scripts/cat-art/refs/sheet-nabi.webp",
+    "ref-sheet-mulgam": "scripts/cat-art/refs/sheet-mulgam.webp",
+    "ref-sheet-danchu": "scripts/cat-art/refs/sheet-danchu.webp",
+    "ref-sheet-mukmul": "scripts/cat-art/refs/sheet-mukmul.webp",
+    "ref-sheet-kkaebi": "scripts/cat-art/refs/sheet-kkaebi.webp",
+    "ref-sheet-dubu": "scripts/cat-art/refs/sheet-dubu.webp",
+    "ref-sheet-gureum": "scripts/cat-art/refs/sheet-gureum.webp",
+    "ref-bg-hanok": "scripts/cat-art/refs/bg-hanok.webp"
+  },
+  "items": [
+    {
+      "id": "cat-nabi-sheet",
+      "group": "test",
+      "prompt": "Character sheet for a 2D casual mobile game. One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Show the same cat in 6 poses in a 3 by 2 grid with generous space between them: sitting front view, loaf pose, sleeping curled up, walking side view facing right, eating from a small bowl, seen from behind looking up. Consistent proportions in every pose, small dot eyes, tiny mouth. Follow the reference character sheet closely for body shape, face, line weight and colors. Plain white background.",
+      "refs": [
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/nabi/sheet.png",
+      "then_ref_as": "cat-nabi"
+    },
+    {
+      "id": "bg-draft",
+      "group": "test",
+      "prompt": "Redraw the reference image as an empty, cozy traditional Korean hanok courtyard (madang) and the wooden porch of a hanok house, instead of a Japanese garden. Keep exactly the same slightly elevated three-quarter top-down camera angle, wide landscape composition, sizes and the position of every area, with front faces of things facing the viewer and their top surfaces visible. Replace, area by area: the bamboo fence in the top-left with a low traditional Korean stone-and-clay wall (dolldam) capped with a row of small dark roof tiles, keeping the soft round shrubs and the small tree (make it a small Korean pine); the stone lantern on the left with a small group of round brown Korean earthenware crocks (jangdokdae) standing on a low flat stone platform; the house in the upper-right with a hanok: the edge of a gently curved dark-grey giwa tiled roof eave at the very top-right corner, warm natural-wood posts and beams, white plaster walls, and paper lattice doors with a simple vertical-bar pattern (ttisal changho) folded open so a warm ondol room with a glossy pale-yellow oiled-paper floor (jangpan) is visible inside; the long light-wood porch becomes a hanok toenmaru with the same thin plank lines and the same diagonal path from the upper middle down to the right edge; keep the long flat stepping stone (tetdol) in front of the middle of the porch, with a pair of white Korean rubber shoes (gomusin) on it instead of sandals; the lawn becomes a soft madang of green grass with a few patches of pale packed earth and small grass tufts, keeping the round stepping stones leading from the bottom-center up to the porch. The bottom fifth of the image is calm madang and stepping stones only, and the top-left corner is wall and shrubs only, because interface cards will sit on top of those areas. Leave clear open spaces on the porch, inside the ondol room and on the madang for furniture that will be added later. No cats, no animals, no people, no cushions, no boxes, no bowls, no toys, no cat furniture. Gentle afternoon light. Nothing Japanese: no tatami, no shoji screens, no stone lanterns, no bamboo fence, no straw sandals, no paper wind-chime strips.",
+      "refs": [
+        "layout-draft"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/house/bg-draft.png",
+      "then_ref_as": "bg-draft"
+    },
+    {
+      "id": "cat-mulgam-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. Accessory: a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/mulgam/sheet.png",
+      "then_ref_as": "cat-mulgam"
+    },
+    {
+      "id": "cat-danchu-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. Accessory: no accessory. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/danchu/sheet.png",
+      "then_ref_as": "cat-danchu"
+    },
+    {
+      "id": "cat-mukmul-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. Accessory: no accessory. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background. Match the body size, head size and proportions of the first reference sheet exactly in every pose.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/mukmul/sheet.png",
+      "then_ref_as": "cat-mukmul"
+    },
+    {
+      "id": "cat-kkaebi-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. Accessory: no accessory. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/kkaebi/sheet.png",
+      "then_ref_as": "cat-kkaebi"
+    },
+    {
+      "id": "cat-dubu-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. Accessory: no accessory. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/dubu/sheet.png",
+      "then_ref_as": "cat-dubu"
+    },
+    {
+      "id": "cat-gureum-sheet",
+      "group": "sheets",
+      "prompt": "Character sheet for a 2D casual mobile game. Redraw the character from the first reference sheet as a different cat: keep exactly the same body shape, head size, face, proportions, line weight and the same 6 poses in the same grid layout, and change only the coat and accessory. New coat: solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. Accessory: small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Plain white background.",
+      "refs": [
+        "cat-nabi",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/cats/gureum/sheet.png",
+      "then_ref_as": "cat-gureum"
+    },
+    {
+      "id": "cat-nabi-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/sit.png",
+      "then_ref_as": "cat-nabi-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/sit.webp"
+    },
+    {
+      "id": "cat-nabi-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi-sit",
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/sit-blink.webp"
+    },
+    {
+      "id": "cat-nabi-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/loaf.webp"
+    },
+    {
+      "id": "cat-nabi-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/sleep.webp"
+    },
+    {
+      "id": "cat-nabi-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/walk-1.png",
+      "then_ref_as": "cat-nabi-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/walk-1.webp"
+    },
+    {
+      "id": "cat-nabi-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi-walk-1",
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/walk-2.webp"
+    },
+    {
+      "id": "cat-nabi-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/eat.webp"
+    },
+    {
+      "id": "cat-nabi-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/back.webp"
+    },
+    {
+      "id": "cat-nabi-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/play-1.png",
+      "then_ref_as": "cat-nabi-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/play-1.webp"
+    },
+    {
+      "id": "cat-nabi-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi-play-1",
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/play-2.webp"
+    },
+    {
+      "id": "cat-nabi-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/run-1.png",
+      "then_ref_as": "cat-nabi-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/run-1.webp"
+    },
+    {
+      "id": "cat-nabi-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi-run-1",
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/run-2.webp"
+    },
+    {
+      "id": "cat-nabi-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with an orange tabby: warm apricot-orange fur with darker orange stripes on the forehead, cheeks, back, legs and tail; cream-white muzzle, chest and belly; small dark-brown dot eyes. It wears a small red collar with a little gold bell. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-nabi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/nabi/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/nabi/groom.webp"
+    },
+    {
+      "id": "cat-mulgam-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/sit.png",
+      "then_ref_as": "cat-mulgam-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/sit.webp",
+      "size_like": "cat-nabi-sit"
+    },
+    {
+      "id": "cat-mulgam-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam-sit",
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/sit-blink.webp",
+      "size_like": "cat-nabi-sit-blink"
+    },
+    {
+      "id": "cat-mulgam-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/loaf.webp",
+      "size_like": "cat-nabi-loaf"
+    },
+    {
+      "id": "cat-mulgam-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/sleep.webp",
+      "size_like": "cat-nabi-sleep"
+    },
+    {
+      "id": "cat-mulgam-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/walk-1.png",
+      "then_ref_as": "cat-mulgam-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/walk-1.webp",
+      "size_like": "cat-nabi-walk-1"
+    },
+    {
+      "id": "cat-mulgam-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam-walk-1",
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/walk-2.webp",
+      "size_like": "cat-nabi-walk-2"
+    },
+    {
+      "id": "cat-mulgam-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/eat.webp",
+      "size_like": "cat-nabi-eat"
+    },
+    {
+      "id": "cat-mulgam-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/back.webp",
+      "size_like": "cat-nabi-back"
+    },
+    {
+      "id": "cat-mulgam-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/play-1.png",
+      "then_ref_as": "cat-mulgam-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/play-1.webp",
+      "size_like": "cat-nabi-play-1"
+    },
+    {
+      "id": "cat-mulgam-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam-play-1",
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/play-2.webp",
+      "size_like": "cat-nabi-play-2"
+    },
+    {
+      "id": "cat-mulgam-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/run-1.png",
+      "then_ref_as": "cat-mulgam-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/run-1.webp",
+      "size_like": "cat-nabi-run-1"
+    },
+    {
+      "id": "cat-mulgam-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam-run-1",
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/run-2.webp",
+      "size_like": "cat-nabi-run-2"
+    },
+    {
+      "id": "cat-mulgam-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a calico: white base fur with large soft patches of orange and dark charcoal (an orange patch over one ear and eye, a charcoal patch on the other ear, mixed patches on the back and tail); white muzzle, chest and paws; small dark-brown dot eyes. It wears a small persimmon-orange beret tilted to one side on its head. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-mulgam"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mulgam/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/mulgam/groom.webp",
+      "size_like": "cat-nabi-groom"
+    },
+    {
+      "id": "cat-danchu-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/sit.png",
+      "then_ref_as": "cat-danchu-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/sit.webp",
+      "size_like": "cat-nabi-sit"
+    },
+    {
+      "id": "cat-danchu-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu-sit",
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/sit-blink.webp",
+      "size_like": "cat-nabi-sit-blink"
+    },
+    {
+      "id": "cat-danchu-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/loaf.webp",
+      "size_like": "cat-nabi-loaf"
+    },
+    {
+      "id": "cat-danchu-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/sleep.webp",
+      "size_like": "cat-nabi-sleep"
+    },
+    {
+      "id": "cat-danchu-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/walk-1.png",
+      "then_ref_as": "cat-danchu-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/walk-1.webp",
+      "size_like": "cat-nabi-walk-1"
+    },
+    {
+      "id": "cat-danchu-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu-walk-1",
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/walk-2.webp",
+      "size_like": "cat-nabi-walk-2"
+    },
+    {
+      "id": "cat-danchu-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/eat.webp",
+      "size_like": "cat-nabi-eat"
+    },
+    {
+      "id": "cat-danchu-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/back.webp",
+      "size_like": "cat-nabi-back"
+    },
+    {
+      "id": "cat-danchu-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/play-1.png",
+      "then_ref_as": "cat-danchu-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/play-1.webp",
+      "size_like": "cat-nabi-play-1"
+    },
+    {
+      "id": "cat-danchu-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu-play-1",
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/play-2.webp",
+      "size_like": "cat-nabi-play-2"
+    },
+    {
+      "id": "cat-danchu-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/run-1.png",
+      "then_ref_as": "cat-danchu-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/run-1.webp",
+      "size_like": "cat-nabi-run-1"
+    },
+    {
+      "id": "cat-danchu-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu-run-1",
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/run-2.webp",
+      "size_like": "cat-nabi-run-2"
+    },
+    {
+      "id": "cat-danchu-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a tuxedo: soft charcoal-black fur (a deep warm charcoal, not pure black, so the brown outline stays visible) with a clean white chest bib, white muzzle and four white socks; small round green eyes with a dark pupil dot. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round colored eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-danchu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/danchu/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/danchu/groom.webp",
+      "size_like": "cat-nabi-groom"
+    },
+    {
+      "id": "cat-mukmul-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-sit"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/sit.png",
+      "then_ref_as": "cat-mukmul-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-sit",
+      "final": "src/assets/cats/mukmul/sit.webp"
+    },
+    {
+      "id": "cat-mukmul-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul-sit",
+        "cat-mukmul",
+        "nabi-pose-sit-blink"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-sit-blink",
+      "final": "src/assets/cats/mukmul/sit-blink.webp"
+    },
+    {
+      "id": "cat-mukmul-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-loaf"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-loaf",
+      "final": "src/assets/cats/mukmul/loaf.webp"
+    },
+    {
+      "id": "cat-mukmul-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-sleep"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-sleep",
+      "final": "src/assets/cats/mukmul/sleep.webp"
+    },
+    {
+      "id": "cat-mukmul-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-walk-1"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/walk-1.png",
+      "then_ref_as": "cat-mukmul-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-walk-1",
+      "final": "src/assets/cats/mukmul/walk-1.webp"
+    },
+    {
+      "id": "cat-mukmul-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul-walk-1",
+        "cat-mukmul",
+        "nabi-pose-walk-2"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-walk-2",
+      "final": "src/assets/cats/mukmul/walk-2.webp"
+    },
+    {
+      "id": "cat-mukmul-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-eat"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-eat",
+      "final": "src/assets/cats/mukmul/eat.webp"
+    },
+    {
+      "id": "cat-mukmul-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-back"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-back",
+      "final": "src/assets/cats/mukmul/back.webp"
+    },
+    {
+      "id": "cat-mukmul-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-play-1"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/play-1.png",
+      "then_ref_as": "cat-mukmul-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-play-1",
+      "final": "src/assets/cats/mukmul/play-1.webp"
+    },
+    {
+      "id": "cat-mukmul-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul-play-1",
+        "cat-mukmul",
+        "nabi-pose-play-2"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-play-2",
+      "final": "src/assets/cats/mukmul/play-2.webp"
+    },
+    {
+      "id": "cat-mukmul-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-run-1"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/run-1.png",
+      "then_ref_as": "cat-mukmul-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-run-1",
+      "final": "src/assets/cats/mukmul/run-1.webp"
+    },
+    {
+      "id": "cat-mukmul-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul-run-1",
+        "cat-mukmul",
+        "nabi-pose-run-2"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-run-2",
+      "final": "src/assets/cats/mukmul/run-2.webp"
+    },
+    {
+      "id": "cat-mukmul-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft charcoal-black fur all over with no white at all (a deep warm charcoal, not pure black, so the brown outline stays visible); small solid round yellow eyes with no pupils at all (no dark dot inside the eyes, just plain flat yellow); the tip of the tail bends sideways like a small hook. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small round plain yellow eyes without highlights or pupils, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background. One reference image shows another cat from the same set in exactly this pose: match its pose, body size, head size, proportions, leg and tail positions and framing exactly, so this cat is the same size as the others; only the coat and the eyes differ. This cat wears no collar, no bell and no accessory at all: do not copy the red collar or bell from the other cat.",
+      "refs": [
+        "cat-mukmul",
+        "nabi-pose-groom"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/mukmul/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "size_like": "cat-nabi-groom",
+      "final": "src/assets/cats/mukmul/groom.webp"
+    },
+    {
+      "id": "cat-kkaebi-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/sit.png",
+      "then_ref_as": "cat-kkaebi-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/sit.webp",
+      "size_like": "cat-nabi-sit"
+    },
+    {
+      "id": "cat-kkaebi-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi-sit",
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/sit-blink.webp",
+      "size_like": "cat-nabi-sit-blink"
+    },
+    {
+      "id": "cat-kkaebi-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/loaf.webp",
+      "size_like": "cat-nabi-loaf"
+    },
+    {
+      "id": "cat-kkaebi-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/sleep.webp",
+      "size_like": "cat-nabi-sleep"
+    },
+    {
+      "id": "cat-kkaebi-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/walk-1.png",
+      "then_ref_as": "cat-kkaebi-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/walk-1.webp",
+      "size_like": "cat-nabi-walk-1"
+    },
+    {
+      "id": "cat-kkaebi-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi-walk-1",
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/walk-2.webp",
+      "size_like": "cat-nabi-walk-2"
+    },
+    {
+      "id": "cat-kkaebi-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/eat.webp",
+      "size_like": "cat-nabi-eat"
+    },
+    {
+      "id": "cat-kkaebi-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/back.webp",
+      "size_like": "cat-nabi-back"
+    },
+    {
+      "id": "cat-kkaebi-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/play-1.png",
+      "then_ref_as": "cat-kkaebi-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/play-1.webp",
+      "size_like": "cat-nabi-play-1"
+    },
+    {
+      "id": "cat-kkaebi-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi-play-1",
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/play-2.webp",
+      "size_like": "cat-nabi-play-2"
+    },
+    {
+      "id": "cat-kkaebi-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/run-1.png",
+      "then_ref_as": "cat-kkaebi-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/run-1.webp",
+      "size_like": "cat-nabi-run-1"
+    },
+    {
+      "id": "cat-kkaebi-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi-run-1",
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/run-2.webp",
+      "size_like": "cat-nabi-run-2"
+    },
+    {
+      "id": "cat-kkaebi-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with a grey tabby: light silver-grey fur with bold, thick dark-grey stripes on the forehead, back, legs and tail (bolder stripes than a usual tabby); cream-white muzzle and belly; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-kkaebi"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/kkaebi/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/kkaebi/groom.webp",
+      "size_like": "cat-nabi-groom"
+    },
+    {
+      "id": "cat-dubu-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/sit.png",
+      "then_ref_as": "cat-dubu-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/sit.webp",
+      "size_like": "cat-nabi-sit"
+    },
+    {
+      "id": "cat-dubu-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu-sit",
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/sit-blink.webp",
+      "size_like": "cat-nabi-sit-blink"
+    },
+    {
+      "id": "cat-dubu-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/loaf.webp",
+      "size_like": "cat-nabi-loaf"
+    },
+    {
+      "id": "cat-dubu-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/sleep.webp",
+      "size_like": "cat-nabi-sleep"
+    },
+    {
+      "id": "cat-dubu-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/walk-1.png",
+      "then_ref_as": "cat-dubu-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/walk-1.webp",
+      "size_like": "cat-nabi-walk-1"
+    },
+    {
+      "id": "cat-dubu-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu-walk-1",
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/walk-2.webp",
+      "size_like": "cat-nabi-walk-2"
+    },
+    {
+      "id": "cat-dubu-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/eat.webp",
+      "size_like": "cat-nabi-eat"
+    },
+    {
+      "id": "cat-dubu-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/back.webp",
+      "size_like": "cat-nabi-back"
+    },
+    {
+      "id": "cat-dubu-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/play-1.png",
+      "then_ref_as": "cat-dubu-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/play-1.webp",
+      "size_like": "cat-nabi-play-1"
+    },
+    {
+      "id": "cat-dubu-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu-play-1",
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/play-2.webp",
+      "size_like": "cat-nabi-play-2"
+    },
+    {
+      "id": "cat-dubu-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/run-1.png",
+      "then_ref_as": "cat-dubu-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/run-1.webp",
+      "size_like": "cat-nabi-run-1"
+    },
+    {
+      "id": "cat-dubu-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu-run-1",
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/run-2.webp",
+      "size_like": "cat-nabi-run-2"
+    },
+    {
+      "id": "cat-dubu-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with pure warm-white fur with very light cream shading only on undersides, pink nose and pink inner ears, a slightly rounder and softer face; small dark-brown dot eyes. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-dubu"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/dubu/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/dubu/groom.webp",
+      "size_like": "cat-nabi-groom"
+    },
+    {
+      "id": "cat-gureum-sit",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, front view, facing the viewer, front paws together, tail curled around to the right side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/sit.png",
+      "then_ref_as": "cat-gureum-sit",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/sit.webp",
+      "size_like": "cat-nabi-sit"
+    },
+    {
+      "id": "cat-gureum-sit-blink",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: exactly the same sitting front view as the first reference image, with the same size, position and outline, but the eyes are closed as two small gentle downward curves (a slow blink). Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum-sit",
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/sit-blink.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/sit-blink.webp",
+      "size_like": "cat-nabi-sit-blink"
+    },
+    {
+      "id": "cat-gureum-loaf",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: loaf pose, lying with all four paws tucked under the body so it looks like a round bread loaf, body turned slightly to the left, head facing the viewer, eyes open, tail wrapped along the side. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/loaf.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/loaf.webp",
+      "size_like": "cat-nabi-loaf"
+    },
+    {
+      "id": "cat-gureum-sleep",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sleeping curled up into a round ball, head resting on its paws, tail wrapped around the body, eyes closed as small curved lines, peaceful. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/sleep.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/sleep.webp",
+      "size_like": "cat-nabi-sleep"
+    },
+    {
+      "id": "cat-gureum-walk-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: walking, side view facing right, head turned slightly toward the viewer, near front leg stepping forward and far hind leg stepping forward, tail raised in a gentle curve. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/walk-1.png",
+      "then_ref_as": "cat-gureum-walk-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/walk-1.webp",
+      "size_like": "cat-nabi-walk-1"
+    },
+    {
+      "id": "cat-gureum-walk-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same walking cat as the first reference image, same size, same position, same head and tail, but in the opposite step: the far front leg and the near hind leg are now forward. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum-walk-1",
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/walk-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/walk-2.webp",
+      "size_like": "cat-nabi-walk-2"
+    },
+    {
+      "id": "cat-gureum-eat",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: standing on all four legs, side view facing right, head lowered all the way down so the mouth touches the ground just in front of the front paws, as if eating from a bowl. Do not draw a bowl or any food. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/eat.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/eat.webp",
+      "size_like": "cat-nabi-eat"
+    },
+    {
+      "id": "cat-gureum-back",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, seen from behind, looking up and slightly to the right, ears up, tail resting on the ground curving to the right. The face is not visible. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/back.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/back.webp",
+      "size_like": "cat-nabi-back"
+    },
+    {
+      "id": "cat-gureum-play-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: crouching low facing right with the rear slightly raised, playfully reaching forward with one front paw raised in the air to bat at something small on the ground. Do not draw the toy. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/play-1.png",
+      "then_ref_as": "cat-gureum-play-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/play-1.webp",
+      "size_like": "cat-nabi-play-1"
+    },
+    {
+      "id": "cat-gureum-play-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same playing cat as the first reference image, same size and position, but the raised front paw is now pressed down flat on the ground in front of it. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum-play-1",
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/play-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/play-2.webp",
+      "size_like": "cat-nabi-play-2"
+    },
+    {
+      "id": "cat-gureum-run-1",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: running, side view facing right, body stretched long with front legs reaching forward and hind legs pushing back, ears slightly back, tail streaming behind, happy focused face. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/run-1.png",
+      "then_ref_as": "cat-gureum-run-1",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/run-1.webp",
+      "size_like": "cat-nabi-run-1"
+    },
+    {
+      "id": "cat-gureum-run-2",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Pose: the same running cat as the first reference image, same size and position, but mid-stride with all four legs gathered under the body and the back slightly arched. Change nothing else. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum-run-1",
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/run-2.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/run-2.webp",
+      "size_like": "cat-nabi-run-2"
+    },
+    {
+      "id": "cat-gureum-groom",
+      "group": "cats",
+      "prompt": "One chubby, round, cute cat with solid soft blue-grey fur with no stripes and no white, slightly lighter muzzle; small dark-green dot eyes. It wears small round thin-rimmed glasses resting on its nose. The cat is chubby and round like a soft bean: a large round head about as wide as the body, small rounded triangle ears with pink inner ears, small solid dot eyes without highlights, a tiny pink nose and a small 'w'-shaped mouth, a few short whiskers, short stubby legs with round paws, and a thick tail. Keep it the exact same character as the reference character sheet: same body shape and proportions, same head size, same face, same markings and the same accessory. Pose: sitting, three-quarter view facing right, one front paw raised to its mouth, licking the paw, eyes closed contentedly. Draw only this one cat, full body, centered, with generous empty space around it. Nothing else in the image: no floor, no ground line, no shadow, no props except the cat's own accessory. Transparent background.",
+      "refs": [
+        "cat-gureum"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/cats/gureum/groom.png",
+      "anchor": "feet",
+      "canvas": "512x512",
+      "final": "src/assets/cats/gureum/groom.webp",
+      "size_like": "cat-nabi-groom"
+    },
+    {
+      "id": "obj-cushion",
+      "group": "objects",
+      "prompt": "A square Korean floor cushion (bangseok) in soft coral with a thin cream piping edge and a small tuft button in the middle, slightly plump and squishy, large enough for a curled-up cat to sleep on. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/cushion.png",
+      "anchor": "feet",
+      "canvas": "512x320",
+      "final": "src/assets/house/cushion.webp"
+    },
+    {
+      "id": "obj-box",
+      "group": "objects",
+      "prompt": "An open plain kraft-brown cardboard box with no print and no tape marks. Its front face is a flat rectangle facing the viewer straight on with a straight horizontal top edge; the open top is seen from above with four flaps folded outward. Big enough for one chubby cat to sit inside. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/box.png",
+      "anchor": "feet",
+      "canvas": "448x384",
+      "final": "src/assets/house/box.webp"
+    },
+    {
+      "id": "obj-bowl",
+      "group": "objects",
+      "prompt": "A small round ceramic cat food bowl, cream with a persimmon-orange rim stripe, filled with brown kibble. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/bowl.png",
+      "anchor": "feet",
+      "canvas": "192x128",
+      "final": "src/assets/house/bowl.webp"
+    },
+    {
+      "id": "obj-cat-tower",
+      "group": "objects",
+      "prompt": "A small light-wood cat tower: a square base, two square platforms (a middle one and a top one, each big enough for one sitting cat) on posts wrapped in natural sisal rope. Simple and sturdy. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/cat-tower.png",
+      "anchor": "feet",
+      "canvas": "512x1024",
+      "final": "src/assets/house/cat-tower.webp"
+    },
+    {
+      "id": "obj-wheel-ring",
+      "group": "objects",
+      "prompt": "The rotating part of a large wooden cat exercise wheel, seen straight from the front so it is a perfect circle: a light-wood outer rim, evenly spaced tread slats around the inside, and four thin spokes meeting at a round hub in the exact center. Only the ring, no stand, no legs, no floor. Draw it exactly face-on, not tilted, so it can be rotated around its center. Match the drawing style of the reference scene. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/wheel-ring.png",
+      "then_ref_as": "wheel-ring",
+      "anchor": "center",
+      "canvas": "768x768",
+      "final": "src/assets/house/wheel-ring.webp"
+    },
+    {
+      "id": "obj-wheel-stand",
+      "group": "objects",
+      "prompt": "The stand for the wheel in the first reference image: a flat light-wood base with two A-shaped wooden legs at the left and right that would hold the wheel's axle at the height of the wheel's center. Draw only the stand, without the wheel, seen straight from the front at the same scale as the reference wheel. Match the drawing style of the reference scene. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "wheel-ring",
+        "style-scene"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/wheel-stand.png",
+      "anchor": "feet",
+      "canvas": "768x512",
+      "final": "src/assets/house/wheel-stand.webp"
+    },
+    {
+      "id": "obj-ball",
+      "group": "objects",
+      "prompt": "A small round cat toy ball, two-tone with pale blue and cream stripes, with a tiny bell inside. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/ball.png",
+      "anchor": "feet",
+      "canvas": "96x96",
+      "final": "src/assets/house/ball.webp"
+    },
+    {
+      "id": "obj-wind-chime",
+      "group": "objects",
+      "prompt": "A small bronze Korean temple wind bell (pungyeong) hanging from a short cord under a roof eave: a little bell shape with a soft green-bronze patina and a tiny flat metal fish hanging below its clapper. Seen from the front. Match the drawing style of the reference scene. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/wind-chime.png",
+      "anchor": "center",
+      "canvas": "160x320",
+      "final": "src/assets/house/wind-chime.webp"
+    },
+    {
+      "id": "obj-bush-front",
+      "group": "objects",
+      "prompt": "A rounded clump of soft green garden shrubs with simple flat leaf shapes, meant to sit in the bottom-right foreground corner of the scene and overlap things behind it. Seen from the same slightly elevated three-quarter top-down view as the reference scene: the front face toward the viewer and the top surface visible. Draw only this one object, centered, with generous empty space around it. No cats, no floor, no ground, no shadow. Transparent background.",
+      "refs": [
+        "bg-draft"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/house/bush-front.png",
+      "anchor": "feet",
+      "canvas": "768x512",
+      "final": "src/assets/house/bush-front.webp"
+    },
+    {
+      "id": "bg-day",
+      "group": "backgrounds",
+      "prompt": "Redraw the first reference image as a clean final game background. Keep the same layout, camera angle and every element in the same place and at the same size. Match the line weight, flat pastel colors and softness of the second reference image. Remove anything that looks like writing. Keep the open spaces on the porch, in the ondol room and on the lawn empty. No cats, no animals, no people, no cushions, no boxes, no bowls, no toys, no cat furniture. Gentle afternoon light. Nothing Japanese: no tatami, no shoji screens, no stone lanterns, no bamboo fence, no straw sandals, no paper wind-chime strips.",
+      "refs": [
+        "bg-draft",
+        "style-cat"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/house/bg-day.png",
+      "then_ref_as": "bg-day",
+      "anchor": "none",
+      "canvas": "1536x1024",
+      "final": "src/assets/house/bg-day.webp"
+    },
+    {
+      "id": "bg-evening-trial",
+      "group": "trial-time",
+      "prompt": "The exact same scene as the reference image at sunset: warm orange low sunlight from the left, softly longer shadows, a peach glow on the walls. Keep every element in exactly the same place, same layout and camera angle. No cats, no people.",
+      "refs": [
+        "bg-day"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/house/bg-evening-trial.png"
+    },
+    {
+      "id": "bg-night-trial",
+      "group": "trial-time",
+      "prompt": "The exact same scene as the reference image at night: a calm deep-blue moonlit garden, warm lamp light glowing from inside the ondol room through the open paper lattice doors. Keep every element in exactly the same place, same layout and camera angle. No cats, no people.",
+      "refs": [
+        "bg-day"
+      ],
+      "size": "1536x1024",
+      "background": "opaque",
+      "out": "art/raw/house/bg-night-trial.png"
+    }
+  ]
+}

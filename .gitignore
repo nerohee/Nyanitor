@@ -31,3 +31,9 @@ dist-ssr
 
 # Rust 빌드 결과
 /src-tauri/target
+
+# 그림 생성 스크립트 (scripts/cat-art, D-34)
+# 생성 원본 · 장부 · 잠금 파일 — 저장소에 넣지 않는다 (맞춘 결과 src/assets/ 만 넣는다)
+/art/
+scripts/cat-art/.venv/
+__pycache__/

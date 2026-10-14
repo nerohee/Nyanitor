@@ -207,7 +207,7 @@ export const SPOTS: Record<SpotId, Spot> = {
   stone: {
     id: "stone",
     kind: "wait",
-    feet: { x: 1050, y: 645 },
+    feet: { x: 990, y: 600 },
     poses: ["sit"],
     motion: { sit: "wait" },
     bubble: ["left", "above"],

@@ -16,7 +16,7 @@
 | `bg-v2.webp` | `art/raw/v2/house/bg-day.png` (고른 후보 b2 — b 의 지붕 · 방만 고침) | `ref-bg-v2` | 넣음 |
 | `sheet-v2-<id>.webp` (7장) | `art/raw/v2/cats/<id>/sheet.png` | `ref-sheet-v2-<id>` | 넣음 |
 | `obj-v2-<물건>.webp` (6장: bowl · cushion · box · ball · tower · wheel) | 그릇 · 방석 · 공 · 캣타워는 `art/raw/v2/house/<물건>-empty.png` (나비 합친 그림에서 고양이를 지운 것 — 앱에 쓰는 빈 그림), 상자 · 캣휠은 `<물건>.png` | `ref-obj-v2-<물건>` | 넣음 |
-| `with-<물건>[-n]-nabi.webp` (8장) | `art/raw/v2/cats/nabi/with-*.png` | `ref-with-<물건>[-n]` | 넣음 — 새 고양이의 합친 그림 첫 참조 (공 · 캣휠은 고친 뒤 판) |
+| `with-<물건>[-n]-nabi.webp` (8장) | `art/raw/v2/cats/nabi/with-*.png` | `ref-with-<물건>[-n]` | 넣음 — 새 고양이의 합친 그림 첫 참조 (공 · 캣휠은 고친 뒤 판). **캣휠 2장은 단추 것** (`with-wheel-{1,2}-danchu.webp`, 2026-10-15 고객: 단추 걸음이 가장 자연스러움 — 다른 고양이 캣휠은 이 그림을 참조로 털만 바꿈) |
 
 - 넣을 때 `bg-hanok.webp` · `sheet-<id>.webp`(1판)는 지우지 않는다 (1판 기록). 2판이 확정되면 `references` 에서 `ref-bg-hanok` 만 남기고 정리할지 메인이 판단.
 - 투명 그림(물건 · 합친 그림)은 WebP 알파 무손실로.

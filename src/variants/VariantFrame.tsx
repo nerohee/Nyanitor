@@ -1,4 +1,5 @@
-// 시안 틀 (P2). 주소 쿼리로 화면 · 시간대 · 테마를 골라 띄운다 (query.ts). 시안은 a 로 정했다 (D-30) — b · c 는 지웠다.
+// 시안 틀 (P2). 주소 쿼리로 화면 · 상태 · 시간대 · 테마 · UI 판을 골라 띄운다 (query.ts). 시안은 a 로 정했다 (D-30) — b · c 는 지웠다.
+// UI 판은 ① 나무 쟁반이 기본 (D-40). 1판(skin=0) · ② · ③ 은 보관 — 시안 막대에서 계속 고를 수 있다.
 // 앱 화면이 이 틀을 대신하면 `src/variants/` 폴더째, `App.tsx` 의 연결 몇 줄, `ko.ts` 의 `variant.` 키를 지운다.
 import { useEffect, useLayoutEffect, useState } from "react";
 import { t } from "../i18n/ko";
@@ -6,6 +7,10 @@ import { USAGE_OK, USAGE_UNAVAILABLE } from "./fixtures";
 import { parseFrameQuery, type ScreenId } from "./query";
 import { variantIds, variants } from "./registry";
 import { CatsScreen } from "./frame/CatsScreen";
+import { CatPickScreen } from "./screens/CatPick";
+import { HarnessScreen } from "./screens/Harness";
+import { SettingsScreen } from "./screens/Settings";
+import { SetupScreen } from "./screens/Setup";
 import { VariantBar } from "./frame/VariantBar";
 import "./frame/frame.css";
 import "./skins/skins.css";
@@ -48,6 +53,11 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
 
   function renderScreen(screen: ScreenId) {
     if (screen === "cats") return <CatsScreen />;
+    const shared = { search, state: query.state, time: query.time };
+    if (screen === "setup") return <SetupScreen {...shared} />;
+    if (screen === "settings") return <SettingsScreen {...shared} />;
+    if (screen === "harness") return <HarnessScreen {...shared} />;
+    if (screen === "pick") return <CatPickScreen {...shared} />;
     const Screen = screen === "house" ? mod?.House : mod?.Workspace;
     return Screen ? <Screen time={query.time} usage={query.usage === "ok" ? USAGE_OK : USAGE_UNAVAILABLE} work={query.work} /> : null;
   }
@@ -59,7 +69,7 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
       data-variant={query.variant}
       data-time={query.time}
       data-screen={query.screen}
-      data-skin={query.skin ?? undefined}
+      data-skin={query.skin === "0" ? undefined : query.skin}
     >
       <div className="vf__stage">{renderScreen(query.screen)}</div>
       {query.bar && (
@@ -67,7 +77,7 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
           search={search}
           query={query}
           variantIds={variantIds}
-          currentName={`${mod ? t(mod.meta.nameKey) : query.variant}${query.skin ? ` · ${t(`variant.skin.${query.skin}`)}` : ""}`}
+          currentName={`${mod ? t(mod.meta.nameKey) : query.variant} · ${t(`variant.skin.${query.skin}`)}`}
         />
       )}
     </div>

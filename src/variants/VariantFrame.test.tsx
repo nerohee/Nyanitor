@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import VariantFrame from "./VariantFrame";
 
@@ -24,15 +24,51 @@ describe("시안 틀", () => {
     expect(screen.getByRole("link", { name: "밤" })).toHaveAttribute("aria-current", "true");
   });
 
-  it("테마 시안(skin)은 1 · 2 · 3 만 받고, 없거나 모르는 값이면 1판 테마(data-skin 없음)", () => {
-    const { unmount } = render(<VariantFrame search="?variant=a&skin=2" clock={morningClock} />);
-    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "2");
-    expect(screen.getByRole("link", { name: "② 찹쌀떡" })).toHaveAttribute("aria-current", "true");
+  it("UI 판(skin)은 없거나 모르는 값이면 ① 나무 쟁반(D-40), 0 은 보관한 1판(data-skin 없음), 2 · 3 은 보관한 시안", () => {
+    const { unmount } = render(<VariantFrame search="?variant=a" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "1");
+    expect(screen.getByRole("link", { name: "① 나무 쟁반" })).toHaveAttribute("aria-current", "true");
+    // ① 은 기본이라 주소에 skin 을 붙이지 않는다
+    expect(screen.getByRole("link", { name: "① 나무 쟁반" }).getAttribute("href")).not.toContain("skin=");
     unmount();
 
-    render(<VariantFrame search="?variant=a&skin=9" clock={morningClock} />);
+    const old = render(<VariantFrame search="?variant=a&skin=0" clock={morningClock} />);
     expect(screen.getByTestId("variant-frame")).not.toHaveAttribute("data-skin");
     expect(screen.getByRole("link", { name: "1판" })).toHaveAttribute("aria-current", "true");
+    old.unmount();
+
+    const kept = render(<VariantFrame search="?variant=a&skin=2" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "2");
+    kept.unmount();
+
+    render(<VariantFrame search="?variant=a&skin=9" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "1");
+  });
+
+  it("새 화면(첫 실행 · 설정 · 하네스 · 고양이 고르기)이 주소로 열리고, 시안 막대에 그 화면의 상태 줄이 나온다", () => {
+    const { unmount } = render(<VariantFrame search="?screen=setup&state=failed" clock={morningClock} />);
+    expect(screen.getByRole("heading", { level: 1, name: "집 문을 열기 전에" })).toBeInTheDocument();
+    const states = screen.getByRole("group", { name: "상태" });
+    expect(within(states).getByRole("link", { name: "확인 실패" })).toHaveAttribute("aria-current", "true");
+    // 화면을 바꾸는 링크는 그 화면의 상태를 떼고 간다
+    const toSettings = within(screen.getByRole("group", { name: "화면" })).getByRole("link", { name: "설정" });
+    expect(toSettings.getAttribute("href")).toContain("screen=settings");
+    expect(toSettings.getAttribute("href")).not.toContain("state=");
+    unmount();
+
+    for (const [search, title] of [
+      ["?screen=settings", "설정"],
+      ["?screen=harness&state=update", "하네스"],
+      ["?screen=pick", "에이전트 고양이 고르기"],
+    ] as const) {
+      const view = render(<VariantFrame search={search} clock={morningClock} />);
+      expect(screen.getByRole("heading", { level: 1, name: title })).toBeInTheDocument();
+      view.unmount();
+    }
+
+    // 상태가 없는 화면(집)에는 상태 줄이 없다
+    render(<VariantFrame search="?screen=house" clock={morningClock} />);
+    expect(screen.queryByRole("group", { name: "상태" })).not.toBeInTheDocument();
   });
 
   it("시간대 쿼리가 없으면 PC 시각을 따르고, 모르는 시안(지운 b · c 포함) · 화면은 기본값(a · 집)으로", () => {

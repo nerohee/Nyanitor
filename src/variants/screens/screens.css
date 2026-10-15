@@ -1,0 +1,1232 @@
+/*
+ * P2-13 화면 배치 — 첫 실행(su-) · 설정(st-) · 하네스(hn-) · 고양이 고르기(pk-).
+ * 부품 모양은 parts.css. 최소 창 1024×640 (시안 막대 36px 를 빼면 무대 604px) 에서 판 안이 스크롤된다.
+ */
+
+.su-small {
+  font-size: var(--text-sm);
+}
+.su-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--accent-strong);
+  font-weight: var(--weight-semibold);
+  text-underline-offset: 3px;
+  cursor: default;
+}
+.su-link:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: 4px;
+}
+
+/* ───────────── 첫 실행 · 준비 ───────────── */
+/* 첫 화면은 내용만큼의 쟁반이 마당 가운데 놓인다 (넘치면 안에서 스크롤) */
+.su-tray {
+  align-self: center;
+  max-width: 1080px;
+  max-height: 100%;
+  margin: 0 auto;
+}
+.su-head__side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.su-head__side .chip {
+  font-size: var(--text-sm);
+  line-height: 26px;
+  padding: 0 var(--space-3);
+}
+.su-body {
+  display: grid;
+  grid-template-columns: clamp(180px, 22vw, 290px) minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+/* 먹물 — 말풍선 아래에 앉아 안내한다. 넓은 창에서는 아래 붙여 둔다 */
+.su-guide {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+.su-say {
+  align-self: stretch;
+}
+.su-say::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 16px;
+  height: 16px;
+  border-right: inherit;
+  border-bottom: inherit;
+  border-color: inherit;
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+.su-cat {
+  position: relative;
+  width: min(100%, 230px);
+  aspect-ratio: 1;
+  /* 그림 판 위쪽의 빈 곳만큼 올려 말풍선 꼬리가 머리를 가리키게 */
+  margin-top: -18px;
+}
+/* 고양이가 앉은 방석 같은 그림자 — 배경 그림 없이 */
+.su-cat::before {
+  content: "";
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 3%;
+  height: 7%;
+  border-radius: 50%;
+  background: rgb(var(--shadow-color) / 0.18);
+}
+.su-cat > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+
+.su-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.su-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.su-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+.su-row[data-open="true"] {
+  border-color: var(--color-border-strong);
+}
+.su-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.su-row__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.su-row__title {
+  font-size: var(--text-lg);
+}
+.su-row__what {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.su-row__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.su-row__status {
+  font-size: var(--text-md);
+}
+.su-row[data-status="missing"] .su-row__status,
+.su-row[data-status="failed"] .su-row__status {
+  color: var(--accent-strong);
+}
+.su-row[data-status="failed"] .su-row__status {
+  color: var(--color-danger);
+}
+.su-row[data-status="waiting"] .su-row__status {
+  color: var(--color-text-muted);
+}
+.su-row__detail {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* 펼친 안내 */
+.su-howto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 var(--space-4) var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px var(--row-sep-style) var(--row-sep);
+}
+.su-howto > p {
+  margin: 0;
+}
+.su-howto__title {
+  font-size: var(--text-lg);
+}
+.su-howto__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.su-howto__tip,
+.su-howto__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.su-howto__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.su-howto__note .icon {
+  flex: none;
+  margin-top: 2px;
+}
+.su-steps {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.su-steps li + li {
+  margin-top: var(--space-1);
+}
+.su-steps li[data-done="true"] {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+.su-wait {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.su-raw summary {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: default;
+}
+.su-raw pre {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.su-checked {
+  margin: 0;
+  font-size: var(--text-sm);
+  text-align: right;
+}
+
+/* 다 됐을 때 — 툇마루에 모인 고양이 + 큰 단추 */
+.su-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.su-shelf {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--space-4) 10px;
+  list-style: none;
+}
+/* 선반 판 */
+.su-shelf::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--color-border-strong);
+}
+.su-shelf__cat {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  margin: 0 -6px -6px;
+}
+.su-shelf__cat > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+.su-ready__go {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+.su-ready__go p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.su-go {
+  height: 56px;
+  padding: 0 var(--space-8);
+  font-size: var(--text-lg);
+}
+
+/* ───────────── 설정 ───────────── */
+.st-tray {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.st-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+.st-index {
+  overflow: auto;
+  padding: var(--space-4) var(--space-2);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+.st-index ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.st-index a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  cursor: default;
+}
+.st-index a:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.st-index a[aria-current="true"] {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.st-index a:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.st-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) var(--space-8) var(--space-12);
+  scroll-padding-top: var(--space-4);
+}
+.st-sec {
+  padding: var(--space-5) 0 var(--space-3);
+}
+.st-sec + .st-sec {
+  border-top: 2px solid var(--color-border);
+}
+.st-sec__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+}
+.st-sec__title .icon {
+  color: var(--accent-strong);
+}
+.st-lead {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+.st-envname {
+  padding: 0 var(--space-1);
+  border-radius: 4px;
+  background: var(--color-surface-sunken);
+  font-weight: var(--weight-regular);
+}
+.st-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.st-latest {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.st-notes {
+  margin: var(--space-1) 0;
+  padding-left: 1.2em;
+}
+.st-about {
+  margin-top: var(--space-3);
+  row-gap: var(--space-2);
+}
+/* UI 판 자리 — 고를 수 없는 견본 (고객 결정 전) */
+.st-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.st-skin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.st-skin[aria-current="true"] {
+  border-style: solid;
+  color: var(--color-text);
+}
+.st-skin__swatch {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 50%;
+}
+/* 견본 색은 판마다 고정 (그 판의 대표 색 — tokens.css 의 값과 같음) */
+.st-skin[data-skin-chip="1"] .st-skin__swatch {
+  background: linear-gradient(135deg, #cf9a64 50%, #ee7d40 50%);
+}
+.st-skin[data-skin-chip="0"] .st-skin__swatch {
+  background: linear-gradient(135deg, #fbf8f3 50%, #e8602f 50%);
+}
+.st-skin[data-skin-chip="2"] .st-skin__swatch {
+  background: linear-gradient(135deg, #fff6ec 50%, #8edbbf 50%);
+}
+.st-skin[data-skin-chip="3"] .st-skin__swatch {
+  background: linear-gradient(135deg, #fffdf7 50%, #f8c94a 50%);
+}
+
+/* ───────────── 하네스 ───────────── */
+.hn-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+.hn-tabs {
+  position: relative;
+  z-index: 1;
+  padding-left: var(--space-6);
+}
+.hn-tray {
+  flex: 1;
+}
+/* 진행 · 끝 · 실패 · 백업은 내용만큼의 쟁반 (가운데) */
+.hn-wrap--fit {
+  justify-content: center;
+}
+.hn-wrap--fit .hn-tray {
+  flex: 0 1 auto;
+}
+.hn-head .stp {
+  align-self: center;
+}
+.hn-body {
+  padding: var(--space-5) var(--space-6);
+}
+.hn-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.hn-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hn-side .box p {
+  margin: 0;
+}
+.hn-break {
+  overflow-wrap: anywhere;
+}
+.hn-paths {
+  margin: 0;
+}
+.hn-paths dt {
+  font-weight: var(--weight-semibold);
+}
+.hn-paths dd {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+.hn-paths dd:last-child {
+  margin-bottom: 0;
+}
+.hn-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.hn-h__sub {
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+.hn-files-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hn-files {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hn-files__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+.hn-files__sum {
+  flex: 1;
+  font-size: var(--text-sm);
+}
+.hn-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.hn-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.hn-file:hover {
+  background: var(--row-hover);
+}
+.hn-file[aria-current="true"] {
+  background: var(--row-selected);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+.hn-file:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.hn-file__path {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.hn-file__count {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.hn-file__note {
+  flex: 1;
+  min-width: 12em;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.hn-keep {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.hn-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hn-diff__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+.hn-diff__head code {
+  font-weight: var(--weight-semibold);
+}
+.hn-diff__head span {
+  font-size: var(--text-sm);
+}
+.hn-diff .dif {
+  max-height: 260px;
+}
+.hn-diff__empty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.hn-versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.hn-versions > div {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.hn-ver {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+}
+.hn-commits li {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+.hn-commits code {
+  flex: none;
+}
+.hn-checked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+}
+/* 진행 · 끝 · 실패 · 백업 — 가운데 한 줄 */
+.hn-center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+  margin: 0 auto;
+}
+.hn-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+.hn-progress__cat {
+  position: relative;
+  flex: none;
+  width: 150px;
+  height: 150px;
+}
+.hn-progress__cat > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+.hn-progress__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hn-progress__main p {
+  margin: 0;
+}
+.hn-progress .hn-h {
+  font-size: var(--text-2xl);
+}
+.hn-progress__line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+.hn-run {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+.hn-run__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+}
+.hn-run__label {
+  flex: 1;
+}
+.hn-run__status {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.hn-run__item[data-status="running"] .hn-run__status {
+  color: var(--accent-strong);
+}
+.hn-run__item[data-status="failed"] .hn-run__status {
+  color: var(--color-danger);
+}
+.hn-shelf .su-shelf__cat {
+  width: 84px;
+  height: 84px;
+}
+.hn-done {
+  row-gap: var(--space-2);
+}
+.hn-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.hn-blist {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+.hn-backup {
+  padding: var(--space-3) var(--space-4);
+}
+.hn-backup .bnr {
+  margin-top: var(--space-3);
+}
+.hn-backup__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.hn-backup__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+.hn-backup__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hn-backup__when {
+  font-size: var(--text-lg);
+}
+
+/* ───────────── 에이전트 고양이 고르기 ───────────── */
+.pk-tray {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+.pk-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+}
+.pk-agents {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+.pk-h {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.pk-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.pk-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.pk-agent:hover {
+  background: var(--color-surface);
+}
+.pk-agent[aria-selected="true"] {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+}
+.pk-agent:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.pk-agent__face {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+}
+.pk-agent__face > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+.pk-agent__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pk-agent__name {
+  font-size: var(--text-md);
+}
+.pk-agent__cat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.pk-slot {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--radius-control);
+  color: var(--color-text-muted);
+}
+.pk-slot p {
+  margin: 0;
+}
+.pk-slot .rnd {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+.pk-panel {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+}
+.pk-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.pk-hero__cat {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+.pk-hero__cat > .cat-figure {
+  position: absolute;
+  inset: -4% 0 4%;
+}
+.pk-hero__text {
+  flex: 1 1 220px;
+  max-width: 320px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.pk-hero__text p {
+  margin: 0;
+}
+.pk-hero__text .hbtn {
+  margin-top: var(--space-2);
+}
+.pk-hero__title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+}
+.pk-hero__name {
+  font-size: var(--text-3xl);
+  line-height: 1.1;
+}
+.pk-poses {
+  flex: 1 1 320px;
+  min-width: 280px;
+  margin: 0;
+}
+.pk-poses ul {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pk-poses li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.pk-poses__frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 92px;
+  aspect-ratio: 1;
+  border-bottom: 2px solid var(--color-border);
+}
+.pk-poses__frame > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+.pk-pick {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.pk-pick__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.pk-pick__head .pk-h {
+  margin: 0;
+  padding: 0;
+}
+.pk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+.pk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  text-align: center;
+  cursor: default;
+}
+.pk-card input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+}
+.pk-card:hover {
+  border-color: var(--color-border-strong);
+}
+.pk-card[data-checked="true"] {
+  border-color: var(--accent-strong);
+  background: var(--row-selected);
+  box-shadow: 0 0 0 2px var(--accent-strong);
+}
+.pk-card:has(input:focus-visible) {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.pk-card__plate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  color: var(--color-text-muted);
+}
+.pk-card__plate > .cat-figure {
+  position: absolute;
+  inset: 0;
+}
+.pk-card__name {
+  font-size: var(--text-lg);
+}
+.pk-card__fur {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.pk-card__mark {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.pk-card__owner {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.pk-card--more {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+  background: transparent;
+}
+.pk-saved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+/* ─────────────────────── ① 나무 쟁반 재질 ─────────────────────── */
+/* 먹물이 앉은 방석 — 툇마루 나무 받침 */
+.vf[data-skin="1"] .su-cat::before {
+  left: 12%;
+  right: 12%;
+  bottom: 1%;
+  height: 12%;
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-3);
+  box-shadow: 0 3px 0 var(--ui-line);
+}
+.vf[data-skin="1"] .su-row {
+  border: var(--ui-line-w) solid var(--color-border);
+  border-radius: 14px;
+}
+.vf[data-skin="1"] .su-row[data-open="true"] {
+  border-color: var(--btn-line);
+  box-shadow:
+    inset 6px 0 0 var(--accent),
+    0 3px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .su-row[data-open="true"][data-status="failed"] {
+  box-shadow:
+    inset 6px 0 0 var(--color-danger),
+    0 3px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .su-head__side .chip {
+  border-width: var(--ui-line-w);
+}
+/* 툇마루 선반 */
+.vf[data-skin="1"] .su-shelf {
+  padding-bottom: 14px;
+}
+.vf[data-skin="1"] .su-shelf::after {
+  height: 14px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 6px;
+  background: var(--grain-h);
+  box-shadow: 0 3px 0 var(--ui-line);
+}
+.vf[data-skin="1"] .su-shelf__cat {
+  z-index: 1;
+}
+.vf[data-skin="1"] .st-index {
+  border-right: var(--ui-line-w) solid var(--wood-dark);
+}
+.vf[data-skin="1"] .st-index a {
+  font-size: 15px;
+}
+.vf[data-skin="1"] .st-index a[aria-current="true"] {
+  border: var(--ui-line-w) solid var(--btn-line);
+  box-shadow: 0 2px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .st-sec + .st-sec {
+  border-top: 2px dashed var(--color-border);
+}
+.vf[data-skin="1"] .st-skin__swatch {
+  border-color: var(--btn-line);
+}
+.vf[data-skin="1"] :is(.hn-list, .hn-run, .hn-blist) {
+  border: var(--ui-line-w) solid var(--btn-line);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .hn-tabs {
+  margin-bottom: -1px;
+}
+.vf[data-skin="1"] .hn-backup__icon {
+  border: 1.5px solid var(--btn-line);
+  background: var(--ui-1);
+  color: var(--color-text);
+}
+.vf[data-skin="1"] .pk-agents {
+  border-right: var(--ui-line-w) solid var(--wood-dark);
+}
+.vf[data-skin="1"] .pk-agent[aria-selected="true"] {
+  border: var(--ui-line-w) solid var(--btn-line);
+  box-shadow: 0 2px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .pk-agent__face {
+  border: var(--ui-line-w) solid var(--btn-line);
+  background: var(--ui-1);
+}
+.vf[data-skin="1"] .pk-hero__cat {
+  border: var(--ui-line-w) solid var(--btn-line);
+  background:
+    radial-gradient(circle at 50% 78%, var(--ui-3) 0 32%, transparent 33%),
+    var(--color-surface-sunken);
+  box-shadow: 0 3px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .pk-card {
+  border: var(--ui-line-w) solid var(--color-border);
+  border-radius: 16px;
+}
+.vf[data-skin="1"] .pk-card:hover {
+  border-color: var(--btn-line);
+}
+.vf[data-skin="1"] .pk-card[data-checked="true"] {
+  border-color: var(--btn-line);
+  background: var(--accent-soft);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 4px 0 var(--btn-line);
+}
+/* 고양이 판 아래 둥근 방석 */
+.vf[data-skin="1"] .pk-card__plate::before {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 2%;
+  height: 12%;
+  border-radius: 50%;
+  background: rgb(var(--shadow-color) / 0.18);
+}
+.vf[data-skin="1"] .pk-card__mark {
+  border: 1.5px solid var(--btn-line);
+}
+.vf[data-skin="1"] .pk-card--more {
+  border: var(--ui-line-w) dashed var(--btn-line);
+}
+.vf[data-skin="1"] .pk-slot {
+  border: var(--ui-line-w) dashed var(--btn-line);
+}
+
+/* ───────────── 좁은 창 (최소 1024) ───────────── */
+@media (max-width: 1180px) {
+  .su-body {
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+  .st-body {
+    grid-template-columns: 168px minmax(0, 1fr);
+  }
+  .st-scroll {
+    padding: var(--space-1) var(--space-5) var(--space-10);
+  }
+  .hn-body {
+    padding: var(--space-4);
+  }
+  .hn-grid {
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .pk-body {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .pk-panel {
+    padding: var(--space-4);
+  }
+  .pk-grid {
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  }
+  .pk-poses {
+    display: none;
+  }
+  .pk-card__plate {
+    width: 88px;
+    height: 88px;
+  }
+  .tray__head {
+    padding: var(--space-4) var(--space-5) var(--space-3);
+  }
+  .tray__title {
+    font-size: var(--text-xl);
+  }
+}
+@media (max-height: 700px) {
+  .su-cat {
+    width: min(100%, 170px);
+  }
+  .sc-stage {
+    padding: var(--space-3);
+  }
+}

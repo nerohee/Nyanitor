@@ -674,3 +674,85 @@
   --ui-3: #3d5a6a; /* 테이프 하늘 */
   --ui-4: #6a5a2c; /* 테이프 버터 */
 }
+
+/* ───────────────────────── P2-13 부품 — 입력칸 · 토글 · 목록 · 차이 보기 · 진행 막대 · 알림 띠 · 상태 동전 ─────────────────────────
+ * 설정 · 첫 실행 · 하네스 · 고양이 고르기 화면에 처음 나오는 부품 (src/variants/screens/parts.css).
+ * 색 값을 새로 만들지 않고 위의 판 토큰에서 섞어 쓴다 — 그래서 1판 · ① · ② · ③ · 밝게 · 어둡게 모두 따라온다.
+ * var() 를 품은 변수는 선언한 요소에서 값이 정해지므로 :root 가 아니라 시안 틀 요소([data-variant])에 둔다.
+ * ① 나무 쟁반의 재질(굵은 선 · 아래 두께 · 파스텔 동전)은 아래 [data-skin="1"] 에서 덮는다.
+ * 대비는 이 절 끝 주석.
+ */
+[data-variant] {
+  /* 입력칸 · 선택 상자 */
+  --field-h: var(--control-h-md);
+  --field-bg: var(--color-surface-raised);
+  --field-border: var(--color-border-strong); /* 입력 테두리 3:1 */
+  --field-border-w: 1px;
+  --field-inset: none;
+  /* 토글 (켬 · 끔) — 색만으로 알리지 않게 옆에 "켬/끔" 글자 */
+  --toggle-w: 40px;
+  --toggle-h: 22px;
+  --toggle-track: var(--color-surface-sunken);
+  --toggle-line: var(--color-border-strong);
+  --toggle-on: var(--accent);
+  --toggle-knob: var(--color-surface-raised);
+  /* 목록 줄 */
+  --row-sep: var(--color-border);
+  --row-sep-style: solid;
+  --row-hover: var(--color-surface-sunken);
+  --row-selected: var(--accent-soft);
+  --row-selected-text: var(--accent-soft-text);
+  /* 차이 보기 — 바탕은 옅게, 표시는 +/- 글자로도 (색만으로 알리지 않음) */
+  --diff-add-bg: color-mix(in srgb, var(--color-success) 14%, var(--color-surface));
+  --diff-del-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
+  --diff-add-sign: var(--color-success);
+  --diff-del-sign: var(--color-danger);
+  --diff-hunk-bg: var(--color-surface-sunken);
+  /* 진행 막대 */
+  --progress-h: 10px;
+  --progress-track: var(--color-surface-sunken);
+  --progress-fill: var(--accent);
+  /* 알림 띠 (정보 · 됨 · 주의 · 위험) */
+  --banner-info-bg: var(--accent-soft);
+  --banner-ok-bg: color-mix(in srgb, var(--color-success) 13%, var(--color-surface));
+  --banner-warn-bg: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
+  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
+  /* 상태 동전 (준비 목록 · 설치 단계) — 동전 안에는 늘 그림 기호, 옆에는 글자 */
+  --coin-size: 30px;
+  --coin-ok: color-mix(in srgb, var(--color-success) 24%, var(--color-surface));
+  --coin-missing: color-mix(in srgb, var(--color-warning) 26%, var(--color-surface));
+  --coin-failed: color-mix(in srgb, var(--color-danger) 20%, var(--color-surface));
+  --coin-wait: var(--color-surface-sunken);
+}
+
+[data-skin="1"] {
+  --field-h: 34px;
+  --field-border: var(--btn-line); /* 밝게 #5a3e2b · 어둡게 #a08670 — 어둡게의 --ui-line 은 면과 구분이 안 돼 쓰지 않는다 */
+  --field-border-w: 2px;
+  --field-inset: inset 0 2px 0 rgb(var(--shadow-color) / 0.12); /* 한지에 판 홈 */
+  --toggle-w: 46px;
+  --toggle-h: 26px;
+  --toggle-line: var(--btn-line);
+  --toggle-knob: var(--color-surface);
+  --row-sep-style: dashed;
+  --progress-h: 14px;
+  --progress-fill: var(--ui-1); /* 꿀 — 사용량 막대와 같은 채움 */
+  --coin-ok: var(--ui-2); /* 쑥 */
+  --coin-missing: var(--ui-3); /* 홍시 */
+  --coin-size: 32px;
+}
+
+/*
+ * 대비 (P2-13 부품, ① 나무 쟁반 기준 — WCAG 상대 휘도 공식, color-mix 는 sRGB 로 섞은 값으로 계산)
+ *                                      밝게     어둡게   기준
+ *  본문 글자 / 입력칸 바탕 (raised)    13.50    11.75    4.5
+ *  입력칸 · 토글 테두리 / 면           9.35     4.60     3   (어둡게 raised 위 4.12)
+ *  본문 글자 / 더한 줄 · 뺀 줄 바탕    10.82 · 11.00   9.65 · 11.03   4.5
+ *  + 표시 / 더한 줄,  - 표시 / 뺀 줄   5.02 · 5.27     6.48 · 4.75    4.5
+ *  보조 글자 / 더한 줄 바탕            5.14     5.35     4.5 (줄 번호)
+ *  본문 글자 / 알림 띠 정보 · 됨 · 주의 · 위험   11.15 · 10.94 · 10.62 · 11.00   11.23 · 9.91 · 9.44 · 11.03
+ *  띠 기호 주의 · 위험 · 됨 / 띠 바탕  4.90 · 5.27 · 5.08   6.12 · 4.75 · 6.66   3
+ *  본문 글자 / 동전 쑥 · 홍시 · 꿀     8.38 · 7.83 · 9.40   5.10 · 5.51 · 5.17   4.5
+ *  보조 글자 / 오목면 (sunken)         5.24     8.50     4.5
+ *  토글 켬(감 채움) / 꺼진 홈          2.20     7.88     — 켬 · 끔은 손잡이 위치 + 옆 글자로 알린다 (테두리 9.35 · 4.60)
+ */

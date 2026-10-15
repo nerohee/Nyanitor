@@ -331,3 +331,346 @@
  * 고양이 집 (시간대)
  *  이름표 tag-text / tag-bg    #2b2118 / #fff8ec      14.92  (모든 시간대 같음 — 이름표는 덧씌우기 위 맨 앞 층이라 시간대 색을 받지 않는다)
  */
+
+/* ───────────────────────── P2-11 테마 시안 (D-39) — 「고양이와 스프」 같은 따뜻한 게임 UI ─────────────────────────
+ * 시안 a 구조는 그대로, 그 위에 입히는 UI 판 세 벌: `[data-skin="1|2|3"]` (시안 틀 `?skin=`).
+ * 고객이 하나를 고르면 그 판의 값을 위 :root 로 옮기고 나머지 둘과 이 절을 지운다.
+ * 밝게 · 어둡게는 위 절과 같은 방식 — 같은 이름을 OS 어둡게(강제 밝게가 아닐 때) · 강제 어둡게에서 다시 정한다.
+ * 색이 아닌 값(두께 · 둥글기)은 밝게 · 어둡게가 같다.
+ * 판마다 더하는 이름 (화면은 이것만 쓴다):
+ *   --font-round         둥근 제목 글꼴 (Jua, 오픈 라이선스 — src/assets/fonts/jua)
+ *   --ui-line            판 · 단추 윤곽선 (고양이 그림의 갈색 선과 같은 가족)
+ *   --ui-line-w          윤곽선 굵기
+ *   --ui-press           단추 아래 두께(누르면 들어감)
+ *   --ui-1 … --ui-4      장식 파스텔 (테이프 · 칩 · 막대) — 글자 바탕으로 쓸 때는 대비 표 확인
+ */
+@font-face {
+  font-family: "Jua";
+  src: url("../assets/fonts/jua/Jua-Regular-subset.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-skin] {
+  --font-round: "Jua", var(--font-display);
+  --ui-line-w: 2px;
+  --ui-press: 3px;
+}
+
+/* ① 나무 쟁반 — 툇마루 나무 테두리 + 한지 종이. 밤에는 짙은 호두나무 + 등불 아래 종이 */
+[data-skin="1"] {
+  --color-bg: #f7efe0;
+  --color-surface: #fffaf0;
+  --color-surface-sunken: #f1e5cf;
+  --color-surface-raised: #fffdf8;
+  --color-border: #e3d3b8;
+  --color-border-strong: #8c7358;
+  --color-text: #3a2a1e;
+  --color-text-muted: #6e5a47;
+  --color-text-subtle: #7a6551;
+  --color-success: #356b30;
+  --color-warning: #8a5300;
+  --color-danger: #b42318;
+
+  --accent: #ee7d40;
+  --accent-hover: #e56f30;
+  --on-accent: #2a1408;
+  --accent-strong: #a8451b;
+  --accent-soft: #fde3cf;
+  --accent-soft-text: #8f360f;
+  --accent-border: var(--ui-line);
+  --focus-ring: var(--accent-strong);
+
+  --ui-line: #5a3e2b;
+  --wood: #cf9a64;
+  --wood-light: #e2b583;
+  --wood-dark: #a9733f;
+  --wood-text: #2a170b; /* 나무 위 글자 */
+  --btn-line: #5a3e2b; /* 단추 윤곽 — 어둡게에서는 밝혀서 3:1 */
+  --ui-1: #f5d27a; /* 꿀 */
+  --ui-2: #a9d6a0; /* 쑥 */
+  --ui-3: #f2b6a0; /* 홍시 */
+  --ui-4: #a8cfe3; /* 하늘 */
+
+  --radius-control: 12px;
+  --radius-card: 14px;
+  --card-border: var(--wood);
+  --shadow-color: 70 45 25;
+  --shadow-card: 0 0 0 var(--ui-line-w) var(--ui-line), 0 4px 0 var(--ui-line), 0 10px 22px rgb(var(--shadow-color) / 0.28);
+  --shadow-lg: 0 0 0 var(--ui-line-w) var(--ui-line), 0 5px 0 var(--ui-line), 0 16px 34px rgb(var(--shadow-color) / 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-skin="1"] {
+    --color-bg: #1f1813;
+    --color-surface: #2b211a;
+    --color-surface-sunken: #19130f;
+    --color-surface-raised: #352920;
+    --color-border: #4a3a2d;
+    --color-border-strong: #8a7462;
+    --color-text: #f4e9d8;
+    --color-text-muted: #c2ad94;
+    --color-text-subtle: #a8937c;
+    --color-success: #8fd28a;
+    --color-warning: #f0b44c;
+    --color-danger: #f97066;
+    --accent: #f39155;
+    --accent-hover: #f6a06a;
+    --on-accent: #2a1408;
+    --accent-strong: #f6a877;
+    --accent-soft: #43281a;
+    --accent-soft-text: #f8b58a;
+    --ui-line: #120c08;
+    --wood: #74502f;
+    --wood-light: #87603c;
+    --wood-dark: #573823;
+    --wood-text: #fbefdc; /* 나무 위 글자 */
+    --btn-line: #a08670;
+    --ui-1: #7a5c22; /* 꿀 */
+    --ui-2: #456b3f; /* 쑥 */
+    --ui-3: #8a4c3a; /* 홍시 */
+    --ui-4: #3f6578; /* 하늘 */
+  }
+}
+:root[data-theme="dark"] [data-skin="1"] {
+  --color-bg: #1f1813;
+  --color-surface: #2b211a;
+  --color-surface-sunken: #19130f;
+  --color-surface-raised: #352920;
+  --color-border: #4a3a2d;
+  --color-border-strong: #8a7462;
+  --color-text: #f4e9d8;
+  --color-text-muted: #c2ad94;
+  --color-text-subtle: #a8937c;
+  --color-success: #8fd28a;
+  --color-warning: #f0b44c;
+  --color-danger: #f97066;
+  --accent: #f39155;
+  --accent-hover: #f6a06a;
+  --on-accent: #2a1408;
+  --accent-strong: #f6a877;
+  --accent-soft: #43281a;
+  --accent-soft-text: #f8b58a;
+  --ui-line: #120c08;
+  --wood: #74502f;
+  --wood-light: #87603c;
+  --wood-dark: #573823;
+  --wood-text: #fbefdc; /* 나무 위 글자 */
+  --btn-line: #a08670;
+  --ui-1: #7a5c22; /* 꿀 */
+  --ui-2: #456b3f; /* 쑥 */
+  --ui-3: #8a4c3a; /* 홍시 */
+  --ui-4: #3f6578; /* 하늘 */
+}
+
+/* ② 찹쌀떡 — 윤곽선 없이 말랑하게 부푼 판, 파스텔 쑥색 단추, 색 있는 부드러운 그림자. 밤에는 자두빛 코코아 */
+[data-skin="2"] {
+  --color-bg: #fff6ec;
+  --color-surface: #fffdf9;
+  --color-surface-sunken: #f8eee3;
+  --color-surface-raised: #ffffff;
+  --color-border: #f0e1cf;
+  --color-border-strong: #9a8676;
+  --color-text: #43342c;
+  --color-text-muted: #73625a;
+  --color-text-subtle: #7b6a62;
+  --color-success: #2f7a5c;
+  --color-warning: #8a5300;
+  --color-danger: #b42318;
+
+  --accent: #8edbbf;
+  --accent-hover: #7fd3b4;
+  --on-accent: #173a2e;
+  --accent-strong: #2b765f;
+  --accent-soft: #ddf4ea;
+  --accent-soft-text: #21604d;
+  --accent-border: transparent;
+  --focus-ring: var(--accent-strong);
+
+  --ui-line: #e9d6c0; /* 선 대신 옅은 테 */
+  --ui-1: #ffd8bf; /* 복숭아 */
+  --ui-2: #ffe9a6; /* 버터 */
+  --ui-3: #cfe7f5; /* 하늘 */
+  --ui-4: #ffd6dc; /* 볼 분홍 */
+  --meter-1: #f4a47c; /* 사용량 막대 — 5시간 */
+  --meter-2: #7fbbe0; /* 사용량 막대 — 주간 */
+  --puff-hi: rgb(255 255 255 / 0.85); /* 위 빛 */
+  --puff-lo: rgb(120 70 40 / 0.1); /* 아래 그늘 */
+  --glow-accent: rgb(60 150 110 / 0.32); /* 쑥색 단추 그림자 */
+
+  --radius-control: 999px;
+  --radius-card: 26px;
+  --card-border: transparent;
+  --shadow-color: 190 130 90;
+  --shadow-card: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 10px 26px rgb(190 130 90 / 0.28);
+  --shadow-lg: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 18px 40px rgb(190 130 90 / 0.35);
+  --shadow-md: 0 6px 16px rgb(190 130 90 / 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-skin="2"] {
+    --color-bg: #241d22;
+    --color-surface: #2f272d;
+    --color-surface-sunken: #1d171b;
+    --color-surface-raised: #3a3138;
+    --color-border: #45393f;
+    --color-border-strong: #8d7c84;
+    --color-text: #f7ece6;
+    --color-text-muted: #c9b6b0;
+    --color-text-subtle: #b09d98;
+    --color-success: #7fdcb6;
+    --color-warning: #f0b44c;
+    --color-danger: #f97066;
+    --accent: #79d3b4;
+    --accent-hover: #8fdcc0;
+    --on-accent: #10291f;
+    --accent-strong: #8fe0c3;
+    --accent-soft: #1f3a31;
+    --accent-soft-text: #9de6cb;
+    --ui-line: #4a3d45; /* 선 대신 옅은 테 */
+    --ui-1: #6a4436; /* 복숭아 */
+    --ui-2: #6a5a2c; /* 버터 */
+    --ui-3: #34505f; /* 하늘 */
+    --ui-4: #6a3d47; /* 볼 분홍 */
+    --meter-1: #e8946a;
+    --meter-2: #6aaed6;
+    --puff-hi: rgb(255 255 255 / 0.08); /* 위 빛 */
+    --puff-lo: rgb(0 0 0 / 0.3); /* 아래 그늘 */
+    --glow-accent: rgb(0 0 0 / 0.45); /* 쑥색 단추 그림자 */
+    --shadow-card: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 10px 26px rgb(0 0 0 / 0.45);
+    --shadow-lg: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 18px 40px rgb(0 0 0 / 0.55);
+    --shadow-md: 0 6px 16px rgb(0 0 0 / 0.4);
+  }
+}
+:root[data-theme="dark"] [data-skin="2"] {
+  --color-bg: #241d22;
+  --color-surface: #2f272d;
+  --color-surface-sunken: #1d171b;
+  --color-surface-raised: #3a3138;
+  --color-border: #45393f;
+  --color-border-strong: #8d7c84;
+  --color-text: #f7ece6;
+  --color-text-muted: #c9b6b0;
+  --color-text-subtle: #b09d98;
+  --color-success: #7fdcb6;
+  --color-warning: #f0b44c;
+  --color-danger: #f97066;
+  --accent: #79d3b4;
+  --accent-hover: #8fdcc0;
+  --on-accent: #10291f;
+  --accent-strong: #8fe0c3;
+  --accent-soft: #1f3a31;
+  --accent-soft-text: #9de6cb;
+  --ui-line: #4a3d45; /* 선 대신 옅은 테 */
+  --ui-1: #6a4436; /* 복숭아 */
+  --ui-2: #6a5a2c; /* 버터 */
+  --ui-3: #34505f; /* 하늘 */
+  --ui-4: #6a3d47; /* 볼 분홍 */
+  --meter-1: #e8946a;
+  --meter-2: #6aaed6;
+  --puff-hi: rgb(255 255 255 / 0.08); /* 위 빛 */
+  --puff-lo: rgb(0 0 0 / 0.3); /* 아래 그늘 */
+  --glow-accent: rgb(0 0 0 / 0.45); /* 쑥색 단추 그림자 */
+  --shadow-card: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 10px 26px rgb(0 0 0 / 0.45);
+  --shadow-lg: inset 0 2px 0 var(--puff-hi), inset 0 -4px 0 var(--puff-lo), 0 18px 40px rgb(0 0 0 / 0.55);
+  --shadow-md: 0 6px 16px rgb(0 0 0 / 0.4);
+}
+
+/* ③ 스티커 수첩 — 고양이 그림과 같은 갈색 선, 오려 붙인 흰 테두리, 딱딱한 그림자, 모눈 종이. 밤에는 크래프트지 + 크림 선 */
+[data-skin="3"] {
+  --color-bg: #f6f0e4;
+  --color-surface: #fffdf7;
+  --color-surface-sunken: #f3ead9;
+  --color-surface-raised: #ffffff;
+  --color-border: #ddcdb2;
+  --color-border-strong: #8a7259;
+  --color-text: #3b2a1f;
+  --color-text-muted: #6c5644;
+  --color-text-subtle: #786250;
+  --color-success: #2f7344;
+  --color-warning: #8a5300;
+  --color-danger: #b42318;
+
+  --accent: #f8c94a;
+  --accent-hover: #f4bd2c;
+  --on-accent: #3b2a1f;
+  --accent-strong: #8a5e00;
+  --accent-soft: #fdf0c6;
+  --accent-soft-text: #7a5200;
+  --accent-border: var(--ui-line);
+  --focus-ring: #8a5e00;
+
+  --ui-line: #4a3426;
+  --ui-line-w: 2px;
+  --sticker-edge: #ffffff; /* 오려 낸 흰 테 */
+  --grid-line: rgb(90 62 43 / 0.08);
+  --ui-1: #bfe6d3; /* 테이프 민트 */
+  --ui-2: #f7c6cc; /* 테이프 분홍 */
+  --ui-3: #c4e1f2; /* 테이프 하늘 */
+  --ui-4: #fbe3a0; /* 테이프 버터 */
+
+  --radius-control: 10px;
+  --radius-card: 12px;
+  --card-border: var(--ui-line);
+  --shadow-color: 74 52 38;
+  --shadow-card: 3px 3px 0 var(--ui-line);
+  --shadow-lg: 0 0 0 5px var(--sticker-edge), 5px 6px 0 5px var(--ui-line);
+  --shadow-md: 2px 2px 0 var(--ui-line);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-skin="3"] {
+    --color-bg: #26211c;
+    --color-surface: #312a23;
+    --color-surface-sunken: #1e1a16;
+    --color-surface-raised: #3a3229;
+    --color-border: #4f4438;
+    --color-border-strong: #9a8a76;
+    --color-text: #f5ecdd;
+    --color-text-muted: #c7b8a2;
+    --color-text-subtle: #ad9f8a;
+    --color-success: #8fd8a4;
+    --color-warning: #f0b44c;
+    --color-danger: #f97066;
+    --accent: #f7c955;
+    --accent-hover: #f9d470;
+    --on-accent: #2a1e10;
+    --accent-strong: #f7cf6a;
+    --accent-soft: #3d3218;
+    --accent-soft-text: #f5d27a;
+    --focus-ring: #f7cf6a;
+    --ui-line: #e9dcc6;
+    --sticker-edge: #4a4035; /* 오려 낸 흰 테 */
+    --grid-line: rgb(233 220 198 / 0.06);
+    --ui-1: #3d6a55; /* 테이프 민트 */
+    --ui-2: #7a4a52; /* 테이프 분홍 */
+    --ui-3: #3d5a6a; /* 테이프 하늘 */
+    --ui-4: #6a5a2c; /* 테이프 버터 */
+  }
+}
+:root[data-theme="dark"] [data-skin="3"] {
+  --color-bg: #26211c;
+  --color-surface: #312a23;
+  --color-surface-sunken: #1e1a16;
+  --color-surface-raised: #3a3229;
+  --color-border: #4f4438;
+  --color-border-strong: #9a8a76;
+  --color-text: #f5ecdd;
+  --color-text-muted: #c7b8a2;
+  --color-text-subtle: #ad9f8a;
+  --color-success: #8fd8a4;
+  --color-warning: #f0b44c;
+  --color-danger: #f97066;
+  --accent: #f7c955;
+  --accent-hover: #f9d470;
+  --on-accent: #2a1e10;
+  --accent-strong: #f7cf6a;
+  --accent-soft: #3d3218;
+  --accent-soft-text: #f5d27a;
+  --focus-ring: #f7cf6a;
+  --ui-line: #e9dcc6;
+  --sticker-edge: #4a4035; /* 오려 낸 흰 테 */
+  --grid-line: rgb(233 220 198 / 0.06);
+  --ui-1: #3d6a55; /* 테이프 민트 */
+  --ui-2: #7a4a52; /* 테이프 분홍 */
+  --ui-3: #3d5a6a; /* 테이프 하늘 */
+  --ui-4: #6a5a2c; /* 테이프 버터 */
+}

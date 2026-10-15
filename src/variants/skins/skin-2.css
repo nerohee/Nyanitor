@@ -1,0 +1,432 @@
+/*
+ * ② 찹쌀떡 — 윤곽선 없이 말랑하게 부푼 판. 위는 빛, 아래는 그늘(안쪽 그림자)로 볼록하게, 바깥 그림자는 따뜻한 색.
+ * 메뉴는 장면을 자르지 않고 그 위에 떠 있는 둥근 독. 단추는 쑥색 알약, 칩 · 막대는 복숭아 · 버터 · 하늘 파스텔.
+ * 레퍼런스: 게임의 민트 "적용" 단추 · 하늘색 띠 · 둥근 아이콘 단추의 말랑함, 원작보다 선을 빼서 더 조용하게.
+ */
+
+/* ── 메뉴: 떠 있는 독 — 장면이 창 전체 폭 ── */
+.vf[data-skin="2"] :is(.ha, .wa) {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+}
+.vf[data-skin="2"] .ha-nav {
+  position: absolute;
+  z-index: 4;
+  top: var(--space-4);
+  left: var(--space-4);
+  width: 68px;
+  border: 0;
+  border-radius: 34px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.vf[data-skin="2"] .ha-nav ul {
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+.vf[data-skin="2"] .ha-nav :is(a, button) {
+  gap: 2px;
+  padding: var(--space-2) 0 6px;
+  border-radius: 26px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.vf[data-skin="2"] .ha-nav :is(a, button):hover {
+  background: var(--ui-2);
+  color: var(--color-text);
+}
+.vf[data-skin="2"] .ha-nav [aria-current="page"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -3px 0 var(--puff-lo);
+}
+.vf[data-skin="2"] .ha-nav :is(a, button):active {
+  transform: scale(0.94);
+}
+.vf[data-skin="2"] .ha-nav :focus-visible {
+  outline-offset: 2px;
+}
+/* 고양이 귀 — 독 · 사용량 판 위에 말랑한 귀 두 개 (같은 크림, 안쪽은 볼 분홍) */
+.vf[data-skin="2"] :is(.ha-nav, .ha-status)::before,
+.vf[data-skin="2"] :is(.ha-nav, .ha-status)::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -11px;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px 4px 2px 4px;
+  background:
+    radial-gradient(circle at 32% 32%, var(--ui-4) 0 6px, transparent 6.5px),
+    var(--color-surface);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.vf[data-skin="2"] :is(.ha-nav, .ha-status)::before {
+  left: 8px;
+  transform: rotate(38deg);
+}
+.vf[data-skin="2"] :is(.ha-nav, .ha-status)::after {
+  right: 8px;
+  transform: rotate(52deg);
+}
+.vf[data-skin="2"] .ha-status::before {
+  left: 22px;
+}
+.vf[data-skin="2"] .ha-status::after {
+  right: auto;
+  left: 62px;
+}
+
+/* 독 자리만큼 카드를 오른쪽으로 */
+.vf[data-skin="2"] .ha-status {
+  left: 100px;
+}
+.vf[data-skin="2"] .ha-slab {
+  padding-left: 100px;
+}
+.vf[data-skin="2"] .wa-stage {
+  padding-left: 100px;
+}
+
+/* ── 판: 볼록한 크림 떡 ── */
+.vf[data-skin="2"] :is(.ha-card, .vf-cats__row) {
+  border: 0;
+  background: var(--color-surface);
+}
+.vf[data-skin="2"] .ha-status {
+  padding: var(--space-5);
+}
+.vf[data-skin="2"] .ha-status .ready {
+  border-bottom: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 18px;
+  background: var(--accent-soft);
+}
+.vf[data-skin="2"] .ready > .icon {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.vf[data-skin="2"] .ready__detail {
+  color: var(--accent-soft-text);
+}
+
+/* ── 단추: 쑥색 알약 · 크림 알약 ── */
+.vf[data-skin="2"] .hbtn {
+  height: 34px;
+  padding: 0 var(--space-4);
+  border: 0;
+  background: var(--color-surface-sunken);
+  /* 선 없는 판이지만 단추 경계는 3:1 (옅은 테 1.5px) */
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-border-strong),
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -3px 0 var(--puff-lo);
+}
+.vf[data-skin="2"] .hbtn:hover {
+  background: var(--ui-1);
+}
+.vf[data-skin="2"] .hbtn:active {
+  transform: scale(0.96);
+}
+.vf[data-skin="2"] .hbtn--primary {
+  height: 40px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -4px 0 rgb(20 90 60 / 0.16),
+    0 6px 14px var(--glow-accent);
+}
+.vf[data-skin="2"] .hbtn--primary:hover {
+  background: var(--accent-hover);
+}
+.vf[data-skin="2"] .hbtn--ghost {
+  background: transparent;
+  box-shadow: none;
+}
+.vf[data-skin="2"] .icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .icon-btn:hover {
+  background: var(--ui-4);
+}
+
+/* ── 사용량: 굵은 알약 막대 ── */
+.vf[data-skin="2"] .usage__bar {
+  height: 14px;
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 2px 3px var(--puff-lo);
+}
+.vf[data-skin="2"] .usage__row:nth-child(1) .usage__bar > span {
+  background: var(--meter-1);
+}
+.vf[data-skin="2"] .usage__row:nth-child(2) .usage__bar > span {
+  background: var(--meter-2);
+}
+.vf[data-skin="2"] .usage__bar > span {
+  box-shadow: inset 0 2px 0 var(--puff-hi);
+}
+.vf[data-skin="2"] .usage__line strong {
+  font-weight: 400;
+}
+.vf[data-skin="2"] .usage__badge {
+  border: 0;
+  background: var(--ui-2);
+  color: var(--color-text);
+}
+
+/* ── 아래: 큰 쑥떡 단추 + 떠 있는 쪽지들 ── */
+.vf[data-skin="2"] .ha-new {
+  height: 68px;
+  padding: 0 var(--space-8);
+  border-radius: 34px;
+  font-size: 20px;
+  box-shadow:
+    inset 0 3px 0 var(--puff-hi),
+    inset 0 -5px 0 rgb(20 90 60 / 0.16),
+    0 12px 26px var(--glow-accent);
+}
+.vf[data-skin="2"] .ha-new .icon {
+  width: 26px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--puff-hi);
+}
+.vf[data-skin="2"] .ha-recent {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 0;
+  background: var(--color-surface);
+}
+.vf[data-skin="2"] .ha-recent__title {
+  padding-left: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.vf[data-skin="2"] .ha-projects .projects__item {
+  height: 56px;
+  border-radius: 20px;
+  background: var(--color-surface-sunken);
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -3px 0 var(--puff-lo);
+}
+.vf[data-skin="2"] .ha-projects li:nth-child(1) .projects__item {
+  background: var(--ui-1);
+}
+.vf[data-skin="2"] .ha-projects li:nth-child(2) .projects__item {
+  background: var(--ui-3);
+}
+.vf[data-skin="2"] .ha-projects li:nth-child(3) .projects__item {
+  background: var(--ui-2);
+}
+.vf[data-skin="2"] .ha-projects .projects__item:hover {
+  background: var(--color-surface-raised);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -3px 0 var(--puff-lo),
+    var(--shadow-md);
+}
+.vf[data-skin="2"] .ha-projects :is(.projects__phase, .projects__when) {
+  color: var(--color-text);
+}
+
+/* ── 고양이 정보 창: 위에 복숭아 띠 ── */
+.vf[data-skin="2"] .ha-bubble {
+  padding: var(--space-5);
+  border: 0;
+  background: var(--color-surface);
+}
+.vf[data-skin="2"] .cat-info__head {
+  margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-5)) 0;
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--ui-1);
+}
+.vf[data-skin="2"] .cat-info__agent {
+  color: var(--color-text);
+}
+.vf[data-skin="2"] .cat-info__status {
+  width: fit-content;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .cat-info__status[data-working="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.vf[data-skin="2"] .cat-info__meta div {
+  border-radius: var(--radius-pill);
+  background: var(--ui-3);
+}
+.vf[data-skin="2"] .cat-info__meta dt {
+  color: var(--color-text);
+}
+
+/* ── 장면 위 이름표: 테두리 없는 크림 알약 + 그림자 ── */
+.vf[data-skin="2"] .hs-tag {
+  border-color: transparent;
+  padding: 2px var(--space-3);
+  box-shadow: 0 3px 8px rgb(90 50 20 / 0.25);
+}
+
+/* ── 작업 공간: 종이 한 장 대신 떠 있는 떡 여러 개 ── */
+.vf[data-skin="2"] .wa-paper {
+  gap: var(--space-3);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.vf[data-skin="2"] .wa-backdrop {
+  opacity: 1;
+  filter: saturate(0.85) blur(3px);
+}
+.vf[data-skin="2"] .wa-projects {
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.vf[data-skin="2"] .wa-panels.wp--wide {
+  gap: var(--space-3);
+}
+.vf[data-skin="2"] .wa-panels.wp--wide > .wp__panel,
+.vf[data-skin="2"] .wa-panels.wp--tabs {
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.vf[data-skin="2"] .wa-panels.wp--wide > .wp__panel + .wp__panel {
+  border-left: 0;
+}
+.vf[data-skin="2"] :is(.wstatus, .wed__bar) {
+  border-bottom: 0;
+  margin: var(--space-2) var(--space-2) 0;
+  border-radius: 18px;
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .wproj__item {
+  border-radius: 18px;
+}
+.vf[data-skin="2"] .wproj__item[aria-current="page"] {
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    inset 0 -3px 0 var(--puff-lo);
+}
+.vf[data-skin="2"] .wed__mode {
+  border-radius: var(--radius-pill);
+}
+.vf[data-skin="2"] .wed__mode button {
+  border-radius: var(--radius-pill);
+}
+.vf[data-skin="2"] .wp__bar {
+  padding: var(--space-2);
+  border-bottom: 0;
+}
+.vf[data-skin="2"] .wp__tabs {
+  flex: none;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .wp__tab {
+  height: 32px;
+  border-radius: var(--radius-pill);
+}
+.vf[data-skin="2"] .wp__tab[aria-selected="true"] {
+  background: var(--color-surface);
+  box-shadow:
+    inset 0 2px 0 var(--puff-hi),
+    0 2px 6px var(--puff-lo);
+}
+.vf[data-skin="2"] .wmsg__bubble {
+  border-radius: 20px 20px 20px 6px;
+}
+.vf[data-skin="2"] .wmsg--user .wmsg__bubble {
+  border-radius: 20px 20px 6px 20px;
+}
+.vf[data-skin="2"] .wcard {
+  border: 0;
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1.5px var(--color-border),
+    0 6px 16px var(--puff-lo);
+}
+.vf[data-skin="2"] .wcard__head {
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .wcard[data-pending="true"] {
+  box-shadow:
+    0 0 0 3px var(--accent),
+    0 8px 20px var(--glow-accent);
+}
+.vf[data-skin="2"] .wcard[data-pending="true"] .wcard__head {
+  background: var(--accent-soft);
+}
+.vf[data-skin="2"] .wopt {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="2"] .wopt:has(input:checked) {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+.vf[data-skin="2"] .wopt__key {
+  border-radius: 50%;
+  background: var(--color-surface);
+}
+.vf[data-skin="2"] .wcomposer {
+  border: 0;
+  border-radius: 24px;
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 2px 4px var(--puff-lo);
+}
+.vf[data-skin="2"] .wcomposer:focus-within {
+  box-shadow:
+    inset 0 2px 4px var(--puff-lo),
+    0 0 0 2px var(--focus-ring);
+}
+.vf[data-skin="2"] .wchat__waiting {
+  border-radius: 18px;
+}
+.vf[data-skin="2"] .wboard__item {
+  border-radius: 16px;
+}
+.vf[data-skin="2"] .wa-window {
+  border: 8px solid var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.vf[data-skin="2"] .wempty {
+  border: 0;
+  background: var(--ui-2);
+}
+.vf[data-skin="2"] .wempty__body {
+  color: var(--color-text);
+}
+
+/* ── 고양이 목록 ── */
+.vf[data-skin="2"] .vf-cats__row {
+  box-shadow: var(--shadow-card);
+}
+.vf[data-skin="2"] .vf-cats__face {
+  background: var(--ui-1);
+}

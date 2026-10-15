@@ -1,0 +1,77 @@
+/*
+ * P2-11 테마 시안 (D-39) — 시안 a 구조 위에 입히는 UI 판 세 벌. `?skin=1|2|3` → `.vf[data-skin]`.
+ * 값은 tokens.css 의 `[data-skin]` 절. 여기는 판마다 모양(테두리 · 재질 · 단추)만.
+ * 고객이 하나를 고르면: 고른 파일의 선택자에서 `.vf[data-skin="N"]` 를 떼어 앱 화면 CSS 로 옮기고 이 폴더를 지운다.
+ * 고양이 집 장면(배경 · 고양이 · 물건)은 건드리지 않는다 — 장면 위 이름표만 글꼴 · 테두리를 맞춘다.
+ */
+@import "./skin-1.css";
+@import "./skin-2.css";
+@import "./skin-3.css";
+
+/* ── 세 판 공통: 둥근 글꼴은 제목 · 단추 · 탭 · 메뉴 · 큰 숫자에만, 본문은 시스템 글꼴 그대로 ── */
+.vf[data-skin] {
+  font-synthesis: none; /* Jua 는 굵기가 하나 — 가짜 굵게를 막는다 */
+}
+.vf[data-skin] :is(
+    .ha-nav span,
+    .hbtn,
+    .ha-recent__title,
+    .projects__name,
+    .ready strong,
+    .usage__line,
+    .cat-info h2,
+    .cat-info__label,
+    .wp__tab,
+    .wproj__title,
+    .wproj__name,
+    .wa-h,
+    .wcard__kind,
+    .wcard__title,
+    .wq__prompt,
+    .wboard__name,
+    .wstatus b,
+    .wmsg__who,
+    .wempty__title,
+    .wchat__waiting,
+    .vf-h1,
+    .vf-cats__who b,
+    .md h2,
+    .md h3,
+    .hs-tag b
+  ) {
+  font-family: var(--font-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+/* Jua 는 같은 크기에서 시스템 글꼴보다 작아 보인다 — 한 단계 키운다 */
+.vf[data-skin] .projects__name,
+.vf[data-skin] .wproj__name,
+.vf[data-skin] .wboard__name {
+  font-size: var(--text-md);
+}
+.vf[data-skin] .ready strong,
+.vf[data-skin] .usage__line {
+  font-size: 15px;
+}
+.vf[data-skin] .cat-info h2 {
+  font-size: 22px;
+}
+.vf[data-skin] .vf-h1 {
+  font-size: var(--text-2xl);
+}
+
+/* 움직임 — 단추가 눌려 들어가는 정도만. 줄이기 설정이면 --dur-* 가 0 */
+.vf[data-skin] :is(.hbtn, .icon-btn, .projects__item, .wproj__item, .ha-nav a, .ha-nav button) {
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf[data-skin] :is(.hbtn, .icon-btn, .projects__item, .wproj__item, .ha-nav a, .ha-nav button) {
+    transition: none;
+  }
+  .vf[data-skin] :is(.hbtn, .icon-btn, .projects__item, .wproj__item, .ha-nav a, .ha-nav button):active {
+    transform: none !important;
+  }
+}

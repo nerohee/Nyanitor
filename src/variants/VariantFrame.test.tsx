@@ -24,6 +24,17 @@ describe("시안 틀", () => {
     expect(screen.getByRole("link", { name: "밤" })).toHaveAttribute("aria-current", "true");
   });
 
+  it("테마 시안(skin)은 1 · 2 · 3 만 받고, 없거나 모르는 값이면 1판 테마(data-skin 없음)", () => {
+    const { unmount } = render(<VariantFrame search="?variant=a&skin=2" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "2");
+    expect(screen.getByRole("link", { name: "② 찹쌀떡" })).toHaveAttribute("aria-current", "true");
+    unmount();
+
+    render(<VariantFrame search="?variant=a&skin=9" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).not.toHaveAttribute("data-skin");
+    expect(screen.getByRole("link", { name: "1판" })).toHaveAttribute("aria-current", "true");
+  });
+
   it("시간대 쿼리가 없으면 PC 시각을 따르고, 모르는 시안(지운 b · c 포함) · 화면은 기본값(a · 집)으로", () => {
     render(<VariantFrame search="?variant=b&screen=nope" clock={() => new Date(2026, 9, 13, 18, 30)} />);
 

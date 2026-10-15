@@ -1,0 +1,436 @@
+/*
+ * ③ 스티커 수첩 — 고양이 그림과 같은 갈색 선(2px)으로 그린 판을 오려 붙인 스티커처럼: 흰 테 + 딱딱한 그림자,
+ * 살짝 삐뚤어진 모서리, 마스킹 테이프. 메뉴는 수첩 스프링 옆 색 인덱스, 작업 공간은 모눈 종이.
+ * 레퍼런스: 게임의 갈색 윤곽 아이콘 · 점선 테 카드 · 기울어진 작은 스티커. 테이프 · 스프링은 CSS 로만 그린다.
+ */
+.vf[data-skin="3"] {
+  /* 손으로 그린 듯 조금씩 다른 모서리 */
+  --wobble: 14px 9px 13px 8px / 9px 14px 8px 13px;
+  --wobble-sm: 10px 7px 9px 6px / 7px 10px 6px 9px;
+  --grid-paper:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px;
+  /* 테이프 양끝 톱니 */
+  --tape-clip: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 88% 0, 92% 10%, 96% 0, 100% 8%, 100% 92%, 96% 100%, 92% 90%, 88% 100%, 12% 100%, 8% 90%, 4% 100%, 0 92%);
+}
+
+/* ── 판: 갈색 선 + 오려 낸 흰 테 + 딱딱한 그림자 ── */
+.vf[data-skin="3"] :is(.ha-card, .ha-recent, .vf-cats__row) {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    4px 6px 0 5px rgb(var(--shadow-color) / 0.28);
+}
+.vf[data-skin="3"] .ha-status {
+  transform: rotate(-0.8deg);
+}
+.vf[data-skin="3"] .ha-status .ready {
+  border-bottom: var(--ui-line-w) dashed var(--color-border);
+}
+/* 마스킹 테이프 */
+.vf[data-skin="3"] :is(.ha-status, .ha-recent, .ha-bubble)::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 84px;
+  height: 22px;
+  margin-left: -42px;
+  background: var(--ui-1);
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(-3deg);
+  pointer-events: none;
+}
+.vf[data-skin="3"] .ha-recent::before {
+  left: auto;
+  right: 28px;
+  background: var(--ui-2);
+  transform: rotate(4deg);
+}
+.vf[data-skin="3"] .ha-bubble::before {
+  left: 28px;
+  margin-left: 0;
+  background: var(--ui-3);
+  transform: rotate(-5deg);
+}
+
+/* ── 왼쪽 메뉴: 수첩 스프링 + 색 인덱스 스티커 ── */
+.vf[data-skin="3"] :is(.ha, .wa) {
+  grid-template-columns: 92px 1fr;
+}
+.vf[data-skin="3"] .ha-nav {
+  position: relative;
+  z-index: 2;
+  border-right: var(--ui-line-w) solid var(--ui-line);
+  background:
+    radial-gradient(circle at 82px 14px, var(--ui-line) 0 4px, transparent 4.5px) 0 0 / 100% 28px repeat-y,
+    var(--grid-paper),
+    var(--color-bg);
+}
+.vf[data-skin="3"] .ha-nav ul {
+  gap: var(--space-3);
+  padding: var(--space-4) 14px var(--space-4) var(--space-2);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(1) {
+  --tab: var(--ui-4);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(2) {
+  --tab: var(--ui-1);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(3) {
+  --tab: var(--ui-2);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(4) {
+  --tab: var(--ui-3);
+}
+.vf[data-skin="3"] .ha-nav :is(a, button) {
+  gap: 2px;
+  padding: var(--space-2) 0 6px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--tab);
+  color: var(--color-text);
+  font-size: 12px;
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(odd) :is(a, button) {
+  transform: rotate(-2deg);
+}
+.vf[data-skin="3"] .ha-nav li:nth-child(even) :is(a, button) {
+  transform: rotate(1.5deg);
+}
+.vf[data-skin="3"] .ha-nav :is(a, button):hover {
+  background: var(--tab);
+  color: var(--color-text);
+  transform: rotate(0deg) translateY(-1px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .ha-nav [aria-current="page"] {
+  background: var(--tab);
+  color: var(--color-text);
+  box-shadow:
+    0 0 0 4px var(--sticker-edge),
+    3px 4px 0 4px var(--ui-line);
+}
+.vf[data-skin="3"] .ha-nav [aria-current="page"] span {
+  text-decoration: underline wavy var(--ui-line) 1.5px;
+  text-underline-offset: 3px;
+}
+.vf[data-skin="3"] .ha-nav :focus-visible {
+  outline-offset: 5px;
+}
+
+/* ── 단추: 갈색 선 + 딱딱한 그림자, 누르면 그림자 쪽으로 ── */
+.vf[data-skin="3"] .hbtn {
+  height: 34px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hbtn:hover {
+  background: var(--accent-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hbtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hbtn--primary {
+  height: 40px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hbtn--primary:hover {
+  background: var(--accent-hover);
+  box-shadow: 4px 4px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hbtn--ghost {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+.vf[data-skin="3"] .icon-btn {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--ui-line);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .icon-btn:hover {
+  background: var(--ui-2);
+}
+
+/* ── 준비 · 사용량: 빗금 채운 손그림 막대 ── */
+.vf[data-skin="3"] .ready > .icon {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--ui-1);
+  color: var(--ui-line);
+}
+.vf[data-skin="3"] .usage__bar {
+  height: 12px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 7px 5px 6px 4px;
+  background: var(--color-surface);
+  box-shadow: none;
+}
+.vf[data-skin="3"] .usage__bar > span {
+  border-right: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(var(--shadow-color) / 0.22) 4px 6px),
+    var(--accent);
+}
+.vf[data-skin="3"] .usage__line strong {
+  font-weight: 400;
+}
+.vf[data-skin="3"] .usage__badge {
+  border: 1.5px dashed var(--ui-line);
+  color: var(--color-text);
+}
+
+/* ── 아래: 노란 스티커 단추 + 인덱스 카드 ── */
+.vf[data-skin="3"] .ha-new {
+  height: 62px;
+  padding: 0 var(--space-6);
+  border-radius: var(--wobble);
+  font-size: 20px;
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    5px 6px 0 5px var(--ui-line);
+  transform: rotate(-1.5deg);
+}
+.vf[data-skin="3"] .ha-new:hover {
+  transform: rotate(-1.5deg) translate(-1px, -1px);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    6px 7px 0 5px var(--ui-line);
+}
+.vf[data-skin="3"] .ha-new:active {
+  transform: rotate(-1.5deg) translate(3px, 3px);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    2px 3px 0 5px var(--ui-line);
+}
+.vf[data-skin="3"] .ha-new .icon {
+  width: 24px;
+  height: 24px;
+  padding: 2px;
+  border: var(--ui-line-w) solid currentColor;
+  border-radius: 50%;
+}
+.vf[data-skin="3"] .ha-recent {
+  position: relative;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  background:
+    var(--grid-paper),
+    var(--color-surface);
+}
+.vf[data-skin="3"] .ha-recent__title {
+  color: var(--color-text);
+  font-size: 14px;
+}
+.vf[data-skin="3"] .ha-projects .projects__item {
+  height: 58px;
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .ha-projects li:nth-child(odd) .projects__item {
+  transform: rotate(-0.6deg);
+}
+.vf[data-skin="3"] .ha-projects li:nth-child(even) .projects__item {
+  transform: rotate(0.6deg);
+}
+.vf[data-skin="3"] .ha-projects .projects__item:hover {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--color-surface-raised);
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .ha-projects .projects__item[data-running="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--accent-soft);
+}
+.vf[data-skin="3"] .ha-projects .projects__item[data-running="true"] :is(.projects__phase, .projects__when) {
+  color: var(--accent-soft-text);
+}
+
+/* ── 고양이 정보 창 ── */
+.vf[data-skin="3"] .ha-bubble {
+  overflow: visible;
+}
+.vf[data-skin="3"] .cat-info h2 {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  background: linear-gradient(transparent 55%, var(--ui-4) 55% 92%, transparent 92%);
+}
+.vf[data-skin="3"] .cat-info__status {
+  width: fit-content;
+  padding: 2px var(--space-3);
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+}
+.vf[data-skin="3"] .cat-info__meta div {
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .cat-info__label {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+/* ── 장면 위 이름표: 흰 테 스티커 ── */
+.vf[data-skin="3"] .hs-tag {
+  border-width: 2px;
+  border-radius: 8px 6px 8px 5px;
+  box-shadow:
+    0 0 0 3px #fff,
+    2px 3px 0 3px rgb(74 52 38 / 0.35);
+}
+
+/* ── 작업 공간: 모눈 수첩 ── */
+.vf[data-skin="3"] .wa-paper {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background:
+    var(--grid-paper),
+    var(--color-surface);
+  box-shadow:
+    0 0 0 6px var(--sticker-edge),
+    6px 8px 0 6px rgb(var(--shadow-color) / 0.3);
+}
+.vf[data-skin="3"] .wa-stage {
+  padding: 22px;
+}
+.vf[data-skin="3"] .wa-projects {
+  border-right: var(--ui-line-w) dashed var(--ui-line);
+  background: transparent;
+}
+.vf[data-skin="3"] .wa-panels.wp--wide > .wp__panel + .wp__panel {
+  border-left: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] :is(.wstatus, .wed__bar) {
+  border-bottom: var(--ui-line-w) solid var(--ui-line);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wproj__item[aria-current="page"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wed__mode {
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] .wed__mode button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.vf[data-skin="3"] .wp__bar {
+  border-bottom: var(--ui-line-w) solid var(--ui-line);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wp__tab[aria-selected="true"] {
+  box-shadow: none;
+  background: linear-gradient(transparent 60%, var(--accent) 60% 88%, transparent 88%);
+}
+.vf[data-skin="3"] .wp__badge {
+  border: 1.5px solid var(--ui-line);
+  line-height: 15px;
+}
+.vf[data-skin="3"] .wmsg__bubble {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 14px 12px 14px 3px / 12px 14px 12px 3px;
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wmsg--user .wmsg__bubble {
+  border-radius: 12px 14px 3px 14px / 14px 12px 3px 12px;
+  background: var(--accent-soft);
+}
+.vf[data-skin="3"] .wcard {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wcard__head {
+  border-bottom: 1.5px dashed var(--ui-line);
+}
+.vf[data-skin="3"] .wcard[data-pending="true"] {
+  border-color: var(--ui-line);
+  box-shadow:
+    0 0 0 4px var(--accent),
+    4px 5px 0 4px var(--ui-line);
+}
+.vf[data-skin="3"] .wcard__state[data-pending="true"] {
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] .wopt {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wopt:has(input:checked) {
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] .wopt__key {
+  border: 1.5px solid var(--ui-line);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wcomposer {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wchat__waiting {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wboard__item[data-status="running"],
+.vf[data-skin="3"] .wboard__item[data-status="waiting"] {
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wboard__item[data-status="running"] .wboard__status,
+.vf[data-skin="3"] .wboard__item[data-status="waiting"] .wboard__status {
+  box-shadow: inset 0 0 0 1.5px var(--ui-line);
+}
+.vf[data-skin="3"] .wa-window {
+  border: 6px solid var(--sticker-edge);
+  box-shadow:
+    0 0 0 var(--ui-line-w) var(--ui-line),
+    inset 0 0 0 var(--ui-line-w) var(--ui-line),
+    4px 5px 0 var(--ui-line-w) rgb(var(--shadow-color) / 0.3);
+}
+.vf[data-skin="3"] .wempty {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+}
+
+/* ── 고양이 목록 ── */
+.vf[data-skin="3"] .vf-cats {
+  background:
+    var(--grid-paper),
+    var(--color-bg);
+}
+.vf[data-skin="3"] .vf-cats__list {
+  gap: var(--space-5);
+  padding: 6px;
+}
+.vf[data-skin="3"] .vf-cats__face {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-4);
+}

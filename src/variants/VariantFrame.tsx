@@ -8,6 +8,7 @@ import { variantIds, variants } from "./registry";
 import { CatsScreen } from "./frame/CatsScreen";
 import { VariantBar } from "./frame/VariantBar";
 import "./frame/frame.css";
+import "./skins/skins.css";
 
 const MINUTE = 60_000;
 
@@ -58,6 +59,7 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
       data-variant={query.variant}
       data-time={query.time}
       data-screen={query.screen}
+      data-skin={query.skin ?? undefined}
     >
       <div className="vf__stage">{renderScreen(query.screen)}</div>
       {query.bar && (
@@ -65,7 +67,7 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
           search={search}
           query={query}
           variantIds={variantIds}
-          currentName={mod ? t(mod.meta.nameKey) : query.variant}
+          currentName={`${mod ? t(mod.meta.nameKey) : query.variant}${query.skin ? ` · ${t(`variant.skin.${query.skin}`)}` : ""}`}
         />
       )}
     </div>

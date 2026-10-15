@@ -1,6 +1,7 @@
 // 시안 틀이 읽는 주소 쿼리: ?variant=a (없는 시안은 a 로) &screen=house|workspace|cats &time=morning|day|evening|night
 // &theme=light|dark (없으면 OS 따라) &bar=off (아래 시안 막대 숨김 — 스크린샷용)
 // &usage=unavailable (사용량을 못 받은 상태 보기) &state=running|waiting|empty (작업 공간 상태)
+// &skin=1|2|3 (P2-11 테마 시안 — 같은 시안 a 구조 위에 입히는 UI 판. 없으면 1판 테마)
 
 import { TIMES, timeOfDay, type TimeOfDay } from "../components/house/time";
 import { WORK_STATES, type WorkState } from "./fixtures-workspace";
@@ -9,9 +10,12 @@ export { TIMES, timeOfDay, type TimeOfDay };
 
 export const SCREENS = ["house", "workspace", "cats"] as const;
 export const THEMES = ["system", "light", "dark"] as const;
+/** P2-11 테마 시안 (D-39) — 고객이 고르면 고른 하나만 남기고 이 쿼리는 지운다 */
+export const SKINS = ["1", "2", "3"] as const;
 
 export type ScreenId = (typeof SCREENS)[number];
 export type ThemeChoice = (typeof THEMES)[number];
+export type SkinId = (typeof SKINS)[number];
 
 export interface FrameQuery {
   variant: string;
@@ -20,6 +24,8 @@ export interface FrameQuery {
   /** 쿼리로 시간대를 고정했나 (아니면 PC 시각을 따른다) */
   timeFixed: boolean;
   theme: ThemeChoice;
+  /** 테마 시안 — 없으면 1판 테마 */
+  skin: SkinId | null;
   bar: boolean;
   /** 사용량 가짜 데이터 — 받음 / 확인할 수 없음 */
   usage: "ok" | "unavailable";
@@ -41,6 +47,7 @@ export function parseFrameQuery(search: string, now: Date, knownVariants: readon
     time: fixedTime ?? timeOfDay(now),
     timeFixed: fixedTime !== undefined,
     theme: pick(params.get("theme"), THEMES) ?? "system",
+    skin: pick(params.get("skin"), SKINS) ?? null,
     bar: params.get("bar") !== "off",
     usage: params.get("usage") === "unavailable" ? "unavailable" : "ok",
     work: pick(params.get("state"), WORK_STATES) ?? "running",

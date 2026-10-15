@@ -1,5 +1,5 @@
 import { t, type TextKey } from "../../i18n/ko";
-import { SCREENS, THEMES, TIMES, withParam, type FrameQuery } from "../query";
+import { SCREENS, SKINS, THEMES, TIMES, withParam, type FrameQuery } from "../query";
 
 interface Option {
   value: string | null;
@@ -47,6 +47,15 @@ export function VariantBar({ search, query, variantIds, currentName }: VariantBa
           options={variantIds.map((id) => ({ value: id, label: id, current: id === query.variant }))}
         />
       )}
+      <Group
+        label="variant.bar.skin"
+        param="skin"
+        search={search}
+        options={[
+          { value: null, label: t("variant.skin.none"), current: query.skin === null },
+          ...SKINS.map((skin) => ({ value: skin, label: t(`variant.skin.${skin}`), current: skin === query.skin })),
+        ]}
+      />
       <Group
         label="variant.bar.screen"
         param="screen"

@@ -3,6 +3,7 @@ import { PANEL_ID } from "../../components/house/useCatPanel";
 import { activityTextKey } from "../../components/house/spots";
 import { t } from "../../i18n/ko";
 import { isWorking, type Activity, type AgentFixture } from "../fixtures";
+import { screenHref } from "../query";
 import { Icon } from "./icons";
 import "./shared.css";
 
@@ -14,11 +15,15 @@ interface CatInfoProps {
   className?: string;
 }
 
-/** 고양이 정보 패널 내용: 이름 · 에이전트 · 역할 · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일 · 고치기 (D-07) */
+/**
+ * 고양이 정보 패널 내용: 이름 · 에이전트 · 역할 · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일 ·
+ * 고치기(내 수정, D-07) · 고양이 바꾸기(고양이 고르기, D-41) — 둘 다 이 에이전트를 골라 연다.
+ */
 export function CatInfo({ agent, activity, onClose, className }: CatInfoProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const cat = agent.cat;
   const working = isWorking(activity);
+  const search = typeof window === "undefined" ? "" : window.location.search;
 
   // 열리면 제목으로 포커스 — 화면 읽기 프로그램이 바로 읽고, Tab 이 패널 안으로 이어진다
   useEffect(() => {
@@ -66,10 +71,14 @@ export function CatInfo({ agent, activity, onClose, className }: CatInfoProps) {
       <p className="cat-info__duties">{t(`cat.${cat}.duties`)}</p>
 
       <div className="cat-info__actions">
-        <button type="button" className="hbtn">
+        <a className="hbtn" href={screenHref(search, "edit", { item: agent.agent })}>
           <Icon name="custom" size={18} />
           {t("cat.info.edit")}
-        </button>
+        </a>
+        <a className="hbtn" href={screenHref(search, "pick", { agent: agent.agent })}>
+          <Icon name="paw" size={18} />
+          {t("cat.info.changeCat")}
+        </a>
       </div>
     </section>
   );

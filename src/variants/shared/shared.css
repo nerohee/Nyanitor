@@ -36,6 +36,10 @@
   border-color: transparent;
   background: transparent;
 }
+/* 다른 화면으로 가는 링크도 단추 모양 (고양이 정보 창의 고치기 · 고양이 바꾸기 등) */
+a.hbtn {
+  text-decoration: none;
+}
 .icon-btn {
   display: inline-flex;
   align-items: center;

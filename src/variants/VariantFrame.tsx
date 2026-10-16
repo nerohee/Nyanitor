@@ -8,9 +8,11 @@ import { parseFrameQuery, type ScreenId } from "./query";
 import { variantIds, variants } from "./registry";
 import { CatsScreen } from "./frame/CatsScreen";
 import { CatPickScreen } from "./screens/CatPick";
+import { EditScreen } from "./screens/Edit";
 import { HarnessScreen } from "./screens/Harness";
 import { SettingsScreen } from "./screens/Settings";
 import { SetupScreen } from "./screens/Setup";
+import { TrayScreen } from "./screens/Tray";
 import { VariantBar } from "./frame/VariantBar";
 import "./frame/frame.css";
 import "./skins/skins.css";
@@ -58,6 +60,8 @@ export default function VariantFrame({ search, clock = systemClock }: VariantFra
     if (screen === "settings") return <SettingsScreen {...shared} />;
     if (screen === "harness") return <HarnessScreen {...shared} />;
     if (screen === "pick") return <CatPickScreen {...shared} />;
+    if (screen === "edit") return <EditScreen {...shared} />;
+    if (screen === "tray") return <TrayScreen {...shared} />;
     const Screen = screen === "house" ? mod?.House : mod?.Workspace;
     return Screen ? <Screen time={query.time} usage={query.usage === "ok" ? USAGE_OK : USAGE_UNAVAILABLE} work={query.work} /> : null;
   }

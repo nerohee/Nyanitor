@@ -6,7 +6,7 @@ export type NavPlace = "house" | "workspace" | "custom" | "settings";
 
 /**
  * 왼쪽 탐색 (plan §5): 집 · 작업 공간 · 내 수정 · 설정.
- * 시안에서는 집 · 작업 공간 · 설정이 시안 틀의 `screen` 을 바꾸고, 내 수정은 눌리는 모양만 (묶음 2, P2-14).
+ * 시안에서는 네 곳 모두 시안 틀의 `screen` 을 바꾼다 (내 수정은 P2-14 에서 이어짐).
  * 첫 실행 · 준비는 준비가 안 됐을 때 "집" 자리에 뜨고, 하네스 · 고양이 고르기는 설정 안에서 들어간다.
  */
 export function HouseNav({ className, current = "house" }: { className: string; current?: NavPlace }) {
@@ -27,10 +27,10 @@ export function HouseNav({ className, current = "house" }: { className: string; 
           </a>
         </li>
         <li>
-          <button type="button">
+          <a href={screenHref(search, "edit")} aria-current={current === "custom" ? "page" : undefined}>
             <Icon name="custom" />
             <span>{t("variant.nav.custom")}</span>
-          </button>
+          </a>
         </li>
         <li>
           <a href={screenHref(search, "settings")} aria-current={current === "settings" ? "page" : undefined}>

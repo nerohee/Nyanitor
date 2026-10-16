@@ -17,7 +17,9 @@
     "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", -apple-system, BlinkMacSystemFont,
     "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "D2Coding", monospace;
+  /* 한글은 위 고정폭 글꼴에 없다 — OS 기본 고정폭(굴림체 등, 글자 사이가 벌어짐)으로 가지 않게 본문 한글 글꼴을 끼운다 (P2-14) */
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo",
+    monospace;
 
   /* 글자 단계 (Fluent 2 단계를 뼈대로). 본문 14px */
   --text-xs: 12px; /* 캡션 · 이름표 보조 */

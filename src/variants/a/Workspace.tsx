@@ -1,26 +1,22 @@
 // 시안 a 「들여다보는 창」 작업 공간 — 장면이 종이 뒤로 물러나고, 진행 보기 맨 위 둥근 창문 안에 일하는 고양이 (design-references.md)
 // 창문은 집 화면과 같은 장면을 잘라 보는 것 — 일하는 고양이가 있는 곳(캣휠 · 캣타워 · 댓돌)이 가운데에 온다.
+// P2-14: 넓은 창(1280 이상)은 프로젝트 | 요구사항(접을 수 있음) | 채팅 | 진행 나란히, 좁은 창은 프로젝트 바꾸기 단추 + 탭 (plan §5).
+import { useEffect, useRef, useState } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
 import { HouseScene, type Crop } from "../../components/house/HouseScene";
 import { staticPlacements, type CatPlacement, type Intents } from "../../components/house/schedule";
 import { SPOTS, STAGE, type Activity } from "../../components/house/spots";
 import { CAT_IDS, type CatId } from "../../components/cat/catalog";
 import { t } from "../../i18n/ko";
+import { ORCHESTRATOR } from "../fixtures";
 import { workspaceFixture, type WorkspaceFixture } from "../fixtures-workspace";
 import type { ScreenProps } from "../types";
 import type { TimeOfDay } from "../query";
 import { HouseNav } from "../shared/HouseNav";
-import {
-  ChatPane,
-  PhaseBoard,
-  ProgressLog,
-  ProjectNavList,
-  RawOutput,
-  RequirementsEditor,
-  useWide,
-  WorkingLine,
-  WorkPanels,
-} from "../shared/workspace";
+import { RequirementsEditor } from "../shared/editor";
+import { PhaseBoard, ProgressLog, RAW_ID, RawOutput, WorkingCats } from "../shared/progress";
+import { NewProjectDialog, NoProjects, ProjectNavList, ProjectSwitcher } from "../shared/projects";
+import { ChatPane, useWide, WorkPanels } from "../shared/workspace";
 import "./house.css";
 import "./workspace.css";
 
@@ -64,50 +60,115 @@ function RoomWindow({ fx, time }: { fx: WorkspaceFixture; time: TimeOfDay }) {
 
 /** 좁은 창: 탭 줄 오른쪽 작은 동그라미 창문 (일하는 고양이 얼굴) */
 function MiniWindow({ fx }: { fx: WorkspaceFixture }) {
-  const first = fx.working[0];
+  // 일하는 고양이가 없으면 먹물(오케스트레이터)
+  const cat = fx.working[0]?.cat ?? ORCHESTRATOR;
   return (
     <span className="wa-mini" aria-hidden="true">
-      {first && <CatFigure cat={first.cat} crop="face" />}
+      <CatFigure cat={cat} crop="face" />
     </span>
   );
 }
 
-function Progress({ fx, time }: { fx: WorkspaceFixture; time: TimeOfDay }) {
+function Progress({ fx, time, rawNonce }: { fx: WorkspaceFixture; time: TimeOfDay; rawNonce: number }) {
   return (
     <div className="wa-progress">
-      <RoomWindow fx={fx} time={time} />
-      <WorkingLine fx={fx} />
-      <h3 className="wa-h">{t("variant.ws.board")}</h3>
-      <PhaseBoard phases={fx.phases} />
-      <h3 className="wa-h">{t("variant.ws.log")}</h3>
-      <ProgressLog fx={fx} />
-      <RawOutput fx={fx} />
+      <div className="wa-progress__inner">
+        <div className="wa-progress__live">
+          <RoomWindow fx={fx} time={time} />
+          <h3 className="wa-h">{t("variant.ws.workingCats")}</h3>
+          <WorkingCats working={fx.working} />
+        </div>
+        <div className="wa-progress__story">
+          <h3 className="wa-h">{t("variant.ws.board")}</h3>
+          <PhaseBoard phases={fx.phases} paused={fx.runBar !== undefined} />
+          <h3 className="wa-h">{t("variant.ws.log")}</h3>
+          <ProgressLog log={fx.log} />
+          <RawOutput key={rawNonce} raw={fx.raw} open={rawNonce > 0} />
+        </div>
+      </div>
     </div>
   );
+}
+
+function currentPhase(fx: WorkspaceFixture): string | undefined {
+  if (!Array.isArray(fx.phases)) return undefined;
+  return fx.phases.find((p) => p.status === "now" || p.status === "waiting")?.id;
 }
 
 export function Workspace({ work, time }: ScreenProps) {
   const fx = workspaceFixture(work);
   const wide = useWide();
+  const [dialog, setDialog] = useState(fx.dialog === "new");
+  const [active, setActive] = useState(fx.pending > 0 || fx.runBar || fx.chat.length > 0 ? "chat" : "editor");
+  const [rawNonce, setRawNonce] = useState(0);
+  const opener = useRef<HTMLElement | null>(null);
+
+  const openDialog = () => {
+    opener.current = document.activeElement as HTMLElement | null;
+    setDialog(true);
+  };
+  const closeDialog = () => {
+    setDialog(false);
+    opener.current?.focus();
+  };
+  const showRaw = () => {
+    setActive("progress");
+    setRawNonce((n) => n + 1);
+  };
+  // 원본 출력을 펼치면 그 자리로
+  useEffect(() => {
+    if (rawNonce > 0) document.getElementById(RAW_ID)?.scrollIntoView?.({ block: "nearest" });
+  }, [rawNonce]);
+
+  const phase = currentPhase(fx);
   return (
     <div className="wa">
       <HouseNav className="ha-nav" current="workspace" />
       <div className="wa-stage">
         {/* 뒤로 물러난 장면 — 같은 마당이 종이 뒤에 비친다 */}
         <HouseScene className="wa-backdrop" time={time} placements={[]} />
-        <div className="wa-paper">
-          <ProjectNavList fx={fx} className="wa-projects" />
-          <WorkPanels
-            wide={wide}
-            initial={fx.pending > 0 ? "chat" : fx.state === "empty" ? "editor" : "chat"}
-            className="wa-panels"
-            tabExtra={<MiniWindow fx={fx} />}
-            panels={[
-              { id: "editor", label: t("variant.ws.tab.editor"), content: <RequirementsEditor fx={fx} /> },
-              { id: "chat", label: t("variant.ws.tab.chat"), badge: fx.pending, content: <ChatPane fx={fx} /> },
-              { id: "progress", label: t("variant.ws.tab.progress"), content: <Progress fx={fx} time={time} /> },
-            ]}
-          />
+        <div className="wa-paper" data-wide={wide ? "true" : undefined} data-none={fx.projects.length === 0 ? "true" : undefined}>
+          {fx.projects.length === 0 ? (
+            <NoProjects onNew={openDialog} />
+          ) : (
+            <>
+              {wide && <ProjectNavList projects={fx.projects} selectedId={fx.selectedId} onNew={openDialog} className="wa-projects" />}
+              <WorkPanels
+                wide={wide}
+                active={active}
+                onActive={setActive}
+                initialCollapsed={fx.chat.length > 0 ? ["editor"] : []}
+                className="wa-panels"
+                tabStart={wide ? undefined : <ProjectSwitcher projects={fx.projects} selectedId={fx.selectedId} onNew={openDialog} />}
+                tabExtra={<MiniWindow fx={fx} />}
+                panels={[
+                  {
+                    id: "editor",
+                    label: t("variant.ws.tab.editor"),
+                    size: "minmax(0, 1fr)",
+                    collapsible: true,
+                    alert: fx.editor.status === "external" ? t("variant.ws.editor.external") : undefined,
+                    content: (collapse) => <RequirementsEditor editor={fx.editor} onCollapse={collapse} />,
+                  },
+                  {
+                    id: "chat",
+                    label: t("variant.ws.tab.chat"),
+                    badge: fx.pending,
+                    size: "minmax(0, 1.25fr)",
+                    content: <ChatPane fx={fx} onRaw={showRaw} />,
+                  },
+                  {
+                    id: "progress",
+                    label: t("variant.ws.tab.progress"),
+                    note: phase,
+                    size: "380px",
+                    content: <Progress fx={fx} time={time} rawNonce={rawNonce} />,
+                  },
+                ]}
+              />
+            </>
+          )}
+          {dialog && <NewProjectDialog onClose={closeDialog} />}
         </div>
       </div>
     </div>

@@ -169,7 +169,7 @@ function InstallPreview() {
   );
 }
 
-function UpdatePreview() {
+function UpdatePreview({ search }: { search: string }) {
   const overlaps = UPDATE_FILES.filter((f) => f.overlap);
   return (
     <div className="hn-grid">
@@ -214,10 +214,10 @@ function UpdatePreview() {
             tone="warn"
             title={tf("variant.harness.update.overlapTitle", { n: overlaps.length })}
             actions={
-              <button type="button" className="hbtn">
+              <a className="hbtn" href={screenHref(search, "edit", { state: "conflict" })}>
                 <Icon name="custom" size={18} />
                 {t("variant.harness.update.overlapGo")}
-              </button>
+              </a>
             }
           >
             <p>
@@ -393,7 +393,7 @@ export function HarnessScreen({ search, state: rawState, time }: ScreenFrameProp
 
   let body;
   if (state === "install") body = <InstallPreview />;
-  else if (state === "update") body = <UpdatePreview />;
+  else if (state === "update") body = <UpdatePreview search={search} />;
   else if (state === "installing") body = <Installing />;
   else if (state === "installed") body = <Installed search={search} />;
   else if (state === "failed") body = <Failed />;

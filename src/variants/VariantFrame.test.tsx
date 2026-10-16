@@ -60,11 +60,23 @@ describe("시안 틀", () => {
       ["?screen=settings", "설정"],
       ["?screen=harness&state=update", "하네스"],
       ["?screen=pick", "에이전트 고양이 고르기"],
+      ["?screen=edit", "내 수정"],
+      ["?screen=edit&state=new", "새로 만들기"],
+      ["?screen=tray&state=notify", "트레이 메뉴 · 알림"],
     ] as const) {
       const view = render(<VariantFrame search={search} clock={morningClock} />);
       expect(screen.getByRole("heading", { level: 1, name: title })).toBeInTheDocument();
       view.unmount();
     }
+
+    // 작업 공간은 상태가 13가지 — 막대에서 바로 고른다
+    const ws = render(<VariantFrame search="?screen=workspace&state=permission" clock={morningClock} />);
+    const wsStates = screen.getByRole("group", { name: "상태" });
+    expect(within(wsStates).getAllByRole("link")).toHaveLength(13);
+    expect(within(wsStates).getByRole("link", { name: "권한" })).toHaveAttribute("aria-current", "true");
+    // 왼쪽 메뉴의 내 수정이 이제 진짜 링크
+    expect(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("link", { name: "내 수정" }).getAttribute("href")).toContain("screen=edit");
+    ws.unmount();
 
     // 상태가 없는 화면(집)에는 상태 줄이 없다
     render(<VariantFrame search="?screen=house" clock={morningClock} />);

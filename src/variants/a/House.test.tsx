@@ -31,7 +31,9 @@ describe("시안 a 고양이 집 — 키보드", () => {
     const panel = screen.getByRole("region", { name: "나비" });
     expect(nabi).toHaveAttribute("aria-expanded", "true");
     expect(within(panel).getByText("Sonnet")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /고치기/ })).toBeInTheDocument();
+    // 고치기(내 수정) · 고양이 바꾸기(고양이 고르기) — 둘 다 이 에이전트를 골라 연다 (D-41)
+    expect(within(panel).getByRole("link", { name: /고치기/ }).getAttribute("href")).toMatch(/screen=edit.*item=builder-system/);
+    expect(within(panel).getByRole("link", { name: /고양이 바꾸기/ }).getAttribute("href")).toMatch(/screen=pick.*agent=builder-system/);
     expect(within(panel).getByRole("heading", { name: "나비" })).toHaveFocus();
 
     // Esc → 닫히고 나비 단추로 돌아감

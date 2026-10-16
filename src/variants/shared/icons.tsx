@@ -26,7 +26,16 @@ export type IconName =
   | "box"
   | "paw"
   | "dot"
-  | "minus";
+  | "minus"
+  | "stop"
+  | "unplug"
+  | "flag"
+  | "search"
+  | "collapse"
+  | "expand"
+  | "send"
+  | "history"
+  | "save";
 
 /** 원 하나를 path 로 (cx, cy, r) */
 function circle(cx: number, cy: number, r: number): string {
@@ -62,6 +71,15 @@ const PATHS: Record<IconName, string> = {
   paw: `M6.4 13.4c0-2 1.6-3.4 3.6-3.4s3.6 1.4 3.6 3.4c0 1.6-1.2 2.6-2.4 2.2-.8-.3-1.6-.3-2.4 0-1.2.4-2.4-.6-2.4-2.2z ${circle(5, 8.6, 1.4)} ${circle(8, 5.6, 1.4)} ${circle(12, 5.6, 1.4)} ${circle(15, 8.6, 1.4)}`,
   dot: circle(10, 10, 2.2),
   minus: "M5.5 10h9",
+  stop: "M6 6h8v8H6z",
+  unplug: "M7.2 3.5v3 M12.8 3.5v3 M5.4 6.5h9.2v2.6a4.6 4.6 0 0 1-9.2 0z M10 13.7v2.8 M3.2 3.2l13.6 13.6",
+  flag: "M5 17.2V3.4 M5 4h9.6l-2.2 3.2 2.2 3.2H5",
+  search: `${circle(8.6, 8.6, 5.2)} M12.4 12.4l4.2 4.2`,
+  collapse: "M11.8 5.2 7 10l4.8 4.8 M15.4 4v12",
+  expand: "M8.2 5.2 13 10l-4.8 4.8 M4.6 4v12",
+  send: "M3.4 10.2 16.6 3.8 12.6 16.6l-2.8-5.6z M9.8 11 16.6 3.8",
+  history: `M3.9 10a6.1 6.1 0 1 0 1.8-4.3 M3.6 3.4v3.3h3.3 M10 6.6v3.6l2.6 1.6`,
+  save: "M4 3.6h9.6l2.6 2.6v10.2H4z M7 3.6v4h6v-4 M6.6 16.4v-5h6.8v5",
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

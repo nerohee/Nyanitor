@@ -1,0 +1,377 @@
+/*
+ * 트레이 메뉴 · 알림 견본 (P2-14). 메뉴 · 알림 상자는 OS 가 그리는 모양을 흉내 낸 것 — 앱 테마(① 나무 쟁반)가 아니라
+ * 중립 회색 + 시스템 글꼴 (어느 OS 의 로고 · 그림도 쓰지 않음). 견본을 감싸는 판과 종료 경고 창만 ① 재질.
+ */
+.tr {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--scene-ground);
+  /* OS 흉내 — 밝게 · 어둡게 */
+  --os-bg: #f9f9f9;
+  --os-text: #1b1b1b;
+  --os-muted: #5d5d5d;
+  --os-line: #d6d6d6;
+  --os-hover: #ebebeb;
+  --os-bar: #e9eef4;
+  --os-shadow: 0 8px 24px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+:root[data-theme="dark"] .tr {
+  --os-bg: #2c2c2c;
+  --os-text: #f3f3f3;
+  --os-muted: #b8b8b8;
+  --os-line: #454545;
+  --os-hover: #3a3a3a;
+  --os-bar: #1f2329;
+  --os-shadow: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tr {
+    --os-bg: #2c2c2c;
+    --os-text: #f3f3f3;
+    --os-muted: #b8b8b8;
+    --os-line: #454545;
+    --os-hover: #3a3a3a;
+    --os-bar: #1f2329;
+    --os-shadow: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.08);
+  }
+}
+.tr-backdrop {
+  position: absolute;
+  inset: 0;
+  opacity: 0.85;
+  filter: saturate(0.75) blur(2px);
+}
+.tr-sheet {
+  position: absolute;
+  inset: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6);
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+.tr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.tr-head__title {
+  margin: 0;
+  font-size: var(--text-2xl);
+}
+.tr-head__lead {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}
+.tr-tabs a {
+  border-radius: var(--radius-control);
+}
+.tr-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: auto 0 0;
+}
+
+/* ── 메뉴 넷 ── */
+.tr-menus {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.tr-case {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+.tr-case__cap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+}
+.tr-menu {
+  margin: 0;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--os-bg);
+  box-shadow: var(--os-shadow);
+  color: var(--os-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  list-style: none;
+}
+.tr-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: 4px;
+}
+.tr-menu__item[data-header="true"] {
+  min-height: 0;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  color: var(--os-muted);
+  line-height: 1.35;
+}
+.tr-menu__item[data-primary="true"] {
+  font-weight: var(--weight-bold);
+  background: var(--os-hover);
+}
+.tr-menu__item[data-sep="true"] {
+  margin-top: 9px;
+  position: relative;
+}
+.tr-menu__item[data-sep="true"]::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: var(--space-2);
+  right: var(--space-2);
+  border-top: 1px solid var(--os-line);
+}
+.status-dot[data-status="idle"] {
+  background: var(--color-text-subtle);
+}
+.tr-bar {
+  position: relative;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.tr-bar__tip {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--os-bg);
+  box-shadow: var(--os-shadow);
+  color: var(--os-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tr-bar__icons {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--os-bar);
+  color: var(--os-text);
+}
+.tr-bar__other {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--os-muted);
+  border-radius: 3px;
+  opacity: 0.6;
+}
+.tr-bar__mine {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 4px;
+  background: var(--os-hover);
+}
+.tr-bar__clock {
+  font-size: 12px;
+}
+
+.tr-notes {
+  margin: 0;
+}
+.tr-notes ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+}
+.tr-legend {
+  display: inline-flex;
+  gap: var(--space-3);
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+.tr-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── 알림 ── */
+.tr-notify {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: var(--space-5);
+  align-items: start;
+}
+.tr-toasts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-toast {
+  padding: var(--space-3);
+  border-radius: 8px;
+  background: var(--os-bg);
+  box-shadow: var(--os-shadow);
+  color: var(--os-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.tr-toast__app {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  color: var(--os-muted);
+  font-size: 12px;
+}
+.tr-toast__app .chip {
+  margin-left: auto;
+}
+.tr-toast__icon {
+  display: inline-flex;
+  color: var(--os-text);
+}
+.tr-toast__title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+.tr-toast__body {
+  margin: 2px 0 0;
+  color: var(--os-muted);
+}
+.tr-toast__click {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-1);
+  border-top: 1px dashed var(--os-line);
+  color: var(--os-muted);
+  font-size: 12px;
+}
+.tr-rules ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+/* ── 종료 경고 ── */
+.tr-quit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+}
+.tr-quit__dlg {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-areas:
+    "cat text"
+    "actions actions";
+  gap: var(--space-3) var(--space-4);
+  width: min(560px, 100%);
+  padding: var(--space-5);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+.tr-quit__cat {
+  grid-area: cat;
+  width: 96px;
+  height: 96px;
+}
+.tr-quit__text {
+  grid-area: text;
+}
+.tr-quit__text p {
+  margin: var(--space-1) 0 0;
+}
+.tr-quit__title {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+.tr-quit__actions {
+  grid-area: actions;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.tr-quit__when {
+  max-width: 560px;
+  margin: 0;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+@media (max-width: 1279px) {
+  .tr-menus {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tr-notify {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ─────────────────────── ① 나무 쟁반 재질 (견본을 감싸는 판 · 종료 경고 창) ─────────────────────── */
+.vf[data-skin="1"] :is(.tr-sheet, .tr-quit__dlg) {
+  --frame-w: 7px;
+  border: var(--frame-w) solid transparent;
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    var(--grain-h) border-box;
+  box-shadow:
+    var(--shadow-lg),
+    inset 0 0 0 1.5px var(--wood-dark);
+}
+.vf[data-skin="1"] .tr-quit__dlg {
+  border-radius: 20px;
+}
+.vf[data-skin="1"] .tr-head {
+  border-bottom: 2px dashed var(--color-border);
+}
+.vf[data-skin="1"] .tr-case__cap .status-dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--btn-line);
+}
+.vf[data-skin="1"] .tr-tabs a {
+  margin-bottom: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 0 var(--btn-line);
+}
+.vf[data-skin="1"] .tr-tabs a[aria-current="page"] {
+  border-bottom-color: var(--btn-line);
+  background: var(--accent);
+  color: var(--on-accent);
+}

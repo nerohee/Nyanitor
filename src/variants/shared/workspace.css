@@ -449,16 +449,6 @@
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
 }
-.wopt__text {
-  flex-basis: 100%;
-  height: var(--control-h-md);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
 /* 답한 카드 — 흐리게 하지 않고(대비 유지) 테두리만 조용히 */
 .wq:disabled .wopt {
   border-style: dashed;

@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { screenHref } from "../query";
 import { CatPickScreen } from "./CatPick";
+import { EditScreen } from "./Edit";
 import { HarnessScreen } from "./Harness";
 import { SettingsScreen } from "./Settings";
 import { SetupScreen } from "./Setup";
+import { TrayScreen } from "./Tray";
 
 afterEach(() => {
   delete document.documentElement.dataset.theme;
@@ -107,9 +109,10 @@ describe("하네스", () => {
     expect(screen.queryByRole("button", { name: /settings\.json/ })).not.toBeInTheDocument();
   });
 
-  it("업데이트: 내 수정과 겹치는 파일을 알리고, 받기는 사용자가 누른다", () => {
+  it("업데이트: 내 수정과 겹치는 파일을 알리고(내 수정의 원본 바뀜으로 가는 길), 받기는 사용자가 누른다", () => {
     render(<HarnessScreen {...base} state="update" />);
     expect(screen.getByText("내 수정과 겹치는 파일이 1개 있어요")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /내 수정에서 보기/ }).getAttribute("href")).toMatch(/screen=edit.*state=conflict/);
     expect(screen.getByRole("button", { name: /업데이트 받기/ })).toBeInTheDocument();
   });
 
@@ -166,5 +169,83 @@ describe("화면 사이 주소", () => {
     expect(params.get("skin")).toBe("2");
     expect(params.get("theme")).toBe("dark");
     expect(params.has("cat")).toBe(false);
+  });
+});
+
+describe("내 수정", () => {
+  it("모델 · 수준은 값만 — 바꾸면 원본 값과 '적용하면 바뀌는 것'이 보이고, 되돌리기 · 적용", () => {
+    render(<EditScreen {...base} state="" />);
+    expect(screen.getByRole("heading", { level: 2, name: /화면 구현/ })).toBeInTheDocument();
+    const model = screen.getByRole("combobox", { name: "모델" });
+    expect(screen.getByText("모두 적용됨")).toBeInTheDocument();
+    fireEvent.change(model, { target: { value: "opus" } });
+    expect(screen.getByText("원본: Sonnet")).toBeInTheDocument();
+    expect(screen.getByText("적용 안 한 것 1개")).toBeInTheDocument();
+    const diff = screen.getByRole("region", { name: "적용하면 바뀌는 것" });
+    expect(within(diff).getByText("model: opus")).toBeInTheDocument();
+    // 되돌리기 → 원래대로, 다시 바꿔 적용 → 기록 알림
+    fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+    expect(screen.getByText("모두 적용됨")).toBeInTheDocument();
+    fireEvent.change(model, { target: { value: "opus" } });
+    fireEvent.click(screen.getByRole("button", { name: "적용" }));
+    expect(screen.getByRole("status")).toHaveTextContent("적용했어요");
+    expect(screen.getByText("모두 적용됨")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "적용" })).toBeDisabled();
+  });
+
+  it("통째로 바꾼 파일은 경고와 함께 파일 전체를 고치고, 원본이 바뀌었으면 고르러 가는 길이 있다", () => {
+    render(<EditScreen {...base} state="replace" />);
+    expect(screen.getByText("이 파일은 통째로 바꿨어요")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "골라 보기" }).getAttribute("href")).toContain("state=conflict");
+    fireEvent.click(screen.getByRole("button", { name: /덧붙이기로 돌아가기/ }));
+    expect(screen.getByRole("heading", { name: "덧붙일 지시" })).toBeInTheDocument();
+  });
+
+  it("원본 바뀜: 고르기 전엔 내 것을 쓰고, 비교를 두 가지로 보고, 내 것 유지 / 원본으로 를 고른다", () => {
+    render(<EditScreen {...base} state="conflict" />);
+    expect(screen.getByText("고르기 전까지는 내 것을 그대로 써요")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "내 것과 다른 점" }));
+    expect(screen.getByRole("region", { name: "내 것과 다른 점" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /원본으로 바꾸기/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("원본으로 바꿨어요");
+    expect(screen.getByRole("button", { name: /다시 고르기/ })).toBeInTheDocument();
+  });
+
+  it("기록은 되돌리기 전에 한 번 더 묻고, 새 에이전트는 고양이 고르기로 이어진다", () => {
+    const { unmount } = render(<EditScreen {...base} state="history" />);
+    // 가장 최근 기록은 '지금' — 되돌릴 수 없다
+    expect(screen.getByRole("button", { name: /이때로 되돌리기/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /시험 — 지시 덧붙임/ }));
+    fireEvent.click(screen.getByRole("button", { name: /이때로 되돌리기/ }));
+    expect(screen.getByText("0b7e215 때로 되돌릴까요?")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "되돌리기" })[0]);
+    expect(screen.getByRole("status")).toHaveTextContent("새 기록이 생겼어요");
+    unmount();
+
+    render(<EditScreen {...base} state="new" />);
+    expect(screen.getByRole("link", { name: /만들고 고양이 고르기/ }).getAttribute("href")).toMatch(/screen=pick.*state=new/);
+    fireEvent.click(screen.getByRole("radio", { name: "스킬" }));
+    expect(screen.getByText("~/.claude-harness/custom/skills/translator/SKILL.md")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /고양이 고르기/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("트레이 · 알림 견본", () => {
+  it("상태 4가지 메뉴 — 첫 줄은 상태, 기다릴 때는 '기다리는 카드로 가기'가 맨 위, 일하는 중 종료는 한 번 더 묻는다(…)", () => {
+    render(<TrayScreen {...base} state="" />);
+    const menus = screen.getAllByRole("list", { name: "트레이 메뉴 견본" });
+    expect(menus).toHaveLength(4);
+    const waiting = within(menus[2]).getAllByRole("listitem");
+    expect(waiting[0]).toHaveTextContent("답을 기다려요");
+    expect(waiting[1]).toHaveTextContent("기다리는 카드로 가기");
+    expect(within(menus[1]).getByText(/종료…/)).toBeInTheDocument();
+    expect(within(menus[0]).queryByText(/종료…/)).not.toBeInTheDocument();
+  });
+
+  it("알림은 내가 할 일이 있을 때만 — 누르면 그 카드로, 알림 안에서 답하지 않는다", () => {
+    render(<TrayScreen {...base} state="notify" />);
+    expect(screen.getAllByRole("listitem").filter((li) => li.classList.contains("tr-toast"))).toHaveLength(9);
+    expect(screen.getAllByText("누르면: 창을 열고 그 카드로").length).toBeGreaterThan(0);
+    expect(screen.getByText(/알림 안에서 바로 답하지 않아요/)).toBeInTheDocument();
   });
 });

@@ -37,9 +37,14 @@
   border-right: 1px solid var(--color-border);
   background: var(--color-bg);
 }
+/* 넓은 창 칸 너비는 WorkPanels 가 칸마다 정한다 (접은 칸은 44px 띠) */
 .wa-panels.wp--wide {
   grid-auto-flow: row;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) 320px;
+}
+/* 좁은 창 · 프로젝트 없음 — 프로젝트 목록 칸 없이 한 칸 */
+.wa-paper:not([data-wide]),
+.wa-paper[data-none] {
+  grid-template-columns: minmax(0, 1fr);
 }
 .wa-panels.wp--wide > .wp__panel + .wp__panel {
   border-left: 1px solid var(--color-border);
@@ -50,9 +55,6 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   padding: var(--space-3);
 }
 .wa-h {
@@ -65,7 +67,7 @@
   flex: none;
   container-type: inline-size;
   width: 100%;
-  max-width: 300px;
+  max-width: 340px;
   align-self: center;
   aspect-ratio: 4 / 3;
   border: 8px solid var(--house-frame);

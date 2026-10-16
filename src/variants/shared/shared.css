@@ -2,6 +2,8 @@
 
 /* ── 도구 조각 기본 모양 ── */
 .hbtn {
+  /* 단추 링크(a.hbtn)도 <button> 과 같은 높이로 — 테두리를 높이 안에 (예전에는 링크만 4px 높았다) */
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -35,6 +37,14 @@
 .hbtn--ghost {
   border-color: transparent;
   background: transparent;
+}
+/*
+ * 한 줄 단추 높이 (D-43) — 주 단추와 같은 부모(한 줄)에 놓인 단추 · 단추 링크는 주 단추 높이(--control-h-lg 40px).
+ * 화면마다 따로 맞추지 않고 이 규칙 하나로. 주 단추가 없는 줄의 단추(띠 안의 작은 "되돌리기" 등)는 판의 보통 높이 그대로.
+ * 판마다 .hbtn 높이를 정하는 규칙(.vf[data-skin="N"] .hbtn — 0,3,0)보다 우선하도록 [data-variant] 를 붙였다.
+ */
+.vf[data-variant] :has(> .hbtn--primary) > .hbtn {
+  height: var(--control-h-lg);
 }
 /* 다른 화면으로 가는 링크도 단추 모양 (고양이 정보 창의 고치기 · 고양이 바꾸기 등) */
 a.hbtn {

@@ -1,6 +1,6 @@
 /*
  * 내 수정 (P2-14) — 서랍 탭(에이전트 · 스킬 / 기록 / 원본 바뀜) 위 쟁반 한 장, 안은 왼쪽 목록 | 오른쪽 고치기.
- * 부품은 parts.css (P2-13). 맨 아래 절은 ① 나무 쟁반 재질.
+ * 부품은 parts.css (P2-13). 아래 절은 ① 나무 쟁반 재질(보관)과 ③ 스티커 수첩 재질(D-43 기본).
  */
 .ed-wrap {
   flex: 1;
@@ -46,16 +46,18 @@
   overflow: auto;
   padding-right: var(--space-1);
 }
+/* 묶음 이름 ↔ 고른 줄(테두리 · 그림자) 사이를 넉넉히 — 붙어 있으면 이름이 고른 줄 글씨와 겹쳐 보였다 (D-43) */
 .ed-list__title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: var(--space-3) 0 var(--space-1);
+  margin: var(--space-5) 0 var(--space-2);
   padding: 0 var(--space-1);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
-.ed-list__title:first-child {
+/* 묶음마다 <section> 의 첫 아이라 :first-child 로는 모든 이름이 붙어 버렸다 — 맨 첫 묶음만 위 여백 없이 */
+.ed-list__scroll > section:first-child > .ed-list__title {
   margin-top: 0;
 }
 .ed-list__note {
@@ -65,7 +67,7 @@
 .ed-list__items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -316,9 +318,73 @@
 .ed-desc {
   max-width: none !important;
 }
-.ed-new__values {
+/* 종류 — 판 머리 줄 오른쪽 */
+.ed-new__kind {
+  flex: none;
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+}
+/* 파일 이름 | 보이는 이름 한 줄, 도움말은 그 아래 한 줄 */
+.ed-new__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  align-items: start;
+}
+.ed-new__hint {
+  grid-column: 1 / -1;
+}
+.ed-new__pair .fld {
+  max-width: none;
+}
+/* 시작점 — 빈 틀 | 있는 것 복사 나란히 (복사는 고르면 아래에 원본 고르기) */
+.ed-new__start .rads {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+.ed-new__start .rads__extra {
+  padding-left: var(--space-3);
+}
+.ed-new__start .rads__extra .sel,
+.ed-new__start .rads__extra select {
+  width: 100%;
+  min-width: 0;
+}
+/* 만들어질 파일 — 앞머리의 model · effort 줄이 그 자리에서 고르는 칸 (모델 · 수준, 옆 칸) */
+.ed-new__file {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.ed-new__file pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ed-new__values {
+  --field-h: 28px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px var(--space-2);
+  margin: 2px 0;
+}
+.ed-new__key {
+  color: var(--color-text);
+}
+.ed-new__values .sel,
+.ed-new__values select {
+  width: 100%;
+  min-width: 0;
+}
+.ed-new__values select {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
 }
 .ed-new__preview {
   position: sticky;
@@ -334,16 +400,7 @@
 .ed-new__path {
   margin: 0;
   overflow-wrap: anywhere;
-}
-.ed-new__preview pre {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .ed-new__cat {
   display: flex;
@@ -352,6 +409,7 @@
 }
 .ed-new__cat p {
   margin: 0;
+  font-size: var(--text-xs);
 }
 
 /* ── 기록 ── */
@@ -364,13 +422,16 @@
   padding: 0;
   list-style: none;
 }
+/* 세로 점선은 늘 보이게 — 줄의 올림 · 고름 배경보다 위, 동그라미보다 아래 (D-43) */
 .ed-hist::before {
   content: "";
   position: absolute;
+  z-index: 1;
   top: 16px;
   bottom: 16px;
   left: 22px;
   border-left: 2px dotted var(--color-border-strong);
+  pointer-events: none;
 }
 .ed-hist__item {
   position: relative;
@@ -388,9 +449,12 @@
   cursor: default;
 }
 .ed-hist__item:hover {
+  border-color: var(--color-border-strong);
+  border-style: dashed;
   background: var(--row-hover);
 }
 .ed-hist__item[aria-current="true"] {
+  border-style: solid;
   border-color: var(--accent-strong);
   background: var(--row-selected);
 }
@@ -398,6 +462,8 @@
   outline: var(--focus-ring-w) solid var(--focus-ring);
 }
 .ed-hist__dot {
+  position: relative;
+  z-index: 2;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -463,6 +529,9 @@
   }
   .ed-value {
     grid-template-columns: 48px 170px minmax(0, 1fr);
+  }
+  .ed-new__form {
+    gap: var(--space-3);
   }
   .ed-panel__head,
   .ed-panel__scroll {
@@ -547,4 +616,101 @@ button.su-link {
 }
 .ed-field .seg {
   align-self: flex-start;
+}
+
+/* ─────────────────────── ③ 스티커 수첩 재질 (D-43 기본) ─────────────────────── */
+/* 왼쪽 목록 = 모눈 종이, 고른 줄은 갈색 선 스티커 */
+.vf[data-skin="3"] .ed-list {
+  border-right: var(--ui-line-w) dashed var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}
+.vf[data-skin="3"] :is(.ed-item, .ed-hist__item) {
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .ed-item:hover {
+  border: 1px dashed var(--color-border-strong);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] :is(.ed-item, .ed-hist__item)[aria-current="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--row-selected);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .ed-hist__item:hover:not([aria-current="true"]) {
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .ed-face {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-4);
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .ed-face[data-kind="skill"] {
+  background: var(--ui-3);
+}
+.vf[data-skin="3"] .ed-panel__head {
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .ed-panel__face .ed-face {
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .ed-panel__title {
+  font-size: 24px;
+}
+.vf[data-skin="3"] .ed-origin {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+/* 만들어질 파일 = 테이프로 붙인 모눈 쪽지 */
+.vf[data-skin="3"] .ed-new__preview {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background:
+    var(--grid-paper),
+    var(--color-surface);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    4px 5px 0 5px rgb(var(--shadow-color) / 0.28);
+}
+.vf[data-skin="3"] .ed-new__preview::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  right: 26px;
+  width: 72px;
+  height: 20px;
+  background: var(--index, var(--ui-2));
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(4deg);
+  pointer-events: none;
+}
+.vf[data-skin="3"] .ed-new__file {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+/* 기록 — 갈색 점선 줄 위 테이프 색 동그라미 */
+.vf[data-skin="3"] .ed-hist::before {
+  border-left: var(--ui-line-w) dashed var(--ui-line);
+}
+.vf[data-skin="3"] .ed-hist__dot {
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .ed-hist__dot[data-kind="new"] {
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .ed-hist__dot[data-kind="update"] {
+  background: var(--ui-3);
+}
+.vf[data-skin="3"] .ed-hist__dot[data-kind="edit"] {
+  background: var(--ui-4);
+}
+.vf[data-skin="3"] .ed-hist__dot[data-kind="undo"] {
+  background: var(--ui-2);
+}
+.vf[data-skin="3"] :is(.ed-value__label, .ed-hist__msg) {
+  font-family: var(--font-round);
+  font-weight: 400;
+  font-size: var(--text-md);
 }

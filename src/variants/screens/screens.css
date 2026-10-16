@@ -1,5 +1,5 @@
 /*
- * P2-13 화면 배치 — 첫 실행(su-) · 설정(st-) · 하네스(hn-) · 고양이 고르기(pk-).
+ * P2-13 화면 배치 — 첫 실행(su-) · 설정(st-) · 하네스(hn-) · 고양이 고르기(pk-). 아래쪽에 ① 재질(보관) · ③ 재질(D-43 기본) 절.
  * 부품 모양은 parts.css. 최소 창 1024×640 (시안 막대 36px 를 빼면 무대 604px) 에서 판 안이 스크롤된다.
  */
 
@@ -1178,6 +1178,207 @@
 }
 .vf[data-skin="1"] .pk-slot {
   border: var(--ui-line-w) dashed var(--btn-line);
+}
+
+/* ─────────────────────── ③ 스티커 수첩 재질 (D-43 기본) ───────────────────────
+ * 부품(쟁반 · 상자 · 띠 · 동전 · 탭)은 parts.css 의 ③ 절. 여기는 화면마다의 것만. ① 절(위)은 보관.
+ */
+/* 첫 실행 — 먹물이 앉은 테이프 방석, 준비 목록은 점선 쪽지 → 펼친 줄은 갈색 선 스티커 */
+.vf[data-skin="3"] .su-cat::before {
+  left: 14%;
+  right: 14%;
+  bottom: 1%;
+  height: 12%;
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-2);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .su-row {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .su-row[data-open="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  box-shadow:
+    inset 6px 0 0 var(--accent),
+    3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .su-row[data-open="true"][data-status="failed"] {
+  box-shadow:
+    inset 6px 0 0 var(--color-danger),
+    3px 3px 0 var(--ui-line);
+}
+/* 선반 = 빗금 테이프 한 줄 */
+.vf[data-skin="3"] .su-shelf {
+  padding-bottom: 14px;
+}
+.vf[data-skin="3"] .su-shelf::after {
+  height: 14px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 5px 7px 4px 6px;
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 5px, rgb(var(--shadow-color) / 0.16) 5px 7px),
+    var(--ui-4);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .su-shelf__cat {
+  z-index: 1;
+}
+
+/* 설정 — 모눈 목차, 지금 묶음은 화면 색(하늘) 스티커 */
+.vf[data-skin="3"] .st-index {
+  border-right: var(--ui-line-w) dashed var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}
+.vf[data-skin="3"] .st-index ul {
+  gap: var(--space-1);
+}
+.vf[data-skin="3"] .st-index a {
+  border: var(--ui-line-w) solid transparent;
+  border-radius: var(--wobble-sm);
+  color: var(--color-text);
+  font-size: 15px;
+}
+.vf[data-skin="3"] .st-index a:hover {
+  border: var(--ui-line-w) dashed var(--color-border-strong);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .st-index a[aria-current="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--index, var(--ui-3));
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .st-sec + .st-sec {
+  border-top: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .st-sec__title .icon {
+  box-sizing: content-box;
+  padding: 3px;
+  border: 1.5px solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--index, var(--ui-3));
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .st-skin {
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .st-skin[aria-current="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .st-skin__swatch {
+  border-color: var(--ui-line);
+}
+
+/* 하네스 — 목록 · 진행 · 백업은 갈색 선 쪽지 */
+.vf[data-skin="3"] :is(.hn-list, .hn-run, .hn-blist) {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .hn-file[aria-current="true"] {
+  box-shadow:
+    inset 6px 0 0 var(--accent),
+    inset 0 0 0 1.5px var(--ui-line);
+}
+.vf[data-skin="3"] .hn-backup__icon {
+  border: 1.5px solid var(--ui-line);
+  background: var(--ui-3);
+  color: var(--color-text);
+}
+
+/* 고양이 고르기 — 모눈 에이전트 목록, 고양이 카드는 점선 → 고르면 노란 테 스티커 */
+.vf[data-skin="3"] .pk-agents {
+  border-right: var(--ui-line-w) dashed var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}
+.vf[data-skin="3"] .pk-agent {
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .pk-agent:hover {
+  border: 1px dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .pk-agent[aria-selected="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--color-surface);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .pk-agent__face {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-4);
+}
+.vf[data-skin="3"] .pk-hero__cat {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background:
+    radial-gradient(ellipse 30% 7% at 50% 80%, var(--ui-2) 0 94%, transparent 100%),
+    var(--grid-paper),
+    var(--color-surface-sunken);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    4px 5px 0 5px rgb(var(--shadow-color) / 0.28);
+}
+.vf[data-skin="3"] .pk-poses__frame {
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .pk-card {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble);
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.vf[data-skin="3"] .pk-card:hover {
+  border: 1.5px solid var(--ui-line);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .pk-card[data-checked="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--accent-soft);
+  transform: none;
+  box-shadow:
+    0 0 0 4px var(--accent),
+    4px 5px 0 4px var(--ui-line);
+}
+.vf[data-skin="3"] .pk-card__plate::before {
+  content: "";
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  bottom: 3%;
+  height: 10%;
+  border-radius: 50%;
+  background: rgb(var(--shadow-color) / 0.16);
+}
+.vf[data-skin="3"] .pk-card__mark {
+  border: 1.5px solid var(--ui-line);
+  box-shadow: 1.5px 1.5px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .pk-card--more .pk-card__plate::before {
+  content: none;
+}
+.vf[data-skin="3"] .pk-card--more {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+.vf[data-skin="3"] .pk-slot {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf[data-skin="3"] .pk-card {
+    transition: none;
+  }
+  .vf[data-skin="3"] .pk-card:hover {
+    transform: none;
+  }
 }
 
 /* ───────────── 좁은 창 (최소 1024) ───────────── */

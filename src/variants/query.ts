@@ -1,7 +1,7 @@
 // 시안 틀이 읽는 주소 쿼리: ?variant=a (없는 시안은 a 로) &screen=house|workspace|edit|setup|settings|harness|pick|tray|cats
 // &time=morning|day|evening|night &theme=light|dark (없으면 OS 따라) &bar=off (아래 시안 막대 숨김 — 스크린샷용)
 // &usage=unavailable (사용량을 못 받은 상태 보기) &state=… (화면마다 상태 — SCREEN_STATES, 첫 번째가 기본)
-// &skin=0|1|2|3 (UI 판 — 없으면 ① 나무 쟁반(D-40). 0 은 보관한 1판 테마, 2 · 3 은 보관한 시안)
+// &skin=0|1|2|3 (UI 판 — 없으면 ③ 스티커 수첩(D-43). 0 은 보관한 1판 테마, 1 · 2 는 보관한 시안 — ① 나무 쟁반은 D-40 의 옛 기본)
 
 import { TIMES, timeOfDay, type TimeOfDay } from "../components/house/time";
 import { EDIT_STATES } from "./fixtures-edit";
@@ -15,11 +15,12 @@ export { TIMES, timeOfDay, type TimeOfDay };
 export const SCREENS = ["house", "workspace", "edit", "setup", "settings", "harness", "pick", "tray", "cats"] as const;
 export const THEMES = ["system", "light", "dark"] as const;
 /**
- * UI 판 (P2-11 · D-40). ① 이 기본(쿼리 없음). 0 = 1판 테마, 2 · 3 = 보관한 시안 — 지우지 않고 계속 볼 수 있게.
- * 사용자 설정으로 테마를 고르게 할지는 아직 정하지 않았다 (D-40).
+ * UI 판 (P2-11 · D-43). ③ 스티커 수첩이 기본(쿼리 없음). 0 = 1판 테마, 1 · 2 = 보관한 시안 — 지우지 않고 계속 볼 수 있게.
+ * ① 나무 쟁반은 D-40 에서 기본이었다가 D-43 에서 ③ 으로 바뀌었다 (`skin=1` 로 보관).
+ * 사용자 설정으로 테마를 고르게 할지는 아직 정하지 않았다 (D-40 · D-41).
  */
 export const SKINS = ["0", "1", "2", "3"] as const;
-export const DEFAULT_SKIN = "1" as const;
+export const DEFAULT_SKIN = "3" as const;
 
 export type ScreenId = (typeof SCREENS)[number];
 export type ThemeChoice = (typeof THEMES)[number];
@@ -43,7 +44,7 @@ export interface FrameQuery {
   /** 쿼리로 시간대를 고정했나 (아니면 PC 시각을 따른다) */
   timeFixed: boolean;
   theme: ThemeChoice;
-  /** UI 판 — 없으면 ① */
+  /** UI 판 — 없으면 ③ */
   skin: SkinId;
   bar: boolean;
   /** 사용량 가짜 데이터 — 받음 / 확인할 수 없음 */
@@ -63,7 +64,7 @@ export function pickState<T extends string>(value: string, allowed: readonly T[]
   return pick(value, allowed) ?? allowed[0];
 }
 
-/** 모르는 값은 기본값으로 — 시안은 첫 번째, 화면은 집, 테마는 OS 따라, UI 판은 ①. */
+/** 모르는 값은 기본값으로 — 시안은 첫 번째, 화면은 집, 테마는 OS 따라, UI 판은 ③. */
 export function parseFrameQuery(search: string, now: Date, knownVariants: readonly string[]): FrameQuery {
   const params = new URLSearchParams(search);
   const fixedTime = pick(params.get("time"), TIMES);

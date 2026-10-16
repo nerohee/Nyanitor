@@ -1,6 +1,6 @@
 /*
- * 트레이 메뉴 · 알림 견본 (P2-14). 메뉴 · 알림 상자는 OS 가 그리는 모양을 흉내 낸 것 — 앱 테마(① 나무 쟁반)가 아니라
- * 중립 회색 + 시스템 글꼴 (어느 OS 의 로고 · 그림도 쓰지 않음). 견본을 감싸는 판과 종료 경고 창만 ① 재질.
+ * 트레이 메뉴 · 알림 견본 (P2-14). 메뉴 · 알림 상자는 OS 가 그리는 모양을 흉내 낸 것 — 앱 테마가 아니라
+ * 중립 회색 + 시스템 글꼴 (어느 OS 의 로고 · 그림도 쓰지 않음). 견본을 감싸는 판과 종료 경고 창만 앱 재질(① 보관 · ③ 기본).
  */
 .tr {
   position: relative;
@@ -374,4 +374,75 @@
   border-bottom-color: var(--btn-line);
   background: var(--accent);
   color: var(--on-accent);
+}
+
+/* ─────────────────────── ③ 스티커 수첩 재질 (D-43 기본 — 견본을 감싸는 판 · 종료 경고 창) ───────────────────────
+ * 메뉴 · 알림 상자는 OS 흉내라 그대로 중립 회색. ① 절(위)은 보관.
+ */
+.vf[data-skin="3"] .tr-sheet {
+  inset: 22px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background:
+    var(--grid-paper),
+    var(--color-surface);
+  box-shadow:
+    0 0 0 6px var(--sticker-edge),
+    6px 8px 0 6px rgb(var(--shadow-color) / 0.3);
+}
+.vf[data-skin="3"] .tr-head {
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .tr-head__title {
+  width: fit-content;
+  margin-left: calc(-1 * var(--space-1));
+  padding: 0 var(--space-1);
+  background: linear-gradient(transparent 56%, var(--ui-4) 56% 90%, transparent 90%);
+}
+.vf[data-skin="3"] .tr-tabs {
+  gap: var(--space-2);
+}
+.vf[data-skin="3"] .tr-tabs a {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-round);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .tr-tabs a:hover {
+  background: var(--accent-soft);
+}
+.vf[data-skin="3"] .tr-tabs a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .tr-case__cap .status-dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ui-line);
+}
+/* 종료 경고 창 — 테이프로 붙인 스티커 쪽지 */
+.vf[data-skin="3"] .tr-quit__dlg {
+  position: relative;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    5px 6px 0 5px var(--ui-line);
+}
+.vf[data-skin="3"] .tr-quit__dlg::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 84px;
+  height: 22px;
+  margin-left: -42px;
+  background: var(--ui-2);
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(-3deg);
+  pointer-events: none;
 }

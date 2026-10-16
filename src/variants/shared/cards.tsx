@@ -1,6 +1,6 @@
 // 채팅 안의 선택 카드 (D-14 · D-15 · D-23) + 메시지 + 앱이 끼워 넣는 알림 줄. 모양은 토큰 · [data-skin] 로 달라진다.
 // 시제품 — 눌러도 아무 데도 보내지 않는다. 고르는 모양 · 키보드 조작 · 답한 뒤 모양만 된다 (실제 답 보내기는 P3 control 응답).
-import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
 import { t, tf, type TextKey } from "../../i18n/ko";
 import { ORCHESTRATOR } from "../fixtures";
@@ -8,6 +8,31 @@ import type { ChatItem, NoticeTone, PermissionTool, Question } from "../fixtures
 import { Icon, type IconName } from "./icons";
 
 type CardItem<K extends ChatItem["kind"]> = Extract<ChatItem, { kind: K }>;
+
+function reducedMotion(): boolean {
+  return document.documentElement.dataset.motion === "reduced" || (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+}
+
+/**
+ * 카드 안의 글 칸(직접 쓰기 · 고칠 점 말하기 · 다르게 하라고 말하기)이 열리면 채팅을 맨 밑으로 내리고 그 칸에 초점 (D-43).
+ * 기다리는 카드는 채팅 맨 끝에 있어서 맨 밑 = 열린 칸이 보이는 곳. 움직임 줄이기면 바로 (부드럽게 내리지 않음).
+ */
+function useRevealWhenOpen<T extends HTMLElement>(open: boolean) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const field = ref.current;
+    if (!open || !field) return;
+    field.focus({ preventScroll: true });
+    const log = field.closest<HTMLElement>(".wchat__log");
+    if (!log) {
+      field.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    if (reducedMotion() || typeof log.scrollTo !== "function") log.scrollTop = log.scrollHeight;
+    else log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
+  }, [open]);
+  return ref;
+}
 
 /** 카드가 답을 받았을 때 (채팅 칸이 기다리는 카드 수 · 상태를 바꾼다) */
 export type OnAnswered = (id: string) => void;
@@ -47,6 +72,8 @@ function QuestionBlock({
   const name = useId();
   const previewId = useId();
   const type = q.multi ? "checkbox" : "radio";
+  const writing = value.includes("write");
+  const writeRef = useRevealWhenOpen<HTMLInputElement>(writing);
   const hasPreview = q.options.some((option) => option.previewKey);
   // 미리보기는 포커스 · 마우스가 올라간 선택지, 없으면 고른 것, 없으면 첫 번째
   const [peek, setPeek] = useState<string | null>(null);
@@ -109,14 +136,14 @@ function QuestionBlock({
                 </span>
                 <span className="wopt__label">{t("variant.ws.card.writeIn")}</span>
               </label>
-              {value.includes("write") && (
+              {writing && (
                 <input
+                  ref={writeRef}
                   type="text"
                   className="wopt__text-in"
                   aria-label={t("variant.ws.card.writeInInput")}
                   value={writeIn}
                   onChange={(event) => onWriteIn(event.target.value)}
-                  autoFocus
                 />
               )}
             </div>
@@ -238,6 +265,7 @@ const TOOL_LABEL: Record<PermissionTool, TextKey> = {
 export function PermissionCard({ item, id, onAnswered }: { item: CardItem<"permission">; id?: string; onAnswered?: OnAnswered }) {
   const [result, setResult] = useState(item.result);
   const [denying, setDenying] = useState(false);
+  const tellRef = useRevealWhenOpen<HTMLTextAreaElement>(denying);
   const alwaysId = useId();
   const decide = (next: NonNullable<typeof result>) => {
     setResult(next);
@@ -299,11 +327,11 @@ export function PermissionCard({ item, id, onAnswered }: { item: CardItem<"permi
             {denying && (
               <div className="wperm__tell">
                 <textarea
+                  ref={tellRef}
                   className="fld wperm__tell-in"
                   rows={2}
                   aria-label={t("variant.ws.perm.denyTellInput")}
                   placeholder={t("variant.ws.perm.denyTellPh")}
-                  autoFocus
                 />
                 <button type="button" className="hbtn" onClick={() => decide("deny")}>
                   {t("variant.ws.perm.denySend")}
@@ -329,6 +357,7 @@ export function PermissionCard({ item, id, onAnswered }: { item: CardItem<"permi
 export function ApprovalCard({ item, id, onAnswered }: { item: CardItem<"approval">; id?: string; onAnswered?: OnAnswered }) {
   const [done, setDone] = useState<"approved" | "changes" | null>(item.done ? "approved" : null);
   const [asking, setAsking] = useState(false);
+  const askRef = useRevealWhenOpen<HTMLTextAreaElement>(asking);
   const pending = done === null;
   const finish = (how: "approved" | "changes") => {
     setDone(how);
@@ -381,11 +410,11 @@ export function ApprovalCard({ item, id, onAnswered }: { item: CardItem<"approva
             {asking && (
               <div className="wperm__tell">
                 <textarea
+                  ref={askRef}
                   className="fld wperm__tell-in"
                   rows={2}
                   aria-label={t("variant.ws.approval.changesInput")}
                   placeholder={t("variant.ws.approval.changesPh")}
-                  autoFocus
                 />
                 <button type="button" className="hbtn" onClick={() => finish("changes")}>
                   {t("variant.ws.approval.changesSend")}

@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t, tf } from "../../i18n/ko";
 import { SETTINGS_FIXTURE, SETTINGS_SECTIONS, SETTINGS_STATES, type SettingsSection } from "../fixtures-screens";
-import { pickState, screenHref, TIMES, type TimeOfDay } from "../query";
+import { DEFAULT_SKIN, pickState, screenHref, TIMES, type TimeOfDay } from "../query";
 import { Icon, type IconName } from "../shared/icons";
 import { Banner, Chip, Coin, Field, RadioRows, ScreenShell, Segmented, Select, SettingRow, Toggle, type ScreenFrameProps } from "./parts";
 import "./screens.css";
@@ -74,10 +74,25 @@ export function SettingsScreen({ search, state: rawState, time }: ScreenFramePro
   // 앱 업데이트
   const [appChecking, setAppChecking] = useState(false);
 
-  // 처음 열 때 주소의 section 으로
+  // 목차를 눌러 움직이는 동안은 누른 칸에 표시를 고정한다 — 두 칸 이상 건너뛸 때 지나가는 칸마다 바뀌지 않게 (D-43).
+  // 스크롤이 끝나면(scrollend, 없으면 스크롤 이벤트가 150ms 멈췄을 때) 푼다.
+  const locked = useRef<SettingsSection | null>(null);
+  const unlockTimer = useRef<number | undefined>(undefined);
+  /** 이 묶음에 표시를 고정 — 스크롤이 일어나지 않아도 1초 뒤에는 풀린다 */
+  const lockOn = (id: SettingsSection) => {
+    locked.current = id;
+    window.clearTimeout(unlockTimer.current);
+    unlockTimer.current = window.setTimeout(() => {
+      locked.current = null;
+    }, 1000);
+  };
+
+  // 처음 열 때 주소의 section 으로 (짧은 끝 묶음이어도 그 칸에 표시가 남게 고정)
   useLayoutEffect(() => {
     const first = sectionFrom(search);
-    if (first) document.getElementById(`st-${first}`)?.scrollIntoView({ block: "start" });
+    if (!first) return;
+    lockOn(first);
+    document.getElementById(`st-${first}`)?.scrollIntoView?.({ block: "start" });
   }, [search]);
 
   // 움직임 줄이기는 이 화면을 떠나면 푼다 (시제품 — 저장하지 않음)
@@ -103,26 +118,58 @@ export function SettingsScreen({ search, state: rawState, time }: ScreenFramePro
     return () => window.clearTimeout(id);
   }, [appChecking]);
 
-  // 스크롤에 따라 목차의 지금 묶음을 바꾼다
+  // 스크롤에 따라 목차의 지금 묶음을 바꾼다 (D-43):
+  // 맨 밑까지 내리면 마지막 묶음 — 짧은 묶음(앱 업데이트 · 정보)은 위쪽 기준선까지 올라오지 못하니까.
+  // 그 밖에는 위쪽 30% 기준선을 넘어간 묶음 중 마지막.
   useEffect(() => {
     const root = scroller.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        const id = top?.target.id.replace("st-", "");
-        const found = SETTINGS_SECTIONS.find((s) => s === id);
-        if (found) setCurrent(found);
-      },
-      { root, rootMargin: "0px 0px -70% 0px" },
-    );
-    root.querySelectorAll(".st-sec").forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    if (!root) return;
+    const SETTLE_MS = 150;
+    const unlockSoon = () => {
+      window.clearTimeout(unlockTimer.current);
+      unlockTimer.current = window.setTimeout(() => {
+        locked.current = null;
+      }, SETTLE_MS);
+    };
+    const spy = () => {
+      if (locked.current) {
+        // 움직이는 중 — scrollend 가 있으면 그것이 풀고(긴 스크롤에서도 go() 의 안전 시간이 먼저 풀지 않게 지운다),
+        // 없으면 스크롤 이벤트가 잠깐 멈췄을 때 끝난 것으로
+        if ("onscrollend" in root) window.clearTimeout(unlockTimer.current);
+        else unlockSoon();
+        return;
+      }
+      const sections = Array.from(root.querySelectorAll<HTMLElement>(".st-sec"));
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 2;
+      let found: SettingsSection | undefined;
+      if (atBottom) {
+        found = SETTINGS_SECTIONS[SETTINGS_SECTIONS.length - 1];
+      } else {
+        const line = root.getBoundingClientRect().top + root.clientHeight * 0.3;
+        const passed = sections.filter((el) => el.getBoundingClientRect().top <= line);
+        const id = (passed[passed.length - 1] ?? sections[0])?.id.replace("st-", "");
+        found = SETTINGS_SECTIONS.find((s) => s === id);
+      }
+      if (found) setCurrent(found);
+    };
+    const onEnd = () => {
+      window.clearTimeout(unlockTimer.current);
+      locked.current = null;
+    };
+    root.addEventListener("scroll", spy, { passive: true });
+    root.addEventListener("scrollend", onEnd);
+    return () => {
+      root.removeEventListener("scroll", spy);
+      root.removeEventListener("scrollend", onEnd);
+      window.clearTimeout(unlockTimer.current);
+    };
   }, []);
 
   const go = (id: SettingsSection) => {
     setCurrent(id);
-    document.getElementById(`st-${id}`)?.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
+    lockOn(id);
+    const still = reduced || (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+    document.getElementById(`st-${id}`)?.scrollIntoView?.({ block: "start", behavior: still ? "auto" : "smooth" });
   };
 
   const keyFound = state === "apikey";
@@ -277,8 +324,8 @@ export function SettingsScreen({ search, state: rawState, time }: ScreenFramePro
                 desc={t("variant.settings.skinDesc")}
               >
                 <ul className="st-skins" aria-label={t("variant.settings.skin")}>
-                  {(["1", "0", "2", "3"] as const).map((skin) => (
-                    <li key={skin} className="st-skin" data-skin-chip={skin} aria-current={skin === "1" ? "true" : undefined}>
+                  {(["3", "0", "1", "2"] as const).map((skin) => (
+                    <li key={skin} className="st-skin" data-skin-chip={skin} aria-current={skin === DEFAULT_SKIN ? "true" : undefined}>
                       <span className="st-skin__swatch" aria-hidden="true" />
                       <span className="rnd">{t(`variant.skin.${skin}`)}</span>
                     </li>

@@ -42,4 +42,10 @@ describe("시안 a 고양이 집 — 키보드", () => {
     expect(nabi).toHaveAttribute("aria-expanded", "false");
     expect(nabi).toHaveFocus();
   });
+
+  it("사용량의 토큰은 '츄르' 라고 부른다 (D-43)", () => {
+    render(<House time="day" usage={USAGE_OK} work="running" />);
+    expect(screen.getByText(/세션 츄르 약/)).toBeInTheDocument();
+    expect(screen.queryByText(/토큰/)).not.toBeInTheDocument();
+  });
 });

@@ -48,7 +48,7 @@ export function VariantBar({ search, query, variantIds, currentName }: VariantBa
         label="variant.bar.skin"
         options={SKINS.map((skin) => ({
           key: skin,
-          // ① 이 기본 — 쿼리 없이
+          // 기본 판(③ — DEFAULT_SKIN)은 쿼리 없이
           href: param("skin", skin === DEFAULT_SKIN ? null : skin),
           label: t(`variant.skin.${skin}`),
           current: skin === query.skin,

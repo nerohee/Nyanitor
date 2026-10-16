@@ -401,8 +401,29 @@ function ItemPanel({ item, search, state }: { item: EditItem; search: string; st
 
 // ── 새로 만들기 ──
 
-function NewForm({ search }: { search: string }) {
-  const [kind, setKind] = useState<"agent" | "skill">("agent");
+type NewKind = "agent" | "skill";
+
+/** 종류 고르기 — 판 머리 줄 오른쪽에 (다른 상태에서 "새로 만들기" 단추가 있는 자리). 폼의 세로 길이를 줄이려고 (D-43) */
+function NewKindPick({ kind, onChange }: { kind: NewKind; onChange: (kind: NewKind) => void }) {
+  return (
+    <div className="ed-new__kind">
+      <span className="ed-field__label rnd" aria-hidden="true">
+        {t("variant.edit.new.kind")}
+      </span>
+      <Segmented
+        label={t("variant.edit.new.kind")}
+        value={kind}
+        onChange={onChange}
+        options={[
+          { value: "agent", label: t("variant.edit.new.agent"), icon: "paw" },
+          { value: "skill", label: t("variant.edit.new.skill"), icon: "file" },
+        ]}
+      />
+    </div>
+  );
+}
+
+function NewForm({ search, kind }: { search: string; kind: NewKind }) {
   const [id, setId] = useState("translator");
   const [name, setName] = useState(t("variant.agent.translator"));
   const [desc, setDesc] = useState(t("variant.fixture.edit.translator.desc"));
@@ -411,40 +432,25 @@ function NewForm({ search }: { search: string }) {
   const [start, setStart] = useState<"blank" | "copy">("blank");
   const [from, setFrom] = useState("builder-ui");
   const file = kind === "agent" ? `agents/${id || "…"}.md` : `skills/${id || "…"}/SKILL.md`;
-  const front = [
-    `---`,
-    `name: ${id}`,
-    `description: ${desc}`,
-    ...(kind === "agent" ? [`model: ${model}`, `effort: ${effort}`] : []),
-    `---`,
-    ``,
-    t("variant.edit.new.bodyHint"),
-  ].join("\n");
+  // 미리보기는 앞머리 위 · 아래로 나누고, 에이전트면 그 사이의 model · effort 줄을 바로 고르는 칸으로 (D-43 — 모델 · 수준을 옆 칸으로)
+  const frontTop = [`---`, `name: ${id}`, `description: ${desc}`].join("\n");
+  const frontBottom = [`---`, ``, t("variant.edit.new.bodyHint")].join("\n");
   return (
     <>
       <div className="tray__body ed-new">
         <div className="ed-new__form">
-          <div className="ed-field">
-            <span className="ed-field__label rnd">{t("variant.edit.new.kind")}</span>
-            <Segmented
-              label={t("variant.edit.new.kind")}
-              value={kind}
-              onChange={setKind}
-              options={[
-                { value: "agent", label: t("variant.edit.new.agent"), icon: "paw" },
-                { value: "skill", label: t("variant.edit.new.skill"), icon: "file" },
-              ]}
-            />
+          {/* 파일 이름 | 보이는 이름 — 한 줄에 둘, 파일 이름 도움말은 그 아래 한 줄 (1024×640 에서도 판이 스크롤되지 않게, D-43) */}
+          <div className="ed-new__pair">
+            <label className="ed-field">
+              <span className="ed-field__label rnd">{t("variant.edit.new.id")}</span>
+              <Field label={t("variant.edit.new.id")} value={id} mono onChange={(v) => setId(v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} />
+            </label>
+            <label className="ed-field">
+              <span className="ed-field__label rnd">{t("variant.edit.new.name")}</span>
+              <Field label={t("variant.edit.new.name")} value={name} onChange={setName} />
+            </label>
+            <span className="muted su-small ed-new__hint">{t("variant.edit.new.idHint")}</span>
           </div>
-          <label className="ed-field">
-            <span className="ed-field__label rnd">{t("variant.edit.new.id")}</span>
-            <Field label={t("variant.edit.new.id")} value={id} mono onChange={(v) => setId(v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} />
-            <span className="muted su-small">{t("variant.edit.new.idHint")}</span>
-          </label>
-          <label className="ed-field">
-            <span className="ed-field__label rnd">{t("variant.edit.new.name")}</span>
-            <Field label={t("variant.edit.new.name")} value={name} onChange={setName} />
-          </label>
           <label className="ed-field">
             <span className="ed-field__label rnd">{t("variant.edit.new.desc")}</span>
             <textarea
@@ -456,26 +462,7 @@ function NewForm({ search }: { search: string }) {
             />
             <span className="muted su-small">{t("variant.edit.new.descHint")}</span>
           </label>
-          {kind === "agent" && (
-            <div className="ed-field">
-              <span className="ed-field__label rnd">{t("variant.edit.values")}</span>
-              <div className="ed-new__values">
-                <Select
-                  label={t("cat.info.model")}
-                  value={model}
-                  onChange={setModel}
-                  options={MODELS.map((m) => ({ value: m, label: t(`variant.edit.model.${m}`) }))}
-                />
-                <Select
-                  label={t("cat.info.effort")}
-                  value={effort}
-                  onChange={setEffort}
-                  options={EFFORTS.map((e) => ({ value: e, label: t(`cat.effort.${e}`) }))}
-                />
-              </div>
-            </div>
-          )}
-          <div className="ed-field">
+          <div className="ed-field ed-new__start">
             <span className="ed-field__label rnd">{t("variant.edit.new.start")}</span>
             <RadioRows
               label={t("variant.edit.new.start")}
@@ -505,8 +492,37 @@ function NewForm({ search }: { search: string }) {
         </div>
         <aside className="ed-new__preview">
           <h2 className="ed-sec__title rnd">{t("variant.edit.new.preview")}</h2>
-          <p className="mono selectable ed-new__path">{CUSTOM_ROOT + file}</p>
-          <pre className="selectable">{front}</pre>
+          <p className="mono selectable ed-new__path">
+            {CUSTOM_ROOT}
+            <wbr />
+            {file}
+          </p>
+          <div className="ed-new__file">
+            <pre className="selectable">{frontTop}</pre>
+            {kind === "agent" && (
+              <div className="ed-new__values" role="group" aria-label={t("variant.edit.values")}>
+                <span className="ed-new__key" aria-hidden="true">
+                  model:
+                </span>
+                <Select
+                  label={t("cat.info.model")}
+                  value={model}
+                  onChange={setModel}
+                  options={MODELS.map((m) => ({ value: m, label: t(`variant.edit.model.${m}`) }))}
+                />
+                <span className="ed-new__key" aria-hidden="true">
+                  effort:
+                </span>
+                <Select
+                  label={t("cat.info.effort")}
+                  value={effort}
+                  onChange={setEffort}
+                  options={EFFORTS.map((e) => ({ value: e, label: t(`cat.effort.${e}`) }))}
+                />
+              </div>
+            )}
+            <pre className="selectable">{frontBottom}</pre>
+          </div>
           {kind === "agent" && (
             <div className="ed-new__cat">
               <span className="ed-face" aria-hidden="true">
@@ -754,9 +770,10 @@ export function EditScreen({ search, state: rawState, time }: ScreenFrameProps) 
   const go = (next: EditState | null) => withParam(withParam(search, "item", null), "state", next);
   const tab = state === "history" ? "history" : state === "conflict" ? "conflict" : "items";
   const conflicts = EDIT_ITEMS.filter((i) => i.originChanged).length;
+  const [newKind, setNewKind] = useState<NewKind>("agent");
 
   let body;
-  if (state === "new") body = <NewForm search={search} />;
+  if (state === "new") body = <NewForm search={search} kind={newKind} />;
   else if (state === "history") body = <History />;
   else if (state === "conflict") body = <Conflict search={search} />;
   else
@@ -791,7 +808,9 @@ export function EditScreen({ search, state: rawState, time }: ScreenFrameProps) 
               <h1 className="tray__title rnd">{state === "new" ? t("variant.edit.new.title") : t("variant.edit.title")}</h1>
               <p className="tray__lead">{t(LEAD[state])}</p>
             </div>
-            {state !== "new" && (
+            {state === "new" ? (
+              <NewKindPick kind={newKind} onChange={setNewKind} />
+            ) : (
               <a className="hbtn" href={go("new")}>
                 <Icon name="plus" size={18} />
                 {t("variant.edit.newGo")}

@@ -1,6 +1,6 @@
 /*
  * P2-13 새 화면 공통 — 짜임(왼쪽 메뉴 + 흐린 마당 + 쟁반) · 부품.
- * 위쪽은 어느 UI 판에서나 쓰는 기본 모양(토큰만), 맨 아래 절은 ① 나무 쟁반 재질(.vf[data-skin="1"]).
+ * 위쪽은 어느 UI 판에서나 쓰는 기본 모양(토큰만), 아래 절은 ① 나무 쟁반 재질(.vf[data-skin="1"], 보관)과 ③ 스티커 수첩 재질(.vf[data-skin="3"], D-43 기본).
  * 토큰: tokens.css 의 "P2-13 부품" 절.
  */
 
@@ -906,4 +906,202 @@ a.hbtn {
   border-bottom-color: var(--color-surface);
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+/* ─────────────────────── ③ 스티커 수첩 재질 (D-43 기본) ───────────────────────
+ * skin-3.css 의 말 그대로: 고양이 그림과 같은 갈색 선(--ui-line 2px) · 흔들린 모서리(--wobble) · 딱딱한 그림자 · 점선 · 모눈 종이 · 테이프.
+ * 색 인덱스 — 왼쪽 메뉴 스티커의 색(집 버터 · 작업 공간 민트 · 내 수정 분홍 · 설정 하늘)이 그 화면의 표시색(--index):
+ * 판 제목 밑줄 형광펜, 고른 서랍 탭, 고른 목차.
+ * ① 재질(위 절)은 보관 — 지우지 않는다.
+ */
+.vf[data-skin="3"] .sc {
+  --index: var(--ui-4);
+}
+.vf[data-skin="3"] .sc[data-nav="workspace"] {
+  --index: var(--ui-1);
+}
+.vf[data-skin="3"] .sc[data-nav="custom"] {
+  --index: var(--ui-2);
+}
+.vf[data-skin="3"] .sc[data-nav="settings"] {
+  --index: var(--ui-3);
+}
+
+/* 쟁반 = 오려 붙인 모눈 수첩 한 장 (작업 공간 .wa-paper 와 같은 테 · 그림자) */
+.vf[data-skin="3"] .tray {
+  position: relative;
+  z-index: 1;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow:
+    0 0 0 6px var(--sticker-edge),
+    6px 8px 0 6px rgb(var(--shadow-color) / 0.3);
+}
+.vf[data-skin="3"] .tray__head {
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
+}
+/* 판 제목 — 색 인덱스 형광펜 */
+.vf[data-skin="3"] .tray__title {
+  width: fit-content;
+  margin-left: calc(-1 * var(--space-1));
+  padding: 0 var(--space-1);
+  background: linear-gradient(transparent 56%, var(--index, var(--ui-4)) 56% 90%, transparent 90%);
+}
+.vf[data-skin="3"] .tray__foot {
+  border-top: var(--ui-line-w) solid var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}
+
+/* 상자 · 알림 띠 · 명령 · 차이 보기 — 갈색 선 + 딱딱한 그림자 */
+.vf[data-skin="3"] :is(.box, .bnr) {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .bnr__icon {
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] .cmd {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .dif {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .dif__no {
+  border-right-style: dashed;
+}
+
+/* 동전 · 칩 — 테이프 색 스티커 */
+.vf[data-skin="3"] .coin {
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .coin:is([data-status="ok"], [data-status="missing"], [data-status="failed"]) {
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .coin--sm {
+  border-width: 1.5px;
+  box-shadow: none !important;
+}
+.vf[data-skin="3"] .chip {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 8px 6px 8px 5px / 6px 8px 5px 8px;
+}
+
+/* 입력 · 고르기 */
+.vf[data-skin="3"] :is(.fld, .sel select) {
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .seg {
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .seg__opt {
+  border-radius: 8px 6px 8px 5px / 6px 8px 5px 8px;
+}
+.vf[data-skin="3"] .seg__opt:has(input:checked) {
+  box-shadow: inset 0 0 0 1.5px var(--ui-line);
+}
+.vf[data-skin="3"] .rads__item {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .rads__item[data-checked="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .rads__item[data-checked="true"] .rads__dot {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: radial-gradient(circle, var(--ui-line) 0 3px, var(--accent) 3.5px);
+}
+.vf[data-skin="3"] .tgl__track {
+  border-radius: 14px 12px 13px 11px;
+}
+.vf[data-skin="3"] .tgl__knob {
+  box-shadow: 1.5px 1.5px 0 var(--ui-line);
+}
+
+/* 진행 막대 — 빗금 채운 손그림 막대 (고양이 집 사용량 막대와 같은 말) */
+.vf[data-skin="3"] .prg {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 7px 5px 6px 4px;
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .prg > span {
+  border-right: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(var(--shadow-color) / 0.22) 4px 6px),
+    var(--progress-fill);
+}
+
+/* 단계 */
+.vf[data-skin="3"] .stp__num {
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .stp__item[data-status="now"] .stp__num {
+  border-color: var(--ui-line);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .stp__item + .stp__item::before {
+  border-top-color: var(--ui-line);
+}
+
+/* 고양이 말풍선 — 테이프로 붙인 쪽지 */
+.vf[data-skin="3"] .say {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 16px 12px 16px 10px / 12px 16px 10px 16px;
+  box-shadow:
+    0 0 0 4px var(--sticker-edge),
+    3px 4px 0 4px rgb(var(--shadow-color) / 0.28);
+}
+.vf[data-skin="3"] .say::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 22px;
+  width: 64px;
+  height: 20px;
+  background: var(--index, var(--ui-1));
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(-5deg);
+  pointer-events: none;
+}
+
+/* 서랍 탭 = 수첩 색 인덱스 — 쟁반(스티커) 뒤에 꽂혀 위로 삐져나온 탭. 고른 탭은 화면 색, 조금 더 올라온다 */
+.vf[data-skin="3"] .dtabs:not(.tr-tabs) {
+  position: relative;
+  z-index: 0;
+  gap: var(--space-2);
+  margin-bottom: -10px;
+}
+.vf[data-skin="3"] .dtabs:not(.tr-tabs) a {
+  height: 44px;
+  padding: 0 var(--space-4) 10px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 12px 9px 0 0 / 10px 8px 0 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-round);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.vf[data-skin="3"] .dtabs:not(.tr-tabs) a:hover {
+  background: var(--color-surface);
+  transform: translateY(-2px);
+}
+.vf[data-skin="3"] .dtabs:not(.tr-tabs) a[aria-current="page"] {
+  background: var(--index, var(--ui-4));
+  transform: translateY(-5px);
+  box-shadow: 3px 0 0 var(--ui-line);
+}
+.vf[data-skin="3"] .dtabs:not(.tr-tabs) a[aria-current="page"] :is(.icon, svg) {
+  color: var(--color-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf[data-skin="3"] .dtabs:not(.tr-tabs) a {
+    transition: none;
+  }
 }

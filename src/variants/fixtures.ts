@@ -53,7 +53,7 @@ export interface UsageWindow {
   resetKey: TextKey;
 }
 
-/** 사용량 (D-24). 한도 정보는 못 받을 수 있다 — 그래도 앱 세션 토큰 추정은 있다 */
+/** 사용량 (D-24). 한도 정보는 못 받을 수 있다 — 그래도 앱 세션 츄르(토큰) 추정은 있다 — 화면에서는 "츄르" 라고 부른다 (D-43) */
 export type UsageFixture =
   | { status: "ok"; fiveHour: UsageWindow; weekly: UsageWindow; sessionTokens: number }
   | { status: "unavailable"; sessionTokens: number };

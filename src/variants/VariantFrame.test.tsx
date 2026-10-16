@@ -24,13 +24,19 @@ describe("시안 틀", () => {
     expect(screen.getByRole("link", { name: "밤" })).toHaveAttribute("aria-current", "true");
   });
 
-  it("UI 판(skin)은 없거나 모르는 값이면 ① 나무 쟁반(D-40), 0 은 보관한 1판(data-skin 없음), 2 · 3 은 보관한 시안", () => {
+  it("UI 판(skin)은 없거나 모르는 값이면 ③ 스티커 수첩(D-43), 0 은 보관한 1판(data-skin 없음), 1 · 2 는 보관한 시안", () => {
     const { unmount } = render(<VariantFrame search="?variant=a" clock={morningClock} />);
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "3");
+    expect(screen.getByRole("link", { name: "③ 스티커 수첩" })).toHaveAttribute("aria-current", "true");
+    // ③ 은 기본이라 주소에 skin 을 붙이지 않는다, 보관한 ① 은 skin=1 로
+    expect(screen.getByRole("link", { name: "③ 스티커 수첩" }).getAttribute("href")).not.toContain("skin=");
+    expect(screen.getByRole("link", { name: "① 나무 쟁반" }).getAttribute("href")).toContain("skin=1");
+    unmount();
+
+    const wood = render(<VariantFrame search="?variant=a&skin=1" clock={morningClock} />);
     expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "1");
     expect(screen.getByRole("link", { name: "① 나무 쟁반" })).toHaveAttribute("aria-current", "true");
-    // ① 은 기본이라 주소에 skin 을 붙이지 않는다
-    expect(screen.getByRole("link", { name: "① 나무 쟁반" }).getAttribute("href")).not.toContain("skin=");
-    unmount();
+    wood.unmount();
 
     const old = render(<VariantFrame search="?variant=a&skin=0" clock={morningClock} />);
     expect(screen.getByTestId("variant-frame")).not.toHaveAttribute("data-skin");
@@ -42,7 +48,7 @@ describe("시안 틀", () => {
     kept.unmount();
 
     render(<VariantFrame search="?variant=a&skin=9" clock={morningClock} />);
-    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "1");
+    expect(screen.getByTestId("variant-frame")).toHaveAttribute("data-skin", "3");
   });
 
   it("새 화면(첫 실행 · 설정 · 하네스 · 고양이 고르기)이 주소로 열리고, 시안 막대에 그 화면의 상태 줄이 나온다", () => {

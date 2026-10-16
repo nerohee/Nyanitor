@@ -47,7 +47,7 @@ export function UsageUnavailable() {
   );
 }
 
-/** 5시간 · 주간 한도 막대 + 앱 세션 토큰 추정. 못 받으면 "확인할 수 없음" (D-24) */
+/** 5시간 · 주간 한도 막대 + 앱 세션 츄르(토큰) 추정. 못 받으면 "확인할 수 없음" (D-24) */
 export function UsageBars({ usage }: { usage: UsageFixture }) {
   return (
     <div className="usage">

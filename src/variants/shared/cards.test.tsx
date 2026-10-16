@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { workspaceFixture, type ChatItem } from "../fixtures-workspace";
 import { ApprovalCard, isPending, PermissionCard, QuestionCard } from "./cards";
 
@@ -9,6 +10,22 @@ function pendingOf<K extends ChatItem["kind"]>(state: Parameters<typeof workspac
   const found = workspaceFixture(state).chat.find((item): item is Item<K> => item.kind === kind && isPending(item));
   if (!found) throw new Error(`기다리는 ${kind} 카드가 fixture(${state})에 있어야 한다`);
   return found;
+}
+
+afterEach(() => {
+  delete document.documentElement.dataset.motion;
+});
+
+/** 채팅 칸(.wchat__log) 안에 카드를 넣고, 맨 밑 높이 · 내리기를 지켜본다 (jsdom 은 배치를 계산하지 않는다) */
+function inChatLog(card: ReactElement) {
+  render(<div className="wchat__log" data-testid="log">{card}</div>);
+  const log = screen.getByTestId("log");
+  Object.defineProperty(log, "scrollHeight", { configurable: true, value: 900 });
+  const scrollTo = vi.fn();
+  const setTop = vi.fn();
+  Object.defineProperty(log, "scrollTo", { configurable: true, value: scrollTo });
+  Object.defineProperty(log, "scrollTop", { configurable: true, get: () => 0, set: setTop });
+  return { scrollTo, setTop };
 }
 
 describe("채팅 선택 카드", () => {
@@ -87,5 +104,44 @@ describe("채팅 선택 카드", () => {
     expect(screen.getByRole("textbox", { name: "고칠 점" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "고칠 점 보내기" }));
     expect(screen.getByText(/고칠 점을 보냈어요/)).toBeInTheDocument();
+  });
+
+  it("카드 안의 글 칸이 열리면 채팅을 맨 밑으로 내리고 그 칸에 초점 — 움직임 줄이기면 바로 (D-43)", () => {
+    // 고칠 점 말하기 — 부드럽게 맨 밑으로
+    const appr = inChatLog(<ApprovalCard item={pendingOf("approval", "approval")} />);
+    fireEvent.click(screen.getByRole("button", { name: "고칠 점 말하기" }));
+    expect(appr.scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+    expect(screen.getByRole("textbox", { name: "고칠 점" })).toHaveFocus();
+    cleanup();
+
+    // 다르게 하라고 말하기 — 움직임 줄이기면 바로 (scrollTo 의 부드러운 이동 없이)
+    document.documentElement.dataset.motion = "reduced";
+    const perm = inChatLog(<PermissionCard item={pendingOf("permission", "permission")} />);
+    fireEvent.click(screen.getByRole("button", { name: "다르게 하라고 말하기" }));
+    expect(perm.setTop).toHaveBeenCalledWith(900);
+    expect(perm.scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "거부하는 이유 · 대신 할 것" })).toHaveFocus();
+    cleanup();
+    delete document.documentElement.dataset.motion;
+
+    // 질문의 직접 쓰기
+    const q = inChatLog(<QuestionCard item={pendingOf("waiting", "question")} />);
+    const layout = screen.getByRole("group", { name: /사진을 어떻게/ });
+    fireEvent.click(within(layout).getByRole("radio", { name: /직접 쓰기/ }));
+    expect(q.scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+    expect(screen.getByRole("textbox", { name: "직접 쓴 답" })).toHaveFocus();
+  });
+
+  it("선택지는 동그라미 · 네모 없이 보여도 진짜 radio · checkbox 그대로 — 고른 것은 aria-checked(checked)로 (D-43)", () => {
+    render(<QuestionCard item={pendingOf("waiting", "question")} />);
+    const layout = screen.getByRole("group", { name: /사진을 어떻게/ });
+    const radios = within(layout).getAllByRole("radio");
+    fireEvent.click(radios[1]);
+    expect(radios[1]).toBeChecked();
+    expect(radios[0]).not.toBeChecked();
+    // 선택지 칸 전체가 누르는 곳 — 입력은 칸을 덮는 투명 층(모양은 CSS), 이름은 선택지 글
+    expect(radios[1].closest(".wopt")).not.toBeNull();
+    const show = screen.getByRole("group", { name: /사진 카드에 무엇을/ });
+    expect(within(show).getAllByRole("checkbox").length).toBeGreaterThan(1);
   });
 });

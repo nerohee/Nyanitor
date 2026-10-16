@@ -1,12 +1,15 @@
 // 에이전트 고양이 고르기 (D-31 · D-37) — 에이전트 목록 ↔ 고양이 목록. 에이전트마다 고양이 하나, 기본값으로 되돌리기.
 // 상태: ?screen=pick&state=default(기본)|changed(두 에이전트를 바꾼 뒤)|new(사용자가 만든 에이전트 — 고양이를 아직 안 고름) &agent=designer
 // 고른 것은 내 수정 폴더(custom/agent-cats.json)에 저장된다 — 시제품은 화면 안에서만 (P9 에서 IPC).
+// 평소에는 누르면 바로 적용 · 완료 단추 없음. 새 에이전트를 만들고 들어온 경우(state=new)만 "완료" — 고르기 전에는 못 누르고,
+// 누르면 내 수정(새 에이전트가 보이는 곳)으로 돌아간다 (D-43). 그 왼쪽 "이전" 은 고르기 전에도 누를 수 있고,
+// 들어오기 전 화면(내 수정 · 새로 만들기)으로 돌아간다 (P2-15 2차).
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
 import { CAT_IDS, POSES, type CatId } from "../../components/cat/catalog";
 import { t, tf } from "../../i18n/ko";
 import { NEW_AGENT, PICK_AGENTS, PICK_STATES, pickUserLinks, type PickAgent } from "../fixtures-screens";
-import { pickState } from "../query";
+import { pickState, screenHref } from "../query";
 import { Icon } from "../shared/icons";
 import { Banner, Chip, ScreenShell, type ScreenFrameProps } from "./parts";
 import "./screens.css";
@@ -106,6 +109,7 @@ export function CatPickScreen({ search, state: rawState, time }: ScreenFrameProp
     setLinks(initialLinks(agents, {}));
   };
   const changedCount = agents.filter((a) => links[a.agent] !== a.defaultCat).length;
+  const newCat = state === "new" ? links[NEW_AGENT.agent] : null;
 
   const index = agents.findIndex((a) => a.agent === agent.agent);
   const move = (to: number) => {
@@ -280,6 +284,29 @@ export function CatPickScreen({ search, state: rawState, time }: ScreenFrameProp
             </p>
           </section>
         </div>
+        {state === "new" && (
+          <footer className="tray__foot pk-foot">
+            <p className="tray__foot-note" id="pk-done-note" aria-live="polite">
+              {newCat
+                ? tf("variant.pick.doneReady", { agent: name(NEW_AGENT), cat: t(`cat.${newCat}.name`) })
+                : tf("variant.pick.doneWhy", { agent: name(NEW_AGENT) })}
+            </p>
+            <a className="hbtn" href={screenHref(search, "edit", { state: "new" })}>
+              {t("variant.pick.back")}
+            </a>
+            {newCat ? (
+              <a className="hbtn hbtn--primary" href={screenHref(search, "edit", { item: NEW_AGENT.agent })} aria-describedby="pk-done-note">
+                <Icon name="check" size={18} />
+                {t("variant.pick.done")}
+              </a>
+            ) : (
+              <button type="button" className="hbtn hbtn--primary" disabled aria-describedby="pk-done-note">
+                <Icon name="check" size={18} />
+                {t("variant.pick.done")}
+              </button>
+            )}
+          </footer>
+        )}
       </div>
     </ScreenShell>
   );

@@ -89,6 +89,29 @@ describe("설정", () => {
     expect(screen.getByRole("textbox", { name: "claude 실행 파일 경로" })).toBeInTheDocument();
   });
 
+  it("목차: 맨 밑까지 내리면 마지막 묶음(정보), 누르면 스크롤이 끝날 때까지 누른 칸에 고정 (D-43)", () => {
+    render(<SettingsScreen {...base} state="" />);
+    const index = screen.getByRole("navigation", { name: "설정 목차" });
+    const link = (name: string) => within(index).getByRole("link", { name });
+    const scroller = document.querySelector(".st-scroll") as HTMLElement;
+    // jsdom 은 배치가 없어 scrollTop + clientHeight(0) >= scrollHeight(0) — 늘 '맨 밑'
+    fireEvent.scroll(scroller);
+    expect(link("정보")).toHaveAttribute("aria-current", "true");
+
+    // 화면을 누르면 지나가는 스크롤이 와도 화면에 고정
+    fireEvent.click(link("화면"));
+    expect(link("화면")).toHaveAttribute("aria-current", "true");
+    fireEvent.scroll(scroller);
+    fireEvent.scroll(scroller);
+    expect(link("화면")).toHaveAttribute("aria-current", "true");
+    expect(link("정보")).not.toHaveAttribute("aria-current");
+
+    // 스크롤이 끝나면 풀린다 — 다음 스크롤부터 다시 위치를 따른다
+    fireEvent(scroller, new Event("scrollend"));
+    fireEvent.scroll(scroller);
+    expect(link("정보")).toHaveAttribute("aria-current", "true");
+  });
+
   it("하네스 · 고양이 고르기로 가는 길이 있다", () => {
     render(<SettingsScreen {...base} state="update" />);
     expect(screen.getByRole("link", { name: /업데이트 확인/ }).getAttribute("href")).toContain("screen=harness");
@@ -158,6 +181,28 @@ describe("에이전트 고양이 고르기", () => {
     expect(screen.getByText("새 에이전트 「번역」을 만들었어요")).toBeInTheDocument();
     expect(screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).checked)).toHaveLength(0);
   });
+
+  it("완료 단추는 새 에이전트를 만들고 들어온 경우만 — 고르기 전에는 못 누르고(이유를 글로), 고르면 내 수정으로 (D-43)", () => {
+    const { unmount } = render(<CatPickScreen {...base} state="" />);
+    // 평소에는 누르면 바로 적용 — 완료 · 이전 단추 없음
+    expect(screen.queryByRole("button", { name: /완료/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "이전" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /완료/ })).not.toBeInTheDocument();
+    unmount();
+
+    render(<CatPickScreen {...base} state="new" />);
+    // 이전 — 고르기 전에도 누를 수 있고, 내 수정의 새로 만들기로 돌아간다 (P2-15 2차)
+    expect(screen.getByRole("link", { name: "이전" }).getAttribute("href")).toMatch(/screen=edit.*state=new/);
+    expect(screen.getByText(/고르면 아래 「완료」로 끝내요/)).toBeInTheDocument();
+    const before = screen.getByRole("button", { name: /완료/ });
+    expect(before).toBeDisabled();
+    expect(document.getElementById(before.getAttribute("aria-describedby") ?? "")).toHaveTextContent("번역의 고양이를 먼저 골라 주세요");
+
+    fireEvent.click(screen.getByRole("radio", { name: /나비/ }));
+    const done = screen.getByRole("link", { name: /완료/ });
+    expect(done.getAttribute("href")).toMatch(/screen=edit.*item=translator/);
+    expect(screen.getByText(/번역의 고양이: 나비/)).toBeInTheDocument();
+  });
 });
 
 describe("화면 사이 주소", () => {
@@ -224,7 +269,14 @@ describe("내 수정", () => {
 
     render(<EditScreen {...base} state="new" />);
     expect(screen.getByRole("link", { name: /만들고 고양이 고르기/ }).getAttribute("href")).toMatch(/screen=pick.*state=new/);
+    // 모델 · 수준은 만들어질 파일 옆 칸 안에서 고른다 (D-43) — 에이전트만
+    const values = screen.getByRole("group", { name: "모델 · 수준" });
+    fireEvent.change(within(values).getByRole("combobox", { name: "모델" }), { target: { value: "opus" } });
+    expect(within(values).getByRole("combobox", { name: "모델" })).toHaveValue("opus");
+    // 종류는 판 머리 줄에
+    expect(screen.getByRole("radiogroup", { name: "종류" }).closest(".tray__head")).not.toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "스킬" }));
+    expect(screen.queryByRole("group", { name: "모델 · 수준" })).not.toBeInTheDocument();
     expect(screen.getByText("~/.claude-harness/custom/skills/translator/SKILL.md")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /고양이 고르기/ })).not.toBeInTheDocument();
   });

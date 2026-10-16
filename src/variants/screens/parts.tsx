@@ -33,7 +33,7 @@ export function ScreenShell({
   children: ReactNode;
 }) {
   return (
-    <div className={`sc${className ? ` ${className}` : ""}`}>
+    <div className={`sc${className ? ` ${className}` : ""}`} data-nav={nav}>
       <HouseNav className="ha-nav" current={nav} />
       <div className="sc-stage">
         <HouseScene className="sc-backdrop" time={time} placements={[]} />

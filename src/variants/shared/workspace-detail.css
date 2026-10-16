@@ -1,7 +1,7 @@
 /*
  * P2-14 작업 공간 자세히 — 접는 칸 · 상태 머리 · 카드(미리보기 · 권한 · 알림 줄) · 스킬 고르기 · 중단 · 오류 띠 ·
  * 편집기(꾸민 쓰기 · 저장 상태) · 진행 보기(일하는 고양이 · 단계 보드 · 작업 · 기록) · 프로젝트(찾기 · 무리 · 바꾸기 · 없음) · 새 프로젝트 창.
- * 위쪽은 어느 UI 판에서나 쓰는 기본 모양(토큰만), 맨 아래 절은 ① 나무 쟁반 재질(.vf[data-skin="1"]).
+ * 위쪽은 어느 UI 판에서나 쓰는 기본 모양(토큰만), 아래 절은 ① 나무 쟁반 재질(.vf[data-skin="1"], 보관)과 ③ 스티커 수첩 재질(.vf[data-skin="3"], D-43 기본).
  * 색은 새로 만들지 않고 tokens.css 의 판 · "P2-13 부품" 토큰(--banner-* · --coin-* · --row-*)을 섞어 쓴다. 대비는 이 파일 끝.
  */
 
@@ -292,6 +292,54 @@
 .wopt__text-in:focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring);
   outline-offset: 1px;
+}
+/*
+ * 선택지 표시 (D-43) — 동그라미 · 네모 없이. 진짜 radio · checkbox 는 선택지 전체를 덮는 투명 층으로 남긴다
+ * (역할 · aria-checked · 방향키 · Space · Enter 그대로, 누르는 곳은 칸 전체). 초점 테두리는 선택지에.
+ * 고른 것은 색만이 아니라 선(안쪽 한 줄 더) · 모양(글자 칸 → ✓ — 하나 고르기는 동그라미, 여러 개 고르기는 네모)으로.
+ */
+.wopt,
+.wopt__inline {
+  position: relative;
+}
+.wopt input:is([type="radio"], [type="checkbox"]) {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: default;
+}
+.wopt:has(input:is([type="radio"], [type="checkbox"]):focus-visible) {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.wopt:has(input:checked) {
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+}
+.wopt__key {
+  position: relative;
+}
+.wopt:has(input:checked) .wopt__key {
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: transparent;
+}
+.wopt:has(input[type="checkbox"]:checked) .wopt__key {
+  border-radius: 5px;
+}
+.wopt:has(input:checked) .wopt__key::after {
+  content: "";
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  width: 5px;
+  height: 10px;
+  border: solid var(--color-surface);
+  border-width: 0 2.5px 2.5px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 .wq__preview {
   margin: 0;
@@ -1919,3 +1967,375 @@ kbd {
  *  거부 결과 (--color-danger / surface)          6.32    5.65     4.5
  *  트레이 견본 (OS 흉내) 글자 · 보조 / 메뉴 바탕   16.36 · 6.25   12.59 · 7.04   4.5
  */
+
+/* ─────────────────────── ③ 스티커 수첩 재질 (D-43 기본) ───────────────────────
+ * skin-3.css 의 작업 공간(모눈 수첩 · 카드 · 입력줄) 위에, P2-14 에서 더한 조각을 같은 말로: 갈색 선(--ui-line) ·
+ * 흔들린 모서리 · 딱딱한 그림자 · 점선 · 테이프 색(민트 · 분홍 · 하늘 · 버터). ① 절(위)은 보관.
+ * --ui-line 은 어둡게에서 크림색이라 ① 처럼 따로 밝힌 선이 필요 없다.
+ */
+.vf[data-skin="3"]
+  :is(
+    .wq__header,
+    .wq__text,
+    .wnote__title,
+    .wcats__who b,
+    .wcats__task,
+    .wtask__label,
+    .wproj__group-title,
+    .wstatus__pill,
+    .wrunbar__title,
+    .wstop__title,
+    .wskill__title,
+    .wp__strip-text,
+    .wswitch__btn,
+    .wnone__title,
+    .wdlg__title,
+    .wdlg__card-title,
+    .wdlg__steps li,
+    .wdlg__find-title,
+    .wboard-bad__title,
+    .wq-done dt,
+    .wperm__kind,
+    .wed__saved
+  ) {
+  font-family: var(--font-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+/* 접은 칸 = 수첩 옆에 꽂힌 하늘색 인덱스 띠 */
+.vf[data-skin="3"] .wp__strip {
+  border-right: var(--ui-line-w) dashed var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--ui-3);
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .wp__strip:hover {
+  background:
+    var(--grid-paper),
+    var(--ui-4);
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .wp__strip-text {
+  font-size: 15px;
+}
+.vf[data-skin="3"] .wp__alert {
+  border: 1.5px solid var(--ui-line);
+}
+/* 채팅 머리 상태 — 테이프 색 알약 */
+.vf[data-skin="3"] .wstatus__pill {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 9px 7px 9px 6px / 7px 9px 6px 9px;
+  font-size: var(--text-md);
+}
+.vf[data-skin="3"] .wstatus[data-state="working"] .wstatus__pill {
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .wstatus[data-state="error"] .wstatus__pill {
+  background: var(--ui-2);
+}
+.vf[data-skin="3"] :is(.wstatus, .wproj__status) .status-dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] .wstatus__model {
+  border: 1.5px dashed var(--ui-line);
+}
+/* 앱이 끼워 넣는 알림 줄 — 점선 쪽지 */
+.vf[data-skin="3"] .wnote {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] :is(.wnote__icon, .wcard__icon) {
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .wnote__icon {
+  border: 1.5px solid var(--ui-line);
+}
+/* 질문 — 머리표는 버터 테이프, 미리보기는 모눈 점선 */
+.vf[data-skin="3"] :is(.wq__header, .wq-done dt) {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 7px 5px 7px 4px / 5px 7px 4px 7px;
+  background: var(--ui-4);
+  color: var(--color-text);
+  font-size: 13px;
+}
+.vf[data-skin="3"] .wq__header {
+  display: inline-block;
+  transform: rotate(-1.5deg);
+}
+.vf[data-skin="3"] .wq__preview {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}
+/* 선택지 — 점선(skin-3) → 고르면 갈색 선 스티커 + ✓ 동그라미(여러 개 고르기는 네모) */
+.vf[data-skin="3"] .wopt {
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wopt:hover:not(:has(input:checked)) {
+  border-color: var(--ui-line);
+}
+.vf[data-skin="3"] .wopt:has(input:checked) {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--accent-soft);
+  color: var(--color-text);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wopt:has(input:checked) .wopt__key {
+  border-color: var(--ui-line);
+  background: var(--ui-line);
+}
+.vf[data-skin="3"] .wopt__rec {
+  border-color: var(--ui-line);
+  border-radius: 8px 6px 8px 5px / 6px 8px 5px 8px;
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .wopt__text-in {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wperm .wcard__code {
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wperm__tell-in {
+  border-radius: var(--wobble-sm);
+}
+/* 위험 단추 · 중단 — 분홍 테이프 */
+.vf[data-skin="3"] .hbtn.hbtn--danger,
+.vf[data-skin="3"] .hbtn.wcomposer__stop {
+  border-color: var(--ui-line);
+  background: var(--ui-2);
+  color: var(--color-text);
+}
+/* 떠 있는 창(스킬 고르기 · 중단 확인 · 프로젝트 바꾸기) — 오려 붙인 쪽지 */
+.vf[data-skin="3"] :is(.wskill__pop, .wstop, .wswitch__pop) {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow:
+    0 0 0 4px var(--sticker-edge),
+    4px 5px 0 4px var(--ui-line);
+}
+.vf[data-skin="3"] .wskill__opt[aria-selected="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--ui-line);
+}
+.vf[data-skin="3"] .wskill__mine {
+  border: 1.5px solid var(--ui-line);
+  background: var(--ui-1);
+  color: var(--color-text);
+}
+/* 오류 · 한도 · 끊김 띠 */
+.vf[data-skin="3"] .wrunbar {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wrunbar__meter {
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .wrunbar__meter > span {
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(var(--shadow-color) / 0.22) 4px 6px),
+    var(--ui-2);
+}
+/* 편집기 */
+.vf[data-skin="3"] .wed__external {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wed__dot {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] kbd {
+  border-color: var(--ui-line);
+}
+.vf[data-skin="3"] .wed__foot {
+  border-top: var(--ui-line-w) dashed var(--color-border-strong);
+}
+/* 일하는 고양이 — 이름표 스티커 */
+.vf[data-skin="3"] .wcats__item {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wcats__face {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .wcats__item[data-activity="stone"] {
+  border-color: var(--ui-line);
+  background: var(--accent-soft);
+}
+.vf[data-skin="3"] .wcats__item[data-activity="stone"] .wcats__face {
+  background: var(--ui-4);
+}
+/* 단계 보드 — 테이프 색 동전 줄 */
+.vf[data-skin="3"] .wboard__coin {
+  width: 24px;
+  height: 24px;
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .wboard__item[data-status="done"] .wboard__coin {
+  border-color: var(--ui-line);
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .wboard__item[data-status="now"] .wboard__coin,
+.vf[data-skin="3"] .wboard__item[data-status="waiting"] .wboard__coin {
+  border-color: var(--ui-line);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wboard__item[data-status="todo"] .wboard__coin {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+}
+.vf[data-skin="3"] .wboard__row {
+  grid-template-columns: 24px 26px minmax(0, 1fr) auto auto;
+}
+.vf[data-skin="3"] .wboard__item[data-status="now"] .wboard__row,
+.vf[data-skin="3"] .wboard__item[data-status="waiting"] .wboard__row {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wboard__face {
+  border-width: 1.5px;
+  border-color: var(--ui-line);
+}
+.vf[data-skin="3"] .wtasks {
+  border-left: var(--ui-line-w) dashed var(--ui-line);
+}
+.vf[data-skin="3"] .wtask__status {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 8px 6px 8px 5px / 6px 8px 5px 8px;
+  font-family: var(--font-round);
+}
+.vf[data-skin="3"] .wtask[data-status="passed"] .wtask__status {
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .wtask[data-status="redo"] .wtask__status {
+  background: var(--ui-2);
+}
+.vf[data-skin="3"] .wboard-bad {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wlog__kind {
+  border: 1.5px solid var(--ui-line);
+}
+.vf[data-skin="3"] :is(.wlog li[data-kind="pass"], .wlog li[data-kind="phase"]) .wlog__kind {
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] .wraw {
+  border-top: var(--ui-line-w) dashed var(--color-border-strong);
+}
+/* 프로젝트 */
+.vf[data-skin="3"] .wproj__count {
+  border: 1.5px solid var(--ui-line);
+  background: var(--ui-4);
+  color: var(--color-text);
+}
+.vf[data-skin="3"] .wproj__search {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wproj__group-title {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.vf[data-skin="3"] .wswitch__btn {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  box-shadow: 2px 2px 0 var(--ui-line);
+  font-size: 15px;
+}
+.vf[data-skin="3"] .wswitch__btn[aria-expanded="true"] {
+  background: var(--accent-soft);
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+/* 프로젝트 없음 — 먹물이 분홍 테이프 방석에 */
+.vf[data-skin="3"] .wnone__cat {
+  position: relative;
+}
+.vf[data-skin="3"] .wnone__cat::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 10%;
+  right: 10%;
+  bottom: 2%;
+  height: 14%;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--ui-2);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wnone__steps {
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+}
+.vf[data-skin="3"] .wnone__title {
+  font-size: 30px;
+}
+/* 새 프로젝트 창 — 오려 붙인 스티커 한 장 */
+.vf[data-skin="3"] .wdlg__scrim {
+  background: rgb(var(--shadow-color) / 0.4);
+}
+.vf[data-skin="3"] .wdlg {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  box-shadow:
+    0 0 0 6px var(--sticker-edge),
+    6px 8px 0 6px var(--ui-line);
+}
+.vf[data-skin="3"] .wdlg__head {
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
+}
+.vf[data-skin="3"] .wdlg__title {
+  width: fit-content;
+  padding: 0 var(--space-1);
+  background: linear-gradient(transparent 56%, var(--ui-1) 56% 90%, transparent 90%);
+  font-size: 24px;
+}
+.vf[data-skin="3"] .wdlg__steps li > span {
+  width: 22px;
+  height: 22px;
+  border: var(--ui-line-w) solid var(--ui-line);
+}
+.vf[data-skin="3"] .wdlg__steps li[data-status="now"] > span {
+  border-color: var(--ui-line);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wdlg__steps li[data-status="done"] > span {
+  background: var(--ui-1);
+}
+.vf[data-skin="3"] :is(.wdlg__card, .wdlg__skill) {
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] :is(.wdlg__card, .wdlg__skill)[data-checked="true"] {
+  border: var(--ui-line-w) solid var(--ui-line);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.vf[data-skin="3"] .wdlg__find {
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+.vf[data-skin="3"] .wdlg__path {
+  border: 1.5px dashed var(--ui-line);
+}
+.vf[data-skin="3"] .wdlg__foot {
+  border-top: var(--ui-line-w) solid var(--ui-line);
+  background:
+    var(--grid-paper),
+    var(--color-surface-sunken);
+}

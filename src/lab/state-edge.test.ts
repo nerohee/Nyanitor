@@ -23,8 +23,8 @@ const started = event({ type: "session_started", projectDir: "C:\\p", pid: 1, re
 const raw = (seq: number): ClaudeEvent => ({ type: "raw_log", seq, dir: "recv", text: `l${seq}`, truncated: false, originalLen: 2, atMs: seq });
 
 describe("labReducer — 경계", () => {
-  // P3-03 버그: describe.ts 의 switch 에 default 가 없어 모르는 종류는 undefined 를 돌려주고, state.ts 는 `=== null` 만 거른다.
-  it.fails("알 수 없는 이벤트 종류가 와도 멈추지 않고, 글자 없는 줄(undefined)을 목록에 넣지 않는다", () => {
+  // (P3-03 버그였던 것 — P3-05 에서 고침) 모르는 종류는 글자 없는 줄이 되지 않는다.
+  it("알 수 없는 이벤트 종류가 와도 멈추지 않고, 글자 없는 줄(undefined)을 목록에 넣지 않는다", () => {
     // Rust 가 새 종류를 먼저 늘린 경우 (화면이 아직 모른다)
     const future = { type: "future_thing", payload: 1 } as unknown as ClaudeEvent;
     const next = run([started, event(future)]);
@@ -34,7 +34,7 @@ describe("labReducer — 경계", () => {
     }
   });
 
-  it.fails("describeEvent 는 알 수 없는 종류에 undefined 를 돌려주지 않는다 (null 또는 글)", () => {
+  it("describeEvent 는 알 수 없는 종류에 undefined 를 돌려주지 않는다 (null 또는 글)", () => {
     const future = { type: "future_thing" } as unknown as ClaudeEvent;
     expect(describeEvent(future) === undefined).toBe(false);
   });
@@ -127,5 +127,23 @@ describe("labReducer — 경계", () => {
       { type: "permission_request", ...permission, command: null, path: null },
     ];
     for (const e of events) expect(typeof describeEvent(e), e.type).toBe("string");
+  });
+});
+
+describe("labReducer — 모르는 이벤트 종류 (P3-05)", () => {
+  it("모르는 종류는 '모른다' 는 줄로 보이고 type 이 그대로 적힌다", () => {
+    const future = { type: "future_thing", payload: 1 } as unknown as ClaudeEvent;
+    const text = describeEvent(future);
+    expect(typeof text).toBe("string");
+    expect(text).toContain("future_thing");
+    const next = run([started, event(future), event(future)]);
+    expect(next.lines.filter((line) => line.text.includes("future_thing"))).toHaveLength(2);
+    expect(next.running).toBe(true);
+  });
+
+  it("type 이 없는 이상한 값이 와도 멈추지 않는다", () => {
+    for (const weird of [{}, { type: null }, { type: 5 }, { type: undefined }] as unknown as ClaudeEvent[]) {
+      expect(() => run([started, event(weird)])).not.toThrow();
+    }
   });
 });

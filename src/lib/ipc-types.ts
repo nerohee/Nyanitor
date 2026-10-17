@@ -52,6 +52,9 @@ export interface ClaudeStatus {
   authMethod: string | null;
   subscriptionType: string | null;
   apiKeyPresent: boolean;
+  /** 구독이 아닌 곳으로 인증 · 과금할 수 있는 다른 환경 변수의 **이름** (`ANTHROPIC_AUTH_TOKEN`, Bedrock · Vertex 등을 켜는 변수).
+   *  값은 읽지 않고 설정은 그대로 CLI 에 넘긴다 — 알리기만 한다 (D-45) */
+  otherBilling: string[];
   /** 확인 중 막힌 곳 (진단용): `version_failed` · `auth_failed` */
   problem: string | null;
 }
@@ -80,7 +83,8 @@ export interface StopInfo {
   forced: boolean;
 }
 
-export type AlwaysScope = "suggested" | "folder" | "project";
+/** `suggested` CLI 가 제안한 규칙 · `folder` 그 파일이 든 폴더 아래 전부 · `file` 프로젝트 맨 위 파일 하나. 프로젝트 전체를 여는 규칙은 없다 (D-45) */
+export type AlwaysScope = "suggested" | "folder" | "file";
 
 /** "이 프로젝트에서 항상 허용" 때 CLI 가 settings.local.json 에 쓰게 될 규칙 (D-23) */
 export interface AlwaysRule {
@@ -103,6 +107,7 @@ export interface PermissionRequestInfo {
   path: string | null;
   /** 어디에서 (프로젝트 폴더) */
   cwd: string;
+  /** 도구 입력 — **표시용 복사본** (긴 글 · 긴 목록은 잘려 있다). 허용하면 CLI 에는 Rust 가 쥔 원본이 돌아간다 */
   input: unknown;
   /** null 이면 "항상 허용" 을 보이지 않는다 */
   alwaysRule: AlwaysRule | null;
@@ -168,7 +173,7 @@ export interface RawLogEntry {
 /** 세션 관리자가 내보내는 이벤트 (`claude:session`). 필드는 `events.rs` 의 `SessionEvent`. */
 export type ClaudeEvent =
   | { type: "session_started"; projectDir: string; pid: number; resumed: boolean; resumeSessionId: string | null; cliVersion: string | null }
-  /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `line_too_long` · `api_key_in_use` */
+  /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use` */
   | { type: "warning"; code: string; detail: string | null }
   | { type: "user_message"; text: string; deferred: boolean }
   | { type: "turn_started"; sessionId: string; model: string | null; cliVersion: string | null; permissionMode: string | null; apiKeySource: string | null }

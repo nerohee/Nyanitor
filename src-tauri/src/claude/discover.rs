@@ -17,6 +17,8 @@ use crate::error::AppError;
 
 /// 짧은 명령 하나를 기다리는 최대 시간.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+/// `auth status` 출력에서 JSON 시작 자리로 시험해 볼 `{` 의 최대 개수.
+const MAX_JSON_STARTS: usize = 32;
 
 /// "찾기" 결과 — 화면의 첫 실행 준비 목록이 쓴다 (D-44: Claude Code 있음 · 로그인됨 · API 키 있음).
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -32,6 +34,9 @@ pub struct ClaudeStatus {
     pub auth_method: Option<String>,
     pub subscription_type: Option<String>,
     pub api_key_present: bool,
+    /// 구독이 아닌 곳으로 인증 · 과금할 수 있는 다른 환경 변수의 **이름** (`ANTHROPIC_AUTH_TOKEN`, Bedrock · Vertex 등을 켜는 변수).
+    /// 값은 읽지 않고 설정은 그대로 CLI 에 넘긴다 — 알리기만 한다 (D-45).
+    pub other_billing: Vec<String>,
     /// 확인 중 막힌 곳 (진단용 짧은 이름, 화면 문구 아님): `version_failed` · `auth_failed`
     pub problem: Option<String>,
 }
@@ -130,14 +135,26 @@ pub fn parse_auth_status(stdout: &str) -> Result<AuthInfo, AppError> {
         #[serde(rename = "subscriptionType")]
         subscription_type: Option<String>,
     }
-    let start = stdout
-        .find('{')
-        .ok_or_else(|| AppError::Internal("auth status printed no JSON".into()))?;
-    let raw: Raw = serde_json::Deserializer::from_str(&stdout[start..])
-        .into_iter::<Raw>()
-        .next()
-        .ok_or_else(|| AppError::Internal("auth status printed no JSON".into()))?
-        .map_err(|_| AppError::Internal("auth status JSON has an unexpected shape".into()))?;
+    // 앞 글에 `{` 가 있을 수 있다 (`config {default} loaded`) — 읽어지는 첫 `{` 를 찾는다. 시도 횟수는 막아 둔다.
+    let mut tried = 0;
+    let mut raw: Option<Raw> = None;
+    for (start, _) in stdout.match_indices('{').take(MAX_JSON_STARTS) {
+        tried += 1;
+        let parsed = serde_json::Deserializer::from_str(&stdout[start..])
+            .into_iter::<Raw>()
+            .next();
+        if let Some(Ok(found)) = parsed {
+            raw = Some(found);
+            break;
+        }
+    }
+    let raw = raw.ok_or_else(|| {
+        AppError::Internal(if tried == 0 {
+            "auth status printed no JSON".into()
+        } else {
+            "auth status JSON has an unexpected shape".into()
+        })
+    })?;
     Ok(AuthInfo {
         logged_in: raw.logged_in,
         auth_method: raw.auth_method.map(short),
@@ -163,6 +180,15 @@ pub fn read_auth(cmd: &ClaudeCommand) -> Result<AuthInfo, AppError> {
 
 /// 찾기 전체. `cmd` 가 `None` 이면 "못 찾음".
 pub fn status(cmd: Option<&ClaudeCommand>, api_key_present: bool) -> ClaudeStatus {
+    status_with(cmd, api_key_present, Vec::new())
+}
+
+/// `status` + 환경에서 찾은 다른 과금 변수 이름.
+pub fn status_with(
+    cmd: Option<&ClaudeCommand>,
+    api_key_present: bool,
+    other_billing: Vec<String>,
+) -> ClaudeStatus {
     let mut status = ClaudeStatus {
         found: cmd.is_some(),
         path: cmd.map(|c| c.program().display().to_string()),
@@ -173,6 +199,7 @@ pub fn status(cmd: Option<&ClaudeCommand>, api_key_present: bool) -> ClaudeStatu
         auth_method: None,
         subscription_type: None,
         api_key_present,
+        other_billing,
         problem: None,
     };
     let Some(cmd) = cmd else {
@@ -205,7 +232,11 @@ pub fn status(cmd: Option<&ClaudeCommand>, api_key_present: bool) -> ClaudeStatu
 /// 이 PC 에서 찾아 확인한다.
 pub fn status_here() -> ClaudeStatus {
     let cmd = locate_here(None).map(ClaudeCommand::new);
-    status(cmd.as_ref(), exec::api_key_present())
+    status_with(
+        cmd.as_ref(),
+        exec::api_key_present(),
+        exec::other_billing_vars(),
+    )
 }
 
 /// `cmd.exe /C start ...` 에 넘길 글. 새 콘솔 창에서 `claude auth login` 이 돈다.
@@ -223,6 +254,15 @@ fn login_command_line(program: &Path) -> Result<OsString, AppError> {
     Ok(line)
 }
 
+/// 로그인 창을 띄울 `cmd.exe` 의 절대 경로: `<SystemRoot>\System32\cmd.exe` (`SystemRoot` 가 없거나 비었으면 `C:\Windows`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn system_cmd_exe(system_root: Option<&OsStr>) -> PathBuf {
+    let root = system_root
+        .filter(|root| !root.is_empty())
+        .map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
+    root.join("System32").join("cmd.exe")
+}
+
 /// 로그인 안 됨 → `claude auth login` 을 새 터미널 창으로 띄운다. 로그인 흐름은 Anthropic 것이고 앱은 만들지 않는다 (D-19).
 /// 끝난 뒤 화면이 `status` 를 다시 불러 확인한다.
 pub fn open_login_window(program: &Path) -> Result<(), AppError> {
@@ -233,7 +273,8 @@ pub fn open_login_window(program: &Path) -> Result<(), AppError> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let line = login_command_line(program)?;
         // `cmd.exe` 자체는 창 없이 돌고, `start` 가 claude 를 새 콘솔 창으로 띄운다.
-        let mut command = Command::new("cmd.exe");
+        // PATH 에서 찾지 않고 System32 의 것을 쓴다 (환경을 비운 자식 · 쓰기 가능한 폴더의 가짜 `cmd.exe` 를 막는다).
+        let mut command = Command::new(system_cmd_exe(std::env::var_os("SystemRoot").as_deref()));
         command
             .raw_arg(line)
             .env_clear()
@@ -243,6 +284,8 @@ pub fn open_login_window(program: &Path) -> Result<(), AppError> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        // `claude.cmd` 가 새 창에서 `node` 를 찾을 때도 현재 폴더를 보지 않게 (D-45).
+        exec::guard_script_search(&mut command, program);
         let mut child = command
             .spawn()
             .map_err(|e| AppError::Internal(format!("could not open the login window: {e}")))?;
@@ -696,7 +739,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): parse_auth_status 가 첫 `{` 부터 읽어서 JSON 앞 글에 중괄호가 있으면(예: `config {default} loaded`) 거기서 읽기에 실패해 뒤의 진짜 JSON 을 못 읽는다 — 로그인돼 있어도 `auth_failed` 로 보인다. 앞 글에 `{` 가 있어도 다음 `{` 로 다시 시도해야 한다"]
     fn a_brace_inside_the_text_before_the_json_does_not_hide_the_json() {
         let text =
             "note: using {default} settings\n{\"loggedIn\":true,\"authMethod\":\"claude.ai\"}\n";
@@ -774,6 +816,7 @@ mod edge_tests {
                 "found",
                 "knownVersion",
                 "loggedIn",
+                "otherBilling",
                 "path",
                 "problem",
                 "subscriptionType",
@@ -798,5 +841,85 @@ mod edge_tests {
         assert!(line.to_string_lossy().contains("내 도구"));
         // `&` · `^` · `(` 는 따옴표 안이라 cmd 가 명령으로 읽지 않는다 — 그대로 둔다 (현재 동작 기록)
         assert!(login_command_line(Path::new("C:\\a&b\\c.exe")).is_ok());
+    }
+}
+
+/// P3-05 — 로그인 창 cmd.exe 절대 경로 · 앞 글의 중괄호 · 다른 과금 알림.
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+
+    #[test]
+    fn the_login_window_uses_the_system32_cmd_exe_by_absolute_path() {
+        assert_eq!(
+            system_cmd_exe(Some(OsStr::new("C:\\Windows"))),
+            Path::new("C:\\Windows").join("System32").join("cmd.exe")
+        );
+        assert_eq!(
+            system_cmd_exe(Some(OsStr::new("D:\\WinNT"))),
+            Path::new("D:\\WinNT").join("System32").join("cmd.exe")
+        );
+        // 없거나 빈 값이면 기본 위치 — 이름만(`cmd.exe`) 돌려주지는 않는다
+        for missing in [None, Some(OsStr::new(""))] {
+            let path = system_cmd_exe(missing);
+            assert!(path.is_absolute() || path.starts_with("C:"), "{path:?}");
+            assert!(path.ends_with(Path::new("System32").join("cmd.exe")));
+        }
+    }
+
+    #[test]
+    fn the_real_system_cmd_exe_exists_on_windows() {
+        if cfg!(windows) {
+            let path = system_cmd_exe(std::env::var_os("SystemRoot").as_deref());
+            assert!(path.is_file(), "{path:?}");
+        }
+    }
+
+    #[test]
+    fn braces_in_the_text_before_the_json_do_not_hide_it_and_the_account_stays_out() {
+        for text in [
+            "note: using {default} settings\n{\"loggedIn\":true,\"authMethod\":\"claude.ai\"}\n",
+            "{ {{ } {\"loggedIn\":true}",
+            "{\"a\":\n{\"loggedIn\":true}",
+            "warn {x\n{\"loggedIn\":true,\"email\":\"someone@example.com\"}",
+        ] {
+            let info = parse_auth_status(text).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+            assert!(info.logged_in, "{text:?}");
+            assert!(!format!("{info:?}").contains("someone@example.com"));
+        }
+        // 읽을 수 있는 JSON 이 하나도 없으면 그대로 오류 — 받은 글은 오류에 안 들어간다
+        for bad in ["{ {{ } }", "{\"loggedIn\":\"yes\"} {\"email\":\"a@b.c\"}"] {
+            let err = parse_auth_status(bad).unwrap_err();
+            assert!(!err.to_string().contains("a@b.c"));
+        }
+        assert!(
+            parse_auth_status("no braces here")
+                .unwrap_err()
+                .to_string()
+                .contains("no JSON")
+        );
+    }
+
+    #[test]
+    fn a_thousand_open_braces_are_given_up_on_quickly() {
+        let text = "{".repeat(5000);
+        let started = std::time::Instant::now();
+        assert!(parse_auth_status(&text).is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn status_carries_the_other_billing_names_and_nothing_else_about_them() {
+        let names = vec!["ANTHROPIC_AUTH_TOKEN".to_string()];
+        let status = status_with(None, false, names.clone());
+        assert_eq!(status.other_billing, names);
+        let value = serde_json::to_value(&status).unwrap();
+        assert_eq!(value["otherBilling"], serde_json::json!(names));
+        // `status` 만 부르면 비어 있다
+        assert!(status_for_nothing().other_billing.is_empty());
+    }
+
+    fn status_for_nothing() -> ClaudeStatus {
+        status(None, false)
     }
 }

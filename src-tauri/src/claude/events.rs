@@ -26,8 +26,8 @@ pub enum AlwaysScope {
     Suggested,
     /// 그 파일이 든 폴더 아래 전부 (Write · Edit)
     Folder,
-    /// 파일이 프로젝트 맨 위에 있어 프로젝트 전체가 된다 (Write · Edit)
-    Project,
+    /// 파일이 프로젝트 맨 위에 있다 — 그 파일 하나만 (`Edit(/파일이름)`). 프로젝트 전체를 여는 규칙은 없다 (D-45).
+    File,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -44,7 +44,7 @@ pub struct PermissionRequestInfo {
     pub path: Option<String>,
     /// 어디에서 (작업 폴더 = 프로젝트 폴더)
     pub cwd: String,
-    /// 도구 입력 전체 (자세히 보기용)
+    /// 도구 입력 (자세히 보기용). **표시용 복사본** — 긴 글 · 긴 목록은 잘려 있다. 허용할 때 CLI 에 돌려주는 것은 앱이 쥔 원본이다.
     pub input: Value,
     /// 없으면 "항상 허용" 을 보이지 않는다 (예: 파일이 프로젝트 밖)
     pub always_rule: Option<AlwaysRule>,
@@ -155,7 +155,7 @@ pub enum SessionEvent {
         cli_version: Option<String>,
     },
     /// 막지 않고 알리기만 하는 것. `code`: `cli_version_mismatch` · `session_store_failed` · `write_failed` ·
-    /// `control_error` · `unknown_control_request` · `line_too_long` · `api_key_in_use`
+    /// `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use`
     Warning {
         code: String,
         detail: Option<String>,

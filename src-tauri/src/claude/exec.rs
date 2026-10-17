@@ -65,6 +65,64 @@ pub fn api_key_present() -> bool {
     std::env::var_os(API_KEY_VAR).is_some()
 }
 
+/// 있으면 Claude Code 가 구독이 아닌 곳으로 인증 · 과금할 수 있는 변수 (공식 문서 env-vars 의 인증 · 제공자 선택 변수, D-45).
+/// 값은 읽지 않고 이름이 있는지만 본다. `ANTHROPIC_API_KEY` 는 D-19 대로 따로 (기본으로 자식에게 넘기지 않는다).
+/// 이 변수들은 자식에게 **그대로 넘어간다** (사용자가 일부러 정한 설정) — 알리기만 한다.
+const OTHER_BILLING_TOKENS: &[&str] = &[
+    "ANTHROPIC_AUTH_TOKEN",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "ANTHROPIC_AWS_API_KEY",
+    "ANTHROPIC_FOUNDRY_API_KEY",
+    "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+];
+
+/// 제공자를 고르는 켜고 끄는 변수. 문서: 빈 값은 설정하지 않은 것으로 본다 → 빈 값이면 치지 않는다 (값이 아닌 켜짐 여부만).
+const OTHER_BILLING_SWITCHES: &[&str] = &[
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+];
+
+/// `lookup` 이 돌려주는 환경으로 다른 과금 변수 이름을 찾는다 (시험에서 환경을 바꿔 끼우려고 나눔).
+pub fn other_billing_vars_in(lookup: impl Fn(&str) -> Option<OsString>) -> Vec<String> {
+    let tokens = OTHER_BILLING_TOKENS
+        .iter()
+        .filter(|name| lookup(name).is_some());
+    let switches = OTHER_BILLING_SWITCHES
+        .iter()
+        .filter(|name| lookup(name).is_some_and(|value| !value.is_empty()));
+    tokens
+        .chain(switches)
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
+/// 이 프로세스의 환경에서 다른 과금 변수 이름 목록.
+pub fn other_billing_vars() -> Vec<String> {
+    other_billing_vars_in(|name| std::env::var_os(name))
+}
+
+/// `.cmd` · `.bat` 인가 — Windows 에서 `cmd.exe` 가 대신 실행하는 스크립트.
+pub fn is_batch_script(program: &Path) -> bool {
+    program
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
+}
+
+/// `cmd.exe` 가 이 변수가 1 이면 실행 파일을 찾을 때 현재 폴더를 보지 않는다. npm 설치의 `claude.cmd` 는 `node` 를 이름으로 불러서
+/// 현재 폴더(프로젝트 폴더 · 임시 폴더)의 가짜 `node.exe/.cmd` 가 먼저 실행될 수 있다 (D-45).
+pub const NO_CURRENT_DIR_VAR: &str = "NoDefaultCurrentDirectoryInExePath";
+
+/// 스크립트를 띄우는 자식에게 현재 폴더 탐색을 끄는 변수를 더한다 (스크립트가 아니면 아무 일도 안 한다).
+pub fn guard_script_search(command: &mut Command, program: &Path) {
+    if is_batch_script(program) {
+        command.env(NO_CURRENT_DIR_VAR, "1");
+    }
+}
+
 /// 짧은 명령(`--version`, `auth status`)이 돌려준 것.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Captured {
@@ -133,6 +191,7 @@ impl ClaudeCommand {
         command.env_clear();
         command.envs(clean_env(base, self.keep_api_key));
         command.envs(self.extra_env.iter().map(|(k, v)| (k, v)));
+        guard_script_search(&mut command, &self.program);
         hide_window(&mut command);
         process_tree::prepare_command(&mut command);
         command
@@ -469,5 +528,122 @@ mod edge_tests {
                 .get_envs()
                 .any(|(k, _)| k == OsStr::new("ANTHROPIC_API_KEY"))
         );
+    }
+}
+
+/// P3-05 — `.cmd` · `.bat` 의 현재 폴더 탐색 막기 (D-45) · 다른 과금 변수 알림.
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+
+    fn guard_value(program: &str, base: Vec<(OsString, OsString)>) -> Option<String> {
+        let built = ClaudeCommand::new(program)
+            .with_base_env(base)
+            .command(["--version"]);
+        built
+            .get_envs()
+            .find(|(k, _)| *k == OsStr::new(NO_CURRENT_DIR_VAR))
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn batch_scripts_are_started_with_the_current_folder_search_turned_off() {
+        for program in [
+            "C:\\npm\\claude.cmd",
+            "C:\\npm\\CLAUDE.CMD",
+            "C:\\x\\claude.bat",
+            "claude.Bat",
+        ] {
+            assert_eq!(
+                guard_value(program, Vec::new()).as_deref(),
+                Some("1"),
+                "{program}"
+            );
+        }
+    }
+
+    #[test]
+    fn executables_and_lookalikes_do_not_get_the_variable() {
+        for program in [
+            "C:\\x\\claude.exe",
+            "/usr/bin/claude",
+            "claude",
+            "C:\\x\\claude.cmd.exe",
+            "C:\\x\\cmd",
+            "C:\\x\\claude.cmdx",
+        ] {
+            assert_eq!(guard_value(program, Vec::new()), None, "{program}");
+        }
+    }
+
+    #[test]
+    fn a_user_value_in_the_environment_cannot_turn_the_guard_off() {
+        let base = vec![(
+            OsString::from("NoDefaultCurrentDirectoryInExePath"),
+            OsString::from("0"),
+        )];
+        assert_eq!(
+            guard_value("C:\\npm\\claude.cmd", base).as_deref(),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn other_billing_names_are_listed_without_reading_values() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| OsString::from(v))
+            }
+        };
+        assert!(other_billing_vars_in(env(&[])).is_empty());
+        // 인증 변수는 값이 비어 있어도 "있음" 이다 (값은 보지 않는다)
+        assert_eq!(
+            other_billing_vars_in(env(&[
+                ("ANTHROPIC_AUTH_TOKEN", ""),
+                ("AWS_BEARER_TOKEN_BEDROCK", "x"),
+            ])),
+            ["ANTHROPIC_AUTH_TOKEN", "AWS_BEARER_TOKEN_BEDROCK"]
+        );
+        // 제공자를 켜는 변수는 빈 값이면 안 켜진 것 (문서: 빈 값은 설정 안 한 것으로 본다)
+        assert_eq!(
+            other_billing_vars_in(env(&[
+                ("CLAUDE_CODE_USE_BEDROCK", "1"),
+                ("CLAUDE_CODE_USE_VERTEX", ""),
+                ("CLAUDE_CODE_USE_FOUNDRY", "true"),
+            ])),
+            ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_FOUNDRY"]
+        );
+        // `ANTHROPIC_API_KEY` · 프록시 주소 · 관계없는 변수는 여기 없다 (API 키는 D-19 로 따로)
+        assert!(
+            other_billing_vars_in(env(&[
+                ("ANTHROPIC_API_KEY", "k"),
+                ("ANTHROPIC_BASE_URL", "http://proxy"),
+                ("PATH", "x"),
+            ]))
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn other_billing_variables_are_passed_on_to_the_child_unchanged() {
+        let base = vec![
+            (OsString::from("ANTHROPIC_AUTH_TOKEN"), OsString::from("t")),
+            (
+                OsString::from("CLAUDE_CODE_USE_BEDROCK"),
+                OsString::from("1"),
+            ),
+        ];
+        let built = ClaudeCommand::new("claude")
+            .with_base_env(base)
+            .command(["x"]);
+        for name in ["ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"] {
+            assert!(
+                built.get_envs().any(|(k, _)| k == OsStr::new(name)),
+                "{name}"
+            );
+        }
     }
 }

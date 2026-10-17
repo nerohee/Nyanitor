@@ -53,7 +53,7 @@ const TS_RESPONSE_KINDS: Record<ClaudeResponse["kind"], true> = {
 };
 
 const TS_OUTCOMES: Record<TurnOutcome, true> = { success: true, interrupted: true, error: true, limit: true };
-const TS_SCOPES: Record<AlwaysScope, true> = { suggested: true, folder: true, project: true };
+const TS_SCOPES: Record<AlwaysScope, true> = { suggested: true, folder: true, file: true };
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 

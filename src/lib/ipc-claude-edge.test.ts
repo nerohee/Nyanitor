@@ -86,8 +86,8 @@ describe("가짜 Claude 세션 — 구독 · 순서", () => {
     expect(a.events.length).toBeGreaterThan(0);
   });
 
-  // P3-03 버그(낮음, 가짜 세션만): fakeClaude.emit 이 구독자를 try/catch 없이 돌려 한 구독자의 오류가 뒤 구독자를 막는다.
-  it.fails("한 구독자가 오류를 던져도 다른 구독자는 이벤트를 받는다", async () => {
+  // (P3-03 버그였던 것 — P3-05 에서 고침) 한 구독자의 오류가 뒤 구독자를 막지 않는다.
+  it("한 구독자가 오류를 던져도 다른 구독자는 이벤트를 받는다", async () => {
     await ipc.onClaudeEvent(() => {
       throw new Error("listener bug");
     });
@@ -198,8 +198,8 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
     expect((await ipc.claudeSessionState()).running).toBe(false);
   });
 
-  // P3-03 버그(낮음, 가짜 세션만): fakeClaude 의 lastSessions 키가 글자 그대로라 Rust project_key 처럼 대소문자 · 끝 \ 를 모으지 않는다.
-  it.fails("같은 폴더를 다른 표기(대소문자 · 끝 \\)로 시작하면 이어 하기 기록이 이어진다", async () => {
+  // (P3-03 버그였던 것 — P3-05 에서 고침) 가짜 세션의 이어 하기 키도 Rust project_key 처럼 모은다.
+  it("같은 폴더를 다른 표기(대소문자 · 끝 \\)로 시작하면 이어 하기 기록이 이어진다", async () => {
     // Rust 저장소(project_key)는 같은 폴더의 다른 표기를 한 키로 모은다 — 가짜 세션도 같아야 화면 시험이 실제와 어긋나지 않는다.
     const { events } = await collect();
     await ipc.claudeSessionStart({ projectDir: "C:\\Dev\\App" });
@@ -218,5 +218,38 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
     await ipc.claudeSessionStop();
     await ipc.claudeSessionStart({ projectDir: "C:\\p" });
     expect(await ipc.claudeRawLog()).toEqual([]);
+  });
+});
+
+describe("가짜 세션 — 이어 하기 키 · 구독자 오류 (P3-05)", () => {
+  it("fakeProjectKey 는 Rust project_key(Windows) 처럼 같은 폴더의 다른 표기를 한 키로 모은다", async () => {
+    const { fakeProjectKey } = await import("./fakeClaude");
+    const key = fakeProjectKey("C:\\Users\\Me\\Proj");
+    for (const same of [
+      "c:\\users\\me\\proj\\",
+      "C:/Users/Me/Proj",
+      "c:/users/me/proj//",
+      "\\\\?\\C:\\Users\\Me\\Proj",
+      "C:\\Users\\.\\Me\\\\Proj",
+    ]) {
+      expect(fakeProjectKey(same), same).toBe(key);
+    }
+    expect(fakeProjectKey("C:\\Users\\Me\\Proj2")).not.toBe(key);
+    expect(fakeProjectKey("D:\\Users\\Me\\Proj")).not.toBe(key);
+    expect(fakeProjectKey("C:")).toBe(fakeProjectKey("C:\\"));
+    expect(fakeProjectKey("\\\\?\\UNC\\Srv\\Share\\P")).toBe(fakeProjectKey("\\\\srv\\share\\p\\"));
+    expect(fakeProjectKey("")).toBe("");
+  });
+
+  it("오류를 던지는 구독자가 앞에 있어도 뒤 구독자는 모든 이벤트를 받는다", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await ipc.onClaudeEvent(() => {
+      throw new Error("listener bug");
+    });
+    const { events } = await collect();
+    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionSend("hello");
+    await waitFor(events, "permission_request");
+    expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(["session_started", "user_message", "turn_started", "permission_request"]));
   });
 });

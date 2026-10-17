@@ -16,7 +16,7 @@ export type Respond = (requestId: string, response: ClaudeResponse) => Promise<v
 const RULE_NOTE: Record<AlwaysRule["scope"], TextKey> = {
   suggested: "lab.perm.ruleSuggested",
   folder: "lab.perm.ruleFolder",
-  project: "lab.perm.ruleProject",
+  file: "lab.perm.ruleFile",
 };
 
 /** 항상 허용이 무엇을 허용하는지 한 문장 (카드가 미리 보여 준다 — D-23) */

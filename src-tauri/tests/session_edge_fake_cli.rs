@@ -1,6 +1,5 @@
 //! 세션 관리자 경계 시험 (P3-03) — 시작 중 겹치는 호출 · 응답 검사 · 죽음 · 이상한 바이트 · 저장소 실패를 가짜 CLI 로 돌린다.
 //! 실제 `claude` 는 쓰지 않는다. 이 파일만의 시나리오는 시험 안에서 만든 녹화 폴더(`NYANITOR_FAKE_FIXTURES`)로 재생한다.
-//! 실패하는 시험에는 `#[ignore = "P3-03 버그: …"]` 를 달아 두었다 — `cargo test -- --ignored` 로 다시 볼 수 있다.
 
 mod common;
 
@@ -548,7 +547,6 @@ fn answering_in_the_same_instant_from_two_threads_sends_exactly_one_response() {
 }
 
 #[test]
-#[ignore = "P3-03 버그(낮음): 같은 request_id 의 요청이 두 번 오면 대기 목록에 같은 ID 카드가 둘 생긴다 (session.rs apply 가 이미 있는 ID 를 확인하지 않고 extend) — 상태를 다시 열면 같은 카드가 두 장 보이고, 한 번 답하면 다른 한 장이 남아 답할 수 없는 카드가 된다. 실제 CLI 는 ID 를 새로 만들어서 거의 안 일어난다"]
 fn the_same_request_id_arriving_twice_makes_one_card_not_two() {
     let mut h = Harness::new("dup-request");
     let scenario = vec![
@@ -775,7 +773,6 @@ fn a_session_id_of_a_strange_shape_is_not_saved_the_old_one_survives_and_the_ses
 }
 
 #[test]
-#[ignore = "P3-03 버그(낮음, 방어): 세션 ID 검사(store::is_valid_session_id)가 `-` 로 시작하는 값을 통과시켜, CLI 가 init 에 `--dangerously-skip-permissions` 같은 값을 주면 저장되고 다음 이어 하기에서 `--resume --dangerously-skip-permissions` 인자가 된다. 앱이 정한 인자 목록(D-44) 밖의 옵션이 들어갈 수 있는 길이다"]
 fn a_session_id_that_looks_like_an_option_is_never_saved_nor_passed_back_as_an_argument() {
     let mut h = Harness::new("option-like-id");
     let evil = "--dangerously-skip-permissions";
@@ -913,4 +910,102 @@ fn the_end_notice_carries_the_last_five_stderr_lines_cut_short() {
     assert!(stderr_tail[0].starts_with("err 4"));
     assert!(stderr_tail[4].starts_with("err 8"));
     assert!(stderr_tail.iter().all(|l| l.chars().count() <= 301));
+}
+
+// ───────────────────────── P3-05: CLI 가 스스로 끝난 뒤 정리 ─────────────────────────
+
+#[test]
+fn the_writer_thread_ends_after_the_cli_dies_by_itself_and_every_other_way_it_can_end() {
+    // (시나리오 이름, 끝내기를 앱이 부르는가). 앱이 부르지 않아도 (CLI 가 죽음 · 스스로 끝남 · 끊김) 쓰기 스레드가 끝나야 한다.
+    for (name, flags, app_stops) in [
+        ("start", vec!["die-before-result"], false),
+        ("cut-line", vec!["cut-line"], false),
+        ("start", vec![], true),
+    ] {
+        let mut h = Harness::new(&format!("writer-{name}"));
+        let cmd = h.fake(name, &flags);
+        h.start(&cmd).unwrap();
+        wait_until("the writer thread to start", || {
+            h.manager.running_writers() == 1
+        });
+        h.manager.send_message("pong").unwrap();
+        if app_stops {
+            h.wait_for("turn end", turn_outcome);
+            h.manager.stop().unwrap();
+        }
+        h.wait_ended();
+        wait_until("the writer thread to end after the session ended", || {
+            h.manager.running_writers() == 0
+        });
+        assert!(!h.manager.state().running);
+        // 끝난 세션에는 아무것도 못 보낸다 (닫힌 stdin 에 쌓이지 않는다)
+        assert_eq!(
+            h.manager.send_message("again").unwrap_err().kind(),
+            "no_session"
+        );
+    }
+}
+
+#[test]
+fn a_cli_that_ends_on_its_own_with_a_final_exit_code_also_releases_its_writer() {
+    let mut h = Harness::new("writer-exit0");
+    let dir = fixtures(
+        &h,
+        &[(
+            "bye",
+            vec![send_user(), init(SESSION_ID), result(0.1), exit_with(3)],
+        )],
+    );
+    let cmd = custom(&h, &dir, "bye", &[]);
+    h.start(&cmd).unwrap();
+    h.manager.send_message("go").unwrap();
+    h.wait_ended();
+    wait_until("the writer thread to end", || {
+        h.manager.running_writers() == 0
+    });
+    // 다음 세션도 정상으로 뜨고 쓰기 스레드는 다시 하나다
+    let second = custom(&h, &dir, "bye", &[]);
+    h.start(&second).unwrap();
+    wait_until("one writer again", || h.manager.running_writers() == 1);
+    h.manager.send_message("go").unwrap();
+    h.wait_ended();
+    wait_until("the writer thread to end again", || {
+        h.manager.running_writers() == 0
+    });
+}
+
+#[test]
+fn a_session_id_the_cli_reports_that_is_not_a_uuid_is_never_saved_or_used_to_resume() {
+    let mut h = Harness::with_saved_session("not-uuid-id", SESSION_ID);
+    let dir = fixtures(
+        &h,
+        &[(
+            "odd",
+            vec![send_user(), init("abcdefgh"), result(0.1), exit_with(1)],
+        )],
+    );
+    let cmd = custom(&h, &dir, "odd", &[]);
+    h.start(&cmd).unwrap();
+    h.manager.send_message("go").unwrap();
+    assert_eq!(
+        h.wait_for("store warning", warning_code),
+        "session_store_failed"
+    );
+    h.wait_ended();
+    assert_eq!(
+        h.manager
+            .last_session(&h.project.display().to_string())
+            .unwrap()
+            .as_deref(),
+        Some(SESSION_ID)
+    );
+    // 이어 하기 인자에는 저장된 UUID 만 들어간다
+    let resume = custom(&h, &dir, "odd", &[]);
+    h.start_resume(&resume).unwrap();
+    wait_until("the resumed claude to log its start", || {
+        !resume.argv().is_empty()
+    });
+    let argv = resume.argv();
+    let at = argv.iter().position(|a| a == "--resume").unwrap();
+    assert_eq!(argv[at + 1], SESSION_ID);
 }

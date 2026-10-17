@@ -62,5 +62,8 @@ export function describeEvent(event: ClaudeEvent): string | null {
         forced: event.forced ? t("lab.event.forcedSuffix") : "",
         mid: event.midTurn ? t("lab.event.midTurnSuffix") : "",
       });
+    default:
+      // Rust 가 새 종류를 먼저 늘린 경우 — 글자 없는 줄(undefined)이 아니라 모른다는 줄을 보인다
+      return tf("lab.event.unknown", { type: String((event as { type?: unknown }).type) });
   }
 }

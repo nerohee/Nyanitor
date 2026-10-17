@@ -21,8 +21,9 @@ pub const ASK_USER_QUESTION: &str = "AskUserQuestion";
 const SUMMARY_CHARS: usize = 300;
 
 /// 줄 하나를 JSON 객체로. JSON 이 아니거나 객체가 아니면 `None` (원본 로그에만 남는다).
+/// 줄 맨 앞의 BOM(U+FEFF)은 무시한다 (`trim` 은 BOM 을 공백으로 보지 않는다).
 pub fn parse_line(line: &str) -> Option<Value> {
-    match serde_json::from_str::<Value>(line.trim()) {
+    match serde_json::from_str::<Value>(line.trim_start_matches('\u{feff}').trim()) {
         Ok(value @ Value::Object(_)) => Some(value),
         _ => None,
     }
@@ -119,7 +120,7 @@ impl Interpreter {
         out
     }
 
-    fn on_system(&self, msg: &Value, out: &mut Interpretation) {
+    fn on_system(&mut self, msg: &Value, out: &mut Interpretation) {
         // `thinking_tokens` · `task_started` · `permission_denied` 등은 화면에 쓸 일이 없다.
         if str_at(msg, "subtype") != Some("init") {
             return;
@@ -127,6 +128,8 @@ impl Interpreter {
         let Some(session_id) = str_at(msg, "session_id") else {
             return;
         };
+        // 새 턴 — 앞 턴의 한도 상태가 이 턴의 오류에 번지지 않게 한다.
+        self.last_rate_status = None;
         out.session_id = Some(session_id.to_string());
         out.turn_started = true;
         out.events.push(SessionEvent::TurnStarted {
@@ -202,21 +205,25 @@ impl Interpreter {
             .and_then(Value::as_array)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let always = always_rule(&self.project_dir, &tool, &input, suggestions);
+        let always = always_rule(&self.project_dir, &tool, &input, suggestions)
+            // 파일 하나 규칙은 이름이 폴더면 그 폴더 아래 전부를 여는 규칙이 된다 — 있는 폴더를 가리키면 만들지 않는다.
+            .filter(|(info, _)| {
+                info.scope != AlwaysScope::File || !target_path(&input).is_some_and(names_a_folder)
+            });
         let info = PermissionRequestInfo {
             request_id: request_id.to_string(),
             tool_use_id,
             display_name: str_at(request, "display_name").map(str::to_string),
             description: str_at(request, "description").map(|d| truncate_chars(d, 1000)),
+            // 카드에 보이는 글도 같은 한계로 자른다 (원본은 `PendingKind::Permission` 이 쥔다). 잘렸으면 끝에 `…` 가 붙는다.
             command: match tool.as_str() {
-                "WebFetch" => str_at(&input, "url").map(str::to_string),
-                _ => str_at(&input, "command").map(str::to_string),
-            },
-            path: str_at(&input, "file_path")
-                .or_else(|| str_at(&input, "notebook_path"))
-                .map(str::to_string),
+                "WebFetch" => str_at(&input, "url"),
+                _ => str_at(&input, "command"),
+            }
+            .map(|text| truncate_chars(text, INPUT_STRING_CHARS)),
+            path: target_path(&input).map(|text| truncate_chars(text, INPUT_STRING_CHARS)),
             cwd: self.project_dir.clone(),
-            input: input.clone(),
+            input: display_input(&input),
             always_rule: always.as_ref().map(|(info, _)| info.clone()),
             tool: tool.clone(),
         };
@@ -254,6 +261,8 @@ impl Interpreter {
             })
             .unwrap_or_default();
 
+        // 한도 상태는 이 턴 몫이다 — 읽고 나면 지운다 (다음 턴의 무관한 오류가 한도로 보이지 않게).
+        let rate_status = self.last_rate_status.take();
         let outcome = if !is_error {
             TurnOutcome::Success
         } else if terminal_reason
@@ -262,8 +271,7 @@ impl Interpreter {
         {
             TurnOutcome::Interrupted
         } else if api_error_status == Some(429)
-            || self
-                .last_rate_status
+            || rate_status
                 .as_deref()
                 .is_some_and(|status| status.starts_with("rejected"))
         {
@@ -503,18 +511,86 @@ fn parse_questions(input: &Value) -> Option<ParsedQuestions> {
     Some((raw.clone(), shapes, infos))
 }
 
+// ───────────────────────── 도구 입력 (표시용) ─────────────────────────
+
+/// 이벤트에 싣는 도구 입력의 한계 — 긴 값은 잘라 표시용으로만 쓴다 (허용할 때 CLI 에 돌려주는 것은 잘리지 않은 원본이다).
+const INPUT_STRING_CHARS: usize = 10_000;
+const INPUT_ARRAY_ITEMS: usize = 50;
+const INPUT_TOTAL_BYTES: usize = 64 << 10;
+
+/// 카드에 보일 도구 입력: 긴 글 · 긴 목록을 잘라 낸 복사본. 그래도 너무 크면 앞부분만 글로 남긴다.
+pub fn display_input(input: &Value) -> Value {
+    let trimmed = trim_value(input);
+    let text = trimmed.to_string();
+    if text.len() > INPUT_TOTAL_BYTES {
+        return Value::String(truncate_chars(&text, INPUT_STRING_CHARS));
+    }
+    trimmed
+}
+
+fn trim_value(value: &Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(truncate_chars(text, INPUT_STRING_CHARS)),
+        Value::Array(items) => {
+            let mut kept: Vec<Value> = items
+                .iter()
+                .take(INPUT_ARRAY_ITEMS)
+                .map(trim_value)
+                .collect();
+            if items.len() > INPUT_ARRAY_ITEMS {
+                kept.push(Value::String("…".into()));
+            }
+            Value::Array(kept)
+        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, item)| (key.clone(), trim_value(item)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 // ───────────────────────── "이 프로젝트에서 항상 허용" 규칙 ─────────────────────────
 
 /// 파일을 고치는 도구들. CLI 의 권한 규칙에서는 모두 `Edit(...)` 한 이름으로 묶인다
 /// (`Write` 이름으로 쓴 경로 규칙은 먹지 않고 `Edit` 은 Write · Edit 둘 다에 먹는다 — P3-02 실험 `permission-scope`).
 const FILE_EDIT_TOOLS: &[&str] = &["Write", "Edit", "MultiEdit", "NotebookEdit"];
 
-/// 규칙 내용(`ruleContent`) 없이는 너무 넓어지는 도구 (그 도구의 모든 호출을 허용하게 된다).
-const NEEDS_RULE_CONTENT: &[&str] = &["Bash", "PowerShell"];
+/// "항상 허용" 규칙을 만들지 않는 폴더 · 파일 이름 — 모델이 이것을 고치면 권한 설정 · 훅이 바뀌어
+/// 묻지 않고 명령이 돌 수 있다 (D-45). 경로 어느 칸에 있어도 (폴더이든 파일이든) 규칙을 만들지 않는다.
+/// 대소문자를 가리지 않고 끝의 점 · 공백은 무시한다 (Windows 는 `.Claude.` 도 `.claude` 로 본다).
+/// 설정 · 훅 자리를 더 알게 되면 여기에만 더한다.
+const PROTECTED_NAMES: &[&str] = &[
+    ".claude",
+    ".git",
+    ".githooks",
+    ".husky",
+    ".vscode",
+    ".idea",
+    ".github",
+    ".gitlab",
+    ".circleci",
+    ".devcontainer",
+    ".cargo",
+    ".mcp.json",
+    ".envrc",
+];
+
+fn is_protected_name(name: &str) -> bool {
+    let plain = name.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    PROTECTED_NAMES.contains(&plain.as_str())
+}
+
+/// 파일을 고치는 도구가 가리킨 파일 경로 (`file_path`, 노트북은 `notebook_path`).
+fn target_path(input: &Value) -> Option<&str> {
+    str_at(input, "file_path").or_else(|| str_at(input, "notebook_path"))
+}
 
 /// 권한 요청 하나에 "항상 허용" 으로 실어 보낼 규칙. 규칙을 정하는 것은 이 함수뿐이고 화면은 고르지 못한다.
-/// - CLI 가 `addRules` · `localSettings` · `allow` 로 제안한 것이 있으면 그대로 (Bash 는 그 명령 접두).
-/// - 없고 파일을 고치는 도구이며 파일이 프로젝트 안이면 그 파일이 든 폴더로 좁힌 `Edit(/폴더/**)`.
+/// - CLI 가 `addRules` · `localSettings` · `allow` 로 제안한 것이 있고 요청한 도구의 것이며 내용이 좁으면 그것 (알려진 필드만 다시 만든다).
+/// - 없고 파일을 고치는 도구이며 파일이 프로젝트 안이면 `Edit(/폴더/**)` (그 파일이 든 폴더) 또는
+///   프로젝트 맨 위 파일이면 `Edit(/파일이름)` (그 파일 하나). `Edit(/*)` 같은 프로젝트 전체 규칙은 만들지 않는다 (D-45).
 /// - 그 밖에는 `None` — 버튼을 보이지 않는다.
 pub fn always_rule(
     project_dir: &str,
@@ -522,14 +598,13 @@ pub fn always_rule(
     input: &Value,
     suggestions: &[Value],
 ) -> Option<(AlwaysRule, Value)> {
-    if let Some(found) = suggested_rule(suggestions) {
+    if let Some(found) = suggested_rule(tool, suggestions) {
         return Some(found);
     }
     if !FILE_EDIT_TOOLS.contains(&tool) {
         return None;
     }
-    let file = str_at(input, "file_path").or_else(|| str_at(input, "notebook_path"))?;
-    let (content, scope, folder) = folder_rule(project_dir, file)?;
+    let (content, scope, folder) = folder_rule(project_dir, target_path(input)?)?;
     let value = json!({
         "type": "addRules",
         "rules": [{ "toolName": "Edit", "ruleContent": content }],
@@ -546,7 +621,19 @@ pub fn always_rule(
     ))
 }
 
-fn suggested_rule(suggestions: &[Value]) -> Option<(AlwaysRule, Value)> {
+/// 제안한 규칙의 도구가 요청한 도구와 같은 도구인가 (파일을 고치는 도구끼리는 한 묶음).
+fn same_tool(requested: &str, rule_tool: &str) -> bool {
+    requested == rule_tool
+        || (FILE_EDIT_TOOLS.contains(&requested) && FILE_EDIT_TOOLS.contains(&rule_tool))
+}
+
+/// 내용이 비었거나 `*` · `/` 뿐이면 그 도구의 거의 모든 호출을 허용하게 된다.
+fn is_broad_content(content: &str) -> bool {
+    let content = content.trim();
+    content.chars().all(|c| c == '*' || c == '/') || content == ":*"
+}
+
+fn suggested_rule(tool: &str, suggestions: &[Value]) -> Option<(AlwaysRule, Value)> {
     suggestions.iter().find_map(|suggestion| {
         if str_at(suggestion, "type") != Some("addRules")
             || str_at(suggestion, "destination") != Some("localSettings")
@@ -559,16 +646,26 @@ fn suggested_rule(suggestions: &[Value]) -> Option<(AlwaysRule, Value)> {
             return None;
         }
         let mut shown = Vec::new();
+        let mut rebuilt = Vec::new();
         for rule in rules {
-            let tool = str_at(rule, "toolName")?;
-            let content = str_at(rule, "ruleContent").filter(|c| !c.is_empty());
-            if NEEDS_RULE_CONTENT.contains(&tool) && content.is_none() {
+            let rule_tool = str_at(rule, "toolName")?;
+            if !same_tool(tool, rule_tool) {
                 return None;
             }
-            shown.push(match content {
-                Some(content) => format!("{tool}({content})"),
-                None => tool.to_string(),
-            });
+            let content = str_at(rule, "ruleContent");
+            match content {
+                Some(content) if !is_broad_content(content) => {
+                    shown.push(format!("{rule_tool}({content})"));
+                    rebuilt.push(json!({ "toolName": rule_tool, "ruleContent": content }));
+                }
+                // 내용이 있는데 넓다 → 안 씀. 내용이 없는 규칙은 MCP 도구 하나를 이름으로 허용하는 경우만 쓴다.
+                Some(_) => return None,
+                None if rule_tool.starts_with("mcp__") && rule_tool == tool => {
+                    shown.push(rule_tool.to_string());
+                    rebuilt.push(json!({ "toolName": rule_tool }));
+                }
+                None => return None,
+            }
         }
         Some((
             AlwaysRule {
@@ -576,8 +673,13 @@ fn suggested_rule(suggestions: &[Value]) -> Option<(AlwaysRule, Value)> {
                 scope: AlwaysScope::Suggested,
                 folder: None,
             },
-            // CLI 가 준 그대로 돌려준다 (다른 필드를 덧붙이거나 고치지 않는다).
-            suggestion.clone(),
+            // CLI 가 준 것 중 알려진 필드만 다시 만든다 (다른 필드는 싣지 않는다).
+            json!({
+                "type": "addRules",
+                "rules": rebuilt,
+                "behavior": "allow",
+                "destination": "localSettings",
+            }),
         ))
     })
 }
@@ -613,23 +715,55 @@ fn same_part(a: &str, b: &str) -> bool {
     }
 }
 
-/// 파일이 든 폴더로 좁힌 규칙 내용. 프로젝트 밖이거나 폴더 이름에 규칙 문법 글자가 있으면 `None`.
+/// 경로 글이 폴더 모양으로 끝나는가 (`\`, `/`, `\.`, `\..`). 파일이 아니므로 "그 파일 하나" 규칙을 만들 수 없다 —
+/// 이름만 있는 규칙은 폴더를 가리키면 그 아래 전부가 된다.
+fn ends_like_a_folder(path: &str) -> bool {
+    let last = path.rsplit(['/', '\\']).next().unwrap_or("");
+    last.is_empty() || last == "." || last == ".."
+}
+
+/// 있는 폴더를 가리키는가 (디스크를 본다 — 규칙을 만들 때 한 번).
+fn names_a_folder(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
+
+/// 규칙 글자 안에 그대로 넣으면 뜻이 달라지거나, 다른 이름으로 읽힐 수 있는 이름인가.
+/// gitignore 식 규칙 글자 · 괄호 · 제어 문자 · 끝의 점 · 공백, Windows 의 `:`(대체 스트림)과 8.3 짧은 이름(`CLAUDE~1`).
+fn risky(name: &str) -> bool {
+    name.contains(['*', '?', '[', ']', '{', '}', '!', '\\', '(', ')', ':'])
+        || name.chars().any(char::is_control)
+        || name.ends_with([' ', '.'])
+        || name
+            .as_bytes()
+            .windows(2)
+            .any(|pair| pair[0] == b'~' && pair[1].is_ascii_digit())
+}
+
+/// 프로젝트 안 파일에 대한 규칙 내용. 프로젝트 맨 위 파일은 그 파일 하나(`/이름`), 아니면 그 파일이 든 폴더(`/폴더/**`).
+/// 프로젝트 밖 · 폴더 모양 경로 · 규칙 글자가 든 이름 · 설정 · 훅 폴더 아래이면 `None`.
 fn folder_rule(project_dir: &str, file: &str) -> Option<(String, AlwaysScope, Option<String>)> {
+    if ends_like_a_folder(file) {
+        return None;
+    }
     let project = path_parts(project_dir)?;
     let file = path_parts(file)?;
     if file.len() <= project.len() || !project.iter().zip(&file).all(|(p, f)| same_part(p, f)) {
         return None;
     }
-    let folders = &file[project.len()..file.len() - 1];
-    // gitignore 식 규칙이라 이 글자들이 이름에 있으면 뜻이 달라진다 — 좁힐 수 없으니 규칙을 만들지 않는다.
-    let risky = |name: &String| {
-        name.contains(['*', '?', '[', ']', '{', '}', '!', '\\']) || name.ends_with(' ')
-    };
-    if folders.iter().any(risky) {
+    let inside = &file[project.len()..];
+    if inside.iter().any(|part| is_protected_name(part)) {
+        return None;
+    }
+    let (name, folders) = inside.split_last()?;
+    if folders.iter().any(|folder| risky(folder)) {
         return None;
     }
     if folders.is_empty() {
-        return Some(("/*".to_string(), AlwaysScope::Project, None));
+        // 프로젝트 맨 위 파일 — 그 파일 하나만. 이름이 규칙에 들어가므로 이름도 확인한다.
+        if risky(name) {
+            return None;
+        }
+        return Some((format!("/{name}"), AlwaysScope::File, None));
     }
     let folder = folders.join("/");
     Some((format!("/{folder}/**"), AlwaysScope::Folder, Some(folder)))
@@ -638,8 +772,23 @@ fn folder_rule(project_dir: &str, file: &str) -> Option<(String, AlwaysScope, Op
 // ───────────────────────── 보내는 줄 ─────────────────────────
 
 fn to_line(value: &Value) -> String {
-    // 압축 직렬화는 줄바꿈을 `\n` 으로 이스케이프하므로 항상 한 줄이다.
-    value.to_string()
+    // 압축 직렬화는 줄바꿈을 `\n` 으로 이스케이프하므로 한 줄이다. 다만 `serde_json` 은 U+2028 · U+2029 · U+0085 를
+    // 그대로 내보내는데, 줄 단위로 읽는 쪽이 이 글자를 줄바꿈으로 보면 한 줄이 둘로 쪼개져 CLI 가 죽는다 (JSON 아닌 줄).
+    // 이 글자들은 JSON 문자열 안에만 있을 수 있으니 같은 뜻의 이스케이프로 바꿔도 내용은 그대로다.
+    let text = value.to_string();
+    if !text.contains(['\u{2028}', '\u{2029}', '\u{85}']) {
+        return text;
+    }
+    let mut escaped = String::with_capacity(text.len() + 16);
+    for c in text.chars() {
+        match c {
+            '\u{2028}' => escaped.push_str("\\u2028"),
+            '\u{2029}' => escaped.push_str("\\u2029"),
+            '\u{85}' => escaped.push_str("\\u0085"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
 }
 
 pub fn user_message_line(text: &str) -> String {
@@ -894,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn write_inside_the_project_gets_a_folder_rule_that_the_cli_accepts() {
+    fn write_at_the_top_of_the_project_gets_a_one_file_rule_that_the_cli_accepts() {
         // 녹화본의 임시 폴더를 프로젝트 폴더로 본다.
         let cwd = recv_messages("permission-allow")
             .iter()
@@ -911,8 +1060,9 @@ mod tests {
             panic!()
         };
         let rule = info.always_rule.as_ref().unwrap();
-        assert_eq!(rule.rule, "Edit(/*)");
-        assert_eq!(rule.scope, AlwaysScope::Project);
+        // 맨 위 파일은 그 파일 하나만 (D-45) — 실제 CLI 로 확인: `permission-root-file`
+        assert_eq!(rule.rule, "Edit(/hello.txt)");
+        assert_eq!(rule.scope, AlwaysScope::File);
         let PendingKind::Permission { always, .. } = &request.kind else {
             panic!()
         };
@@ -920,7 +1070,7 @@ mod tests {
             always.as_ref().unwrap(),
             &json!({
                 "type": "addRules",
-                "rules": [{ "toolName": "Edit", "ruleContent": "/*" }],
+                "rules": [{ "toolName": "Edit", "ruleContent": "/hello.txt" }],
                 "behavior": "allow",
                 "destination": "localSettings"
             })
@@ -1262,8 +1412,8 @@ mod tests {
         assert_eq!(folder.as_deref(), Some("src/lib"));
         let (content, scope, folder) =
             folder_rule("C:\\dev\\app", "C:\\dev\\app\\README.md").unwrap();
-        assert_eq!(content, "/*");
-        assert_eq!(scope, AlwaysScope::Project);
+        assert_eq!(content, "/README.md");
+        assert_eq!(scope, AlwaysScope::File);
         assert_eq!(folder, None);
     }
 
@@ -1362,7 +1512,6 @@ mod tests {
 }
 
 /// P3-03 — 경계 · 실패 시험. (앞의 `tests` 모듈은 P3-02 가 녹화본으로 쓴 것.)
-/// 실패하는 시험에는 `#[ignore = "P3-03 버그: …"]` 를 달아 두었다 — 앱 코드를 고친 뒤 `cargo test -- --ignored` 로 확인한다.
 #[cfg(test)]
 mod edge_tests {
     use super::*;
@@ -1403,7 +1552,7 @@ mod edge_tests {
         );
         assert_eq!(
             write_rule("C:\\p", "c:\\P\\a.ts").as_deref(),
-            Some("Edit(/*)")
+            Some("Edit(/a.ts)")
         );
     }
 
@@ -1508,7 +1657,7 @@ mod edge_tests {
     }
 
     #[test]
-    fn a_file_at_the_top_of_the_project_is_the_whole_project_and_says_so() {
+    fn a_file_at_the_top_of_the_project_gets_that_one_file_and_never_the_whole_project() {
         let (info, value) = always_rule(
             "C:\\p",
             "Edit",
@@ -1516,10 +1665,11 @@ mod edge_tests {
             &[],
         )
         .unwrap();
-        assert_eq!(info.scope, AlwaysScope::Project);
+        assert_eq!(info.scope, AlwaysScope::File);
+        assert_eq!(info.rule, "Edit(/README.md)");
         assert_eq!(info.folder, None);
         assert_eq!(value["rules"][0]["toolName"], "Edit");
-        assert_eq!(value["rules"][0]["ruleContent"], "/*");
+        assert_eq!(value["rules"][0]["ruleContent"], "/README.md");
         assert_eq!(value["destination"], "localSettings");
         assert_eq!(value["behavior"], "allow");
     }
@@ -1581,7 +1731,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): folder_rule 의 risky 목록에 괄호 · 제어 문자가 없다 — 폴더 이름 `a(1)` 이 `Edit(/a(1)/**)` 처럼 규칙 괄호 안에 그대로 들어간다 (CLI 가 괄호를 어떻게 읽는지 미확인 — 못 읽으면 규칙이 안 먹거나 다르게 읽힌다)"]
     fn parentheses_and_control_characters_in_folder_names_refuse_the_rule() {
         for name in ["a(1)", "(x", "x)", "a\nb", "a\u{0}b", "a\tb"] {
             let file = format!("C:\\p\\{name}\\a.ts");
@@ -1590,12 +1739,17 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): 끝이 `\\` 인 file_path(= 폴더 경로)가 프로젝트 전체 규칙 `Edit(/*)` 로 읽힌다 — 폴더 `C:\\p\\src\\` 를 쓰려는 호출이면 파일이 아니므로 규칙을 만들지 않거나 최소한 `/*` 이어서는 안 된다"]
     fn a_path_that_ends_with_a_separator_is_not_widened_to_the_whole_project() {
-        assert_ne!(
-            write_rule("C:\\p", "C:\\p\\src\\").as_deref(),
-            Some("Edit(/*)")
-        );
+        // 폴더 모양 경로로는 어떤 규칙도 만들지 않는다 (`Edit(/src)` 도 폴더 아래 전부가 된다)
+        for file in [
+            "C:\\p\\src\\",
+            "C:\\p\\src/",
+            "C:\\p\\src\\.",
+            "C:\\p\\a\\b\\..",
+            "C:\\p\\",
+        ] {
+            assert_eq!(write_rule("C:\\p", file), None, "{file}");
+        }
     }
 
     // ───────── 항상 허용 규칙: CLI 가 제안한 것 ─────────
@@ -1699,15 +1853,14 @@ mod edge_tests {
         let one = suggestion(
             json!([
                 { "toolName": "Bash", "ruleContent": "ls *" },
-                { "toolName": "Bash", "ruleContent": "cat *" },
-                { "toolName": "Read" }
+                { "toolName": "Bash", "ruleContent": "cat *" }
             ]),
             "localSettings",
             "allow",
         );
         let (info, sent) =
             always_rule("C:\\p", "Bash", &json!({}), std::slice::from_ref(&one)).unwrap();
-        assert_eq!(info.rule, "Bash(ls *), Bash(cat *), Read");
+        assert_eq!(info.rule, "Bash(ls *), Bash(cat *)");
         assert_eq!(info.scope, AlwaysScope::Suggested);
         assert_eq!(sent, one);
     }
@@ -1773,7 +1926,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음, 방어): NEEDS_RULE_CONTENT 가 Bash · PowerShell 뿐이라 CLI 가 `{toolName:\"Write\"}` · `{toolName:\"WebFetch\"}` 처럼 내용 없는 제안을 주면 그 도구 전체 허용이 그대로 쓰인다. D-44 가 \"도구 전체 허용\" 을 좁히려 했으므로 파일 도구 · 웹 도구도 내용 없는 제안은 거절하는 편이 안전하다 (지금 CLI 2.1.296 은 이런 제안을 주지 않는다)"]
     fn file_and_web_tools_without_rule_content_are_not_accepted_from_suggestions() {
         for tool in ["Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch"] {
             let broad = suggestion(json!([{ "toolName": tool }]), "localSettings", "allow");
@@ -1912,7 +2064,6 @@ mod edge_tests_lines {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): Interpreter.last_rate_status 가 다음 rate_limit_event 가 올 때까지 남는다 — rejected 한도 뒤 한도와 무관한 오류 턴(예: API 500)도 Limit 으로 분류된다. 새 턴이 시작되면(system/init) 지워야 한다"]
     fn a_rejected_rate_limit_does_not_turn_a_later_unrelated_error_into_a_limit() {
         let mut interp = Interpreter::new(Path::new("C:\\p"));
         interp.handle(
@@ -2260,7 +2411,6 @@ mod edge_tests_lines {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): 줄 맨 앞의 BOM(U+FEFF)은 trim() 이 지우지 않아 그 줄이 JSON 이 아닌 것으로 버려진다 — 첫 줄이 system/init 이면 세션 ID · 턴 시작을 놓친다 (CLI 가 BOM 을 내보낸다는 근거는 없음 — 방어)"]
     fn parse_line_ignores_a_byte_order_mark_at_the_start() {
         assert!(parse_line("\u{feff}{\"type\":\"system\"}").is_some());
     }
@@ -2307,7 +2457,6 @@ mod edge_tests_lines {
     }
 
     #[test]
-    #[ignore = "P3-03 위험(미확인): serde_json 은 U+2028 · U+2029 · U+0085 를 이스케이프하지 않고 그대로 낸다. 줄 단위로 읽는 쪽이 이 글자들도 줄바꿈으로 보면(예: Node readline 은 U+2028 · U+2029 를 줄 끝으로 본다) 사용자 메시지 한 줄이 두 줄로 쪼개져 CLI 가 JSON 아닌 줄을 받는다. 실제 CLI 가 어떻게 읽는지는 실제 CLI 를 돌려야 알 수 있어 이 작업에서는 확인하지 않았다 — 쓰는 쪽에서 `\\u2028` 로 이스케이프해 두면 어느 쪽이어도 안전하다"]
     fn user_text_with_unicode_line_separators_is_escaped_so_any_line_reader_keeps_one_line() {
         let line = user_message_line("앞\u{2028}가운데\u{2029}뒤\u{85}끝");
         assert_one_plain_line(&line);
@@ -2373,5 +2522,513 @@ mod edge_tests_lines {
         );
         assert_eq!(summarize_tool_input("Bash", Some(&json!(null))), "");
         assert_eq!(summarize_tool_input("Bash", Some(&json!("ls"))), "");
+    }
+}
+
+/// P3-05 — "항상 허용" 범위 좁히기 (D-45) · 제안 규칙 거르기 · 입력 표시 한계 · 줄 읽기 고침.
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+    use crate::claude::test_util::TempDir;
+
+    fn rule_of(project: &str, tool: &str, input: Value) -> Option<String> {
+        always_rule(project, tool, &input, &[]).map(|(info, _)| info.rule)
+    }
+
+    fn write_rule(project: &str, file: &str) -> Option<String> {
+        rule_of(project, "Write", json!({ "file_path": file }))
+    }
+
+    fn suggestion(rules: Value) -> Value {
+        json!({ "type": "addRules", "rules": rules, "behavior": "allow", "destination": "localSettings" })
+    }
+
+    // ───────── 프로젝트 전체 규칙은 없다 ─────────
+
+    #[test]
+    fn no_input_ever_produces_a_rule_that_opens_the_whole_project() {
+        let files = [
+            "C:\\p\\a.ts",
+            "C:\\p\\.env",
+            "C:\\p\\src\\a.ts",
+            "C:\\p\\src\\",
+            "C:\\p\\src\\.",
+            "C:\\p\\",
+            "C:\\p",
+            "C:\\p\\*",
+            "C:\\p\\**",
+            "C:\\p\\a\\..\\b.ts",
+            "C:\\p\\a\\..",
+            "C:\\p\\.\\a.ts",
+            "C:\\p\\\\a.ts",
+            "C:/p/a.ts",
+            "\\\\?\\C:\\p\\a.ts",
+            "c:\\P\\A.TS",
+        ];
+        for tool in ["Write", "Edit", "MultiEdit", "NotebookEdit"] {
+            for file in files {
+                let key = if tool == "NotebookEdit" {
+                    "notebook_path"
+                } else {
+                    "file_path"
+                };
+                let found = always_rule("C:\\p", tool, &json!({ key: file }), &[]);
+                if let Some((info, value)) = found {
+                    let content = value["rules"][0]["ruleContent"].as_str().unwrap();
+                    for wide in ["/*", "/**", "*", "**", "/", "", "/**/*", "/*/**"] {
+                        assert_ne!(content, wide, "{tool} {file}");
+                    }
+                    assert_ne!(info.rule, "Edit(/*)", "{tool} {file}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_scope_names_are_suggested_folder_and_file() {
+        for (scope, name) in [
+            (AlwaysScope::Suggested, "suggested"),
+            (AlwaysScope::Folder, "folder"),
+            (AlwaysScope::File, "file"),
+        ] {
+            assert_eq!(serde_json::to_value(scope).unwrap(), json!(name));
+        }
+    }
+
+    // ───────── 맨 위 파일 하나 ─────────
+
+    #[test]
+    fn a_top_level_file_gets_a_rule_for_that_file_only() {
+        for (file, rule) in [
+            ("C:\\p\\README.md", "Edit(/README.md)"),
+            ("C:\\p\\.gitignore", "Edit(/.gitignore)"),
+            ("C:\\p\\My Notes.md", "Edit(/My Notes.md)"),
+            ("C:\\p\\메모.txt", "Edit(/메모.txt)"),
+            ("C:\\p\\.\\README.md", "Edit(/README.md)"),
+            ("C:\\p\\src\\..\\README.md", "Edit(/README.md)"),
+        ] {
+            assert_eq!(write_rule("C:\\p", file).as_deref(), Some(rule), "{file}");
+        }
+        let (info, value) = always_rule(
+            "C:\\p",
+            "Write",
+            &json!({ "file_path": "C:\\p\\README.md" }),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(info.scope, AlwaysScope::File);
+        assert_eq!(info.folder, None);
+        assert_eq!(value["rules"][0]["toolName"], "Edit");
+        assert_eq!(value["rules"][0]["ruleContent"], "/README.md");
+    }
+
+    #[test]
+    fn a_top_level_file_name_with_rule_syntax_or_alias_tricks_gets_no_rule() {
+        for name in [
+            "a*.md",
+            "a?.md",
+            "a[1].md",
+            "a{1}.md",
+            "!x.md",
+            "a(1).md",
+            "a).md",
+            "x ",
+            "x.",
+            "a\tb",
+            "a\nb",
+            "a:b",
+            "a.txt:stream",
+            "PROGRA~1",
+            "CLAUDE~1",
+        ] {
+            let file = format!("C:\\p\\{name}");
+            assert_eq!(write_rule("C:\\p", &file), None, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_path_naming_an_existing_folder_never_gets_a_one_file_rule() {
+        let dir = TempDir::new("folder-as-file");
+        std::fs::create_dir(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("real.txt"), b"x").unwrap();
+        let ask = |name: &str| {
+            let mut interp = Interpreter::new(&dir);
+            let out = interp.handle(&json!({
+                "type": "control_request", "request_id": "r",
+                "request": { "subtype": "can_use_tool", "tool_name": "Write",
+                    "input": { "file_path": dir.join(name).display().to_string() } }
+            }));
+            let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+                panic!()
+            };
+            info.always_rule.clone()
+        };
+        // 없는 파일과 있는 파일은 그 파일 하나, 있는 폴더는 (이름만 있는 규칙이 폴더 아래 전부가 되므로) 규칙 없음
+        assert_eq!(
+            ask("new.txt").map(|r| r.rule),
+            Some("Edit(/new.txt)".to_string())
+        );
+        assert_eq!(
+            ask("real.txt").map(|r| r.rule),
+            Some("Edit(/real.txt)".to_string())
+        );
+        assert_eq!(ask("sub"), None);
+    }
+
+    // ───────── 설정 · 훅 폴더 ─────────
+
+    #[test]
+    fn nothing_under_or_naming_a_settings_or_hook_folder_gets_a_rule() {
+        let names = [
+            ".claude",
+            ".git",
+            ".githooks",
+            ".husky",
+            ".vscode",
+            ".idea",
+            ".github",
+            ".gitlab",
+            ".circleci",
+            ".devcontainer",
+            ".cargo",
+        ];
+        for name in names {
+            for spelling in [
+                name.to_string(),
+                name.to_ascii_uppercase(),
+                format!("{name}."),
+                format!("{name}.."),
+            ] {
+                for file in [
+                    format!("C:\\p\\{spelling}\\settings.local.json"),
+                    format!("C:\\p\\{spelling}\\sub\\deeper\\x.json"),
+                    format!("C:\\p\\src\\{spelling}\\x"),
+                    format!("C:\\p\\{spelling}"),
+                    format!("C:\\p\\{spelling}\\"),
+                    format!("C:/p/{spelling}/x"),
+                    format!("C:\\p\\a\\..\\{spelling}\\x"),
+                ] {
+                    assert_eq!(write_rule("C:\\p", &file), None, "{file}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn well_known_config_files_at_the_top_get_no_rule_but_similar_names_do() {
+        for file in ["C:\\p\\.mcp.json", "C:\\p\\.MCP.JSON", "C:\\p\\.envrc"] {
+            assert_eq!(write_rule("C:\\p", file), None, "{file}");
+        }
+        for (file, rule) in [
+            ("C:\\p\\mcp.json", "Edit(/mcp.json)"),
+            ("C:\\p\\.gitignore", "Edit(/.gitignore)"),
+            ("C:\\p\\.github-notes.md", "Edit(/.github-notes.md)"),
+            ("C:\\p\\src\\.gitkeep", "Edit(/src/**)"),
+            ("C:\\p\\docs\\claude\\a.md", "Edit(/docs/claude/**)"),
+        ] {
+            assert_eq!(write_rule("C:\\p", file).as_deref(), Some(rule), "{file}");
+        }
+    }
+
+    #[test]
+    fn eight_dot_three_short_names_and_stream_names_in_folders_are_refused() {
+        for file in [
+            "C:\\p\\CLAUDE~1\\settings.local.json",
+            "C:\\p\\src\\GIT~1\\x",
+            "C:\\p\\a:b\\x",
+            "C:\\p\\a\\b::$DATA\\x",
+        ] {
+            assert_eq!(write_rule("C:\\p", file), None, "{file}");
+        }
+    }
+
+    #[test]
+    fn the_project_folder_itself_may_sit_inside_a_hidden_folder() {
+        // 규칙은 프로젝트 기준 상대 경로만 보므로 프로젝트 위쪽 이름은 상관없다
+        assert_eq!(
+            write_rule("C:\\u\\.config\\app", "C:\\u\\.config\\app\\src\\a.ts").as_deref(),
+            Some("Edit(/src/**)")
+        );
+        assert_eq!(
+            write_rule("C:\\u\\.git\\app", "C:\\u\\.git\\app\\a.ts").as_deref(),
+            Some("Edit(/a.ts)")
+        );
+    }
+
+    // ───────── CLI 제안 규칙 ─────────
+
+    #[test]
+    fn a_suggestion_for_another_tool_is_not_used() {
+        let read = suggestion(json!([{ "toolName": "Read", "ruleContent": "/secret/**" }]));
+        assert_eq!(always_rule("C:\\p", "Bash", &json!({}), &[read]), None);
+        let bash = suggestion(json!([{ "toolName": "Bash", "ruleContent": "ls *" }]));
+        assert_eq!(always_rule("C:\\p", "WebFetch", &json!({}), &[bash]), None);
+        // 같은 요청에 다른 도구 규칙이 하나라도 섞이면 통째로 안 쓴다
+        let mixed = suggestion(json!([
+            { "toolName": "Bash", "ruleContent": "ls *" },
+            { "toolName": "PowerShell", "ruleContent": "ls *" }
+        ]));
+        assert_eq!(always_rule("C:\\p", "Bash", &json!({}), &[mixed]), None);
+    }
+
+    #[test]
+    fn a_rule_of_only_stars_or_empty_is_refused_for_every_tool() {
+        for tool in ["Bash", "PowerShell", "WebFetch", "Read", "Edit", "Write"] {
+            for content in ["", " ", "*", "**", " * ", "/*", "/**", "**/*", ":*"] {
+                let broad = suggestion(json!([{ "toolName": tool, "ruleContent": content }]));
+                assert_eq!(
+                    always_rule("C:\\p", tool, &json!({}), &[broad]),
+                    None,
+                    "{tool} {content:?}"
+                );
+            }
+            let without = suggestion(json!([{ "toolName": tool }]));
+            assert_eq!(
+                always_rule("C:\\p", tool, &json!({}), &[without]),
+                None,
+                "{tool}"
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_rules_for_the_requested_tool_are_used_for_web_and_read_tools_too() {
+        let web =
+            suggestion(json!([{ "toolName": "WebFetch", "ruleContent": "domain:example.com" }]));
+        let (info, _) = always_rule("C:\\p", "WebFetch", &json!({}), &[web]).unwrap();
+        assert_eq!(info.rule, "WebFetch(domain:example.com)");
+        let star_in_the_middle =
+            suggestion(json!([{ "toolName": "Bash", "ruleContent": "git * --help" }]));
+        assert!(always_rule("C:\\p", "Bash", &json!({}), &[star_in_the_middle]).is_some());
+    }
+
+    #[test]
+    fn a_bare_mcp_tool_rule_is_used_only_for_that_exact_tool() {
+        let rule = |name: &str| suggestion(json!([{ "toolName": name }]));
+        let tool = "mcp__files__read";
+        let (info, sent) = always_rule("C:\\p", tool, &json!({}), &[rule(tool)]).unwrap();
+        assert_eq!(info.rule, tool);
+        assert_eq!(sent["rules"], json!([{ "toolName": tool }]));
+        // 서버 전체 · 다른 도구 · 같은 서버의 다른 도구는 안 쓴다
+        for other in [
+            "mcp__files",
+            "mcp__files__write",
+            "mcp__other__read",
+            "Bash",
+        ] {
+            assert_eq!(
+                always_rule("C:\\p", tool, &json!({}), &[rule(other)]),
+                None,
+                "{other}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_known_fields_of_a_suggestion_are_sent_back() {
+        let given = json!({
+            "type": "addRules",
+            "behavior": "allow",
+            "destination": "localSettings",
+            "unexpected": { "mode": "bypassPermissions" },
+            "rules": [
+                { "toolName": "Bash", "ruleContent": "ls *", "also": true }
+            ],
+            "setMode": "bypassPermissions"
+        });
+        let (info, sent) = always_rule("C:\\p", "Bash", &json!({}), &[given]).unwrap();
+        assert_eq!(info.rule, "Bash(ls *)");
+        assert_eq!(
+            sent,
+            json!({
+                "type": "addRules",
+                "rules": [{ "toolName": "Bash", "ruleContent": "ls *" }],
+                "behavior": "allow",
+                "destination": "localSettings"
+            })
+        );
+    }
+
+    // ───────── 도구 입력 표시 한계 ─────────
+
+    #[test]
+    fn small_inputs_are_shown_as_they_are() {
+        let input =
+            json!({ "command": "ls", "list": [1, 2, 3], "nested": { "a": "b", "n": null } });
+        assert_eq!(display_input(&input), input);
+        assert_eq!(display_input(&json!(null)), json!(null));
+        assert_eq!(display_input(&json!("x")), json!("x"));
+    }
+
+    #[test]
+    fn long_strings_and_lists_are_cut_for_display() {
+        let long = "가".repeat(30_000);
+        let shown =
+            display_input(&json!({ "content": long, "items": (0..500).collect::<Vec<_>>() }));
+        let content = shown["content"].as_str().unwrap();
+        assert_eq!(content.chars().count(), INPUT_STRING_CHARS + 1);
+        assert!(content.ends_with('…'));
+        let items = shown["items"].as_array().unwrap();
+        assert_eq!(items.len(), INPUT_ARRAY_ITEMS + 1);
+        assert_eq!(items.last().unwrap(), &json!("…"));
+    }
+
+    #[test]
+    fn an_input_that_is_still_huge_after_cutting_becomes_a_short_text() {
+        let many: serde_json::Map<String, Value> = (0..5000)
+            .map(|i| (format!("key{i}"), json!("v".repeat(100))))
+            .collect();
+        let shown = display_input(&Value::Object(many));
+        let text = shown.as_str().expect("a short text");
+        assert!(text.chars().count() <= INPUT_STRING_CHARS + 1);
+    }
+
+    #[test]
+    fn the_card_gets_the_cut_input_but_the_pending_request_keeps_the_original_for_allow() {
+        let big = "x".repeat(1 << 20);
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        let out = interp.handle(&json!({
+            "type": "control_request", "request_id": "r1",
+            "request": { "subtype": "can_use_tool", "tool_name": "Write",
+                "input": { "file_path": "C:\\p\\src\\a.ts", "content": big } }
+        }));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!()
+        };
+        assert!(info.input["content"].as_str().unwrap().chars().count() <= INPUT_STRING_CHARS + 1);
+        assert!(serde_json::to_string(&out.events[0]).unwrap().len() < 20_000);
+        let (_, pending) = &out.new_pending[0];
+        let PendingKind::Permission { input, .. } = &pending.kind else {
+            panic!()
+        };
+        assert_eq!(input["content"].as_str().unwrap().len(), 1 << 20);
+        // 허용하면 CLI 에는 잘리지 않은 원본이 돌아간다
+        let line = allow_response_line("r1", input, None);
+        assert!(line.len() > 1 << 20);
+        // 카드에 보이는 경로 · 요약은 그대로
+        assert_eq!(info.path.as_deref(), Some("C:\\p\\src\\a.ts"));
+    }
+
+    #[test]
+    fn a_huge_command_is_cut_on_the_card_with_a_mark_but_allow_still_sends_the_whole_command() {
+        let command = format!("echo {}", "y".repeat(200_000));
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        let out = interp.handle(&json!({
+            "type": "control_request", "request_id": "r",
+            "request": { "subtype": "can_use_tool", "tool_name": "Bash", "input": { "command": command } }
+        }));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!()
+        };
+        let shown = info.command.as_deref().unwrap();
+        assert_eq!(shown.chars().count(), INPUT_STRING_CHARS + 1);
+        assert!(shown.ends_with('…'));
+        let PendingKind::Permission { input, .. } = &out.new_pending[0].1.kind else {
+            panic!()
+        };
+        assert_eq!(input["command"].as_str().unwrap().len(), command.len());
+    }
+
+    // ───────── 줄 읽기 · 보내기 ─────────
+
+    #[test]
+    fn a_byte_order_mark_is_ignored_only_at_the_very_start() {
+        let value = parse_line("\u{feff}{\"type\":\"system\"}").unwrap();
+        assert_eq!(value["type"], "system");
+        assert!(parse_line("\u{feff}\u{feff}  {\"a\":1}").is_some());
+        assert!(parse_line("{\"a\":1}\u{feff}").is_none());
+        assert!(parse_line("\u{feff}").is_none());
+    }
+
+    #[test]
+    fn a_line_starting_with_a_byte_order_mark_still_starts_the_turn() {
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        let msg =
+            parse_line("\u{feff}{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\"}")
+                .unwrap();
+        let out = interp.handle(&msg);
+        assert!(out.turn_started);
+        assert_eq!(out.session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn unicode_line_separators_are_escaped_in_every_outgoing_line_and_decode_back() {
+        let nasty = "앞\u{2028}가운데\u{2029}뒤\u{85}끝 \\u2028 그대로";
+        let mut answers = Map::new();
+        answers.insert(nasty.into(), json!([nasty]));
+        for line in [
+            user_message_line(nasty),
+            interrupt_line(nasty),
+            allow_response_line(nasty, &json!({ "q": nasty }), None),
+            deny_response_line(nasty, nasty, true),
+            answer_response_line(nasty, &json!([{ "question": nasty }]), &answers),
+            error_response_line(nasty, nasty),
+        ] {
+            for raw in ['\u{2028}', '\u{2029}', '\u{85}', '\n', '\r'] {
+                assert!(!line.contains(raw), "{raw:?} in {line:?}");
+            }
+            let back: Value = serde_json::from_str(&line).unwrap();
+            let text = back.to_string();
+            assert!(text.contains('\u{2028}') && text.contains('\u{85}'));
+        }
+        // 글자 그대로 `\u2028` 이라고 쓴 글(역슬래시)은 그대로 남는다
+        let back: Value = serde_json::from_str(&user_message_line("\\u2028")).unwrap();
+        assert_eq!(back["message"]["content"], "\\u2028");
+    }
+
+    // ───────── 한도 상태 ─────────
+
+    fn rejected() -> Value {
+        json!({ "type": "rate_limit_event", "rate_limit_info": { "status": "rejected" } })
+    }
+
+    fn error_result(extra: Value) -> Value {
+        let mut base =
+            json!({ "type": "result", "subtype": "success", "is_error": true, "result": "x" });
+        base.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        base
+    }
+
+    fn outcome(out: &Interpretation) -> TurnOutcome {
+        let Some(SessionEvent::TurnEnded(turn)) = out.events.last() else {
+            panic!()
+        };
+        turn.outcome
+    }
+
+    #[test]
+    fn the_limit_state_belongs_to_one_turn_even_without_a_new_init() {
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        interp.handle(&rejected());
+        assert_eq!(
+            outcome(&interp.handle(&error_result(json!({})))),
+            TurnOutcome::Limit
+        );
+        // init 이 없어도 (한 번 쓴 한도 상태는 지운다) 다음 오류는 한도가 아니다
+        assert_eq!(
+            outcome(&interp.handle(&error_result(json!({ "api_error_status": 500 })))),
+            TurnOutcome::Error
+        );
+    }
+
+    #[test]
+    fn a_new_turn_clears_a_limit_state_that_was_never_followed_by_a_result() {
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        interp.handle(&rejected());
+        // 결과 없이 프로세스 안에서 다음 턴이 시작됐다
+        interp.handle(&json!({ "type": "system", "subtype": "init", "session_id": "s" }));
+        assert_eq!(
+            outcome(&interp.handle(&error_result(json!({ "api_error_status": 500 })))),
+            TurnOutcome::Error
+        );
+        // 같은 턴 안에서 init 다음에 온 거절은 그 턴에 적용된다
+        interp.handle(&json!({ "type": "system", "subtype": "init", "session_id": "s" }));
+        interp.handle(&rejected());
+        assert_eq!(
+            outcome(&interp.handle(&error_result(json!({})))),
+            TurnOutcome::Limit
+        );
     }
 }

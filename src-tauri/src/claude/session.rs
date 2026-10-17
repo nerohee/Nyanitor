@@ -8,9 +8,9 @@
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -33,8 +33,10 @@ use super::protocol::{
 use super::store::{ResumeStore, project_key};
 use crate::error::AppError;
 
-/// 한 줄의 최대 길이 — 정상 출력(수십 KB)보다 훨씬 크다. 넘으면 그 줄은 버리고 원본 로그에 알린다 (메모리 보호).
-const MAX_LINE_BYTES: usize = 128 << 20;
+/// 한 줄의 최대 길이 (줄바꿈 제외) — 정상 출력(수십 KB)보다 훨씬 크다. 넘으면 그 줄은 버리고 원본 로그에 알린다 (메모리 보호).
+const MAX_LINE_BYTES: usize = 16 << 20;
+/// 큰 줄을 읽고 난 뒤 줄 버퍼를 이 크기로 줄인다 (한 번 커진 버퍼가 세션이 끝날 때까지 남지 않게).
+const LINE_BUF_KEEP: usize = 256 << 10;
 /// 원본 로그에 남기는 줄 수 · 한 줄당 글자 수.
 const RAW_LOG_LINES: usize = 1000;
 const RAW_LOG_LINE_CHARS: usize = 8000;
@@ -206,13 +208,25 @@ impl Session {
     }
 }
 
+/// 세션 자리. 시작은 `--version` 확인이 오래 걸릴 수 있어 그 동안 이 자리의 잠금을 쥐지 않고 `starting` 표시만 해 둔다.
+#[derive(Default)]
+struct Slot {
+    session: Option<Arc<Session>>,
+    /// 시작하는 중 (한 번에 하나 — 두 번째 시작은 `session_running`)
+    starting: bool,
+    /// 시작하는 중에 끝내기가 들어왔다 — 시작은 프로세스를 띄우지 않고 물러난다
+    cancelled: bool,
+}
+
 struct Shared {
     sink: Arc<dyn EventSink>,
     store: Mutex<ResumeStore>,
     raw: RawLog,
-    slot: Mutex<Option<Arc<Session>>>,
+    slot: Mutex<Slot>,
     config: ManagerConfig,
     next_id: AtomicU64,
+    /// 아직 안 끝난 쓰기 스레드 수 (프로세스가 끝나면 0 으로 돌아와야 한다 — 시험 · 진단용)
+    live_writers: AtomicUsize,
 }
 
 /// 세션 관리자. 복제해도 같은 관리자를 가리킨다 (Tauri `State` · 스레드에 나눠 쥔다).
@@ -228,9 +242,10 @@ impl SessionManager {
                 sink,
                 store: Mutex::new(store),
                 raw: RawLog::new(),
-                slot: Mutex::new(None),
+                slot: Mutex::new(Slot::default()),
                 config,
                 next_id: AtomicU64::new(1),
+                live_writers: AtomicUsize::new(0),
             }),
         }
     }
@@ -245,6 +260,11 @@ impl SessionManager {
         self.shared.raw.snapshot()
     }
 
+    /// 아직 안 끝난 쓰기 스레드 수. 세션이 끝나면 곧 0 이 된다 (진단 · 시험용).
+    pub fn running_writers(&self) -> usize {
+        self.shared.live_writers.load(Ordering::SeqCst)
+    }
+
     /// 세션을 시작한다. 이미 돌고 있으면 오류 (D-12).
     pub fn start(
         &self,
@@ -254,12 +274,32 @@ impl SessionManager {
         let project_dir = validate_project_dir(&request.project_dir)?;
         let model = request.model.as_deref().map(validate_model).transpose()?;
 
-        // 시작하는 동안 잠가 둔다 — 두 번 눌러도 하나만 뜬다.
-        let mut slot = lock(&self.shared.slot);
-        if slot.as_ref().is_some_and(|s| !s.has_exited()) {
-            return Err(AppError::SessionRunning);
+        // 시작 자리를 잡는다 — 두 번 눌러도 하나만 뜬다. 잠금은 표시를 하는 동안만 쥔다:
+        // 아래의 `--version` 확인은 최대 20초 걸릴 수 있어서, 그 동안 잠그면 앱 종료 · 상태 조회가 같이 기다린다.
+        {
+            let mut slot = lock(&self.shared.slot);
+            if slot.starting || slot.session.as_ref().is_some_and(|s| !s.has_exited()) {
+                return Err(AppError::SessionRunning);
+            }
+            slot.starting = true;
+            slot.cancelled = false;
         }
-        let key = project_key(&project_dir);
+        let result = self.start_claimed(&request, command, &project_dir, model.as_deref());
+        let mut slot = lock(&self.shared.slot);
+        slot.starting = false;
+        slot.cancelled = false;
+        result
+    }
+
+    /// `start` 가 시작 자리를 잡은 뒤의 일: 버전 확인(잠금 밖) → 프로세스 띄우기 · 등록(잠금 안).
+    fn start_claimed(
+        &self,
+        request: &StartRequest,
+        command: ClaudeCommand,
+        project_dir: &Path,
+        model: Option<&str>,
+    ) -> Result<StartInfo, AppError> {
+        let key = project_key(project_dir);
         let resume_id = if request.resume {
             Some(
                 lock(&self.shared.store)
@@ -271,13 +311,20 @@ impl SessionManager {
         };
 
         let command = command.keep_api_key(request.use_api_key);
-        // 시작 전 버전 확인 (`system/init` 은 첫 메시지 뒤에야 온다).
+        // 시작 전 버전 확인 (`system/init` 은 첫 메시지 뒤에야 온다). 잠금 밖에서 한다.
         let cli_version = discover::read_version(&command)?;
 
-        let args = build_args(model.as_deref(), resume_id.as_deref());
+        let args = build_args(model, resume_id.as_deref());
+        // 여기부터 자리 잠금 — 끝내기가 그 사이 들어왔으면 띄우지 않는다. 띄우기 · 등록은 짧다.
+        let mut slot = lock(&self.shared.slot);
+        if slot.cancelled {
+            return Err(AppError::Internal(
+                "the start was cancelled because the session was stopped".into(),
+            ));
+        }
         let mut process = command.command(&args);
         process
-            .current_dir(&project_dir)
+            .current_dir(project_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -304,13 +351,13 @@ impl SessionManager {
         let session = Arc::new(Session {
             id: self.shared.next_id.fetch_add(1, Ordering::Relaxed),
             pid,
-            project_dir: project_dir.clone(),
+            project_dir: project_dir.to_path_buf(),
             project_key: key,
             resume_id: resume_id.clone(),
             writer: Mutex::new(Some(tx)),
             pending: Mutex::new(Vec::new()),
             flags: Mutex::new(Flags::default()),
-            interpreter: Mutex::new(Interpreter::new(&project_dir)),
+            interpreter: Mutex::new(Interpreter::new(project_dir)),
             tree,
             emit_gate: Mutex::new(false),
             exit: Mutex::new(None),
@@ -349,8 +396,9 @@ impl SessionManager {
         }
 
         if let Err(err) = self.spawn_threads(&session, child, stdin, stdout, stderr, rx) {
-            // 이미 "시작됨" 을 알렸으므로 "끝남" 도 알린다.
+            // 이미 "시작됨" 을 알렸으므로 "끝남" 도 알린다. 먼저 뜬 쓰기 스레드가 남지 않게 stdin 도 닫는다.
             session.tree.kill();
+            session.close_stdin();
             let mut closed = lock(&session.emit_gate);
             self.shared.sink.emit(SessionEvent::SessionEnded {
                 ended: EndKind::Died,
@@ -362,7 +410,7 @@ impl SessionManager {
             *closed = true;
             return Err(err);
         }
-        *slot = Some(session);
+        slot.session = Some(session);
         Ok(info)
     }
 
@@ -385,7 +433,19 @@ impl SessionManager {
         let (done_tx, done_rx) = mpsc::channel::<()>();
         {
             let (s, sh) = (session.clone(), self.shared.clone());
-            spawn("writer", Box::new(move || write_loop(&s, &sh, stdin, rx)))?;
+            // 스레드가 뜨기 전에 센다 — 세션이 끝난 뒤 0 이 아니면 쓰기 스레드가 안 끝난 것이다.
+            self.shared.live_writers.fetch_add(1, Ordering::SeqCst);
+            let started = spawn(
+                "writer",
+                Box::new(move || {
+                    write_loop(&s, &sh, stdin, rx);
+                    sh.live_writers.fetch_sub(1, Ordering::SeqCst);
+                }),
+            );
+            if started.is_err() {
+                self.shared.live_writers.fetch_sub(1, Ordering::SeqCst);
+            }
+            started?;
         }
         {
             let (s, sh, done) = (session.clone(), self.shared.clone(), done_tx.clone());
@@ -418,7 +478,10 @@ impl SessionManager {
     }
 
     fn current(&self) -> Option<Arc<Session>> {
-        lock(&self.shared.slot).clone().filter(|s| !s.has_exited())
+        lock(&self.shared.slot)
+            .session
+            .clone()
+            .filter(|s| !s.has_exited())
     }
 
     pub fn state(&self) -> SessionState {
@@ -537,12 +600,18 @@ impl SessionManager {
             }
         };
 
-        session.send_line(line)?;
-        pending.remove(index);
-        drop(pending);
-        if let Some(text) = defer_text {
-            lock(&session.flags).deferred = Some(text);
+        // 미룬 말은 줄을 보내기 **전에** 넣는다 — CLI 가 중단된 턴의 `result` 를 바로 보내도 읽는 스레드가 이 말을 본다.
+        // (flags 잠금은 짧게, pending 잠금을 쥔 채 잡는다 — 다른 곳은 이 순서를 거꾸로 잡지 않는다.)
+        if let Some(text) = &defer_text {
+            lock(&session.flags).deferred = Some(text.clone());
         }
+        if let Err(err) = session.send_line(line) {
+            if defer_text.is_some() {
+                lock(&session.flags).deferred = None;
+            }
+            return Err(err);
+        }
+        pending.remove(index);
         Ok(())
     }
 
@@ -559,6 +628,13 @@ impl SessionManager {
     }
 
     fn stop_within(&self, grace: Duration) -> Result<StopInfo, AppError> {
+        {
+            // 시작하는 중이면 그 시작이 프로세스를 띄우지 못하게 한다 (띄운 뒤라면 아래에서 보통대로 끈다).
+            let mut slot = lock(&self.shared.slot);
+            if slot.starting {
+                slot.cancelled = true;
+            }
+        }
         let Some(session) = self.current() else {
             return Ok(StopInfo {
                 was_running: false,
@@ -583,6 +659,9 @@ impl SessionManager {
                 session.tree.kill();
             }
             if !session.wait_exit(self.shared.config.kill_wait) {
+                // 강제로 꺼도 끝났다는 신호가 안 온다 — 세션 자리를 비우고 끝났다고 알린다 (안 그러면 계속 `session_running` 이다).
+                // 늦게라도 끝나면 `wait_and_finish` 가 같은 일을 다시 하지 않는다 (알림은 한 번만).
+                announce_end(&session, &self.shared, None, true);
                 return Err(AppError::Internal(
                     "the claude process did not exit after being killed".into(),
                 ));
@@ -777,9 +856,11 @@ fn read_line_capped<R: BufRead>(
         got_any = true;
         let newline = available.iter().position(|&b| b == b'\n');
         let used = newline.map_or(available.len(), |i| i + 1);
+        // `cap` 은 줄바꿈 글자를 뺀 내용 길이 기준이다 (내용이 cap 바이트 딱 맞는 줄은 버리지 않는다).
+        let content = newline.unwrap_or(available.len());
         if !overflowed {
             let room = cap.saturating_sub(buf.len());
-            if used > room {
+            if content > room {
                 buf.extend_from_slice(&available[..room]);
                 overflowed = true;
             } else {
@@ -800,6 +881,11 @@ fn read_stdout(session: &Session, shared: &Shared, stdout: ChildStdout) {
     let mut reader = BufReader::with_capacity(64 * 1024, stdout);
     let mut buf = Vec::new();
     loop {
+        // 앞의 큰 줄 하나 때문에 커진 버퍼를 세션이 끝날 때까지 쥐고 있지 않는다.
+        if buf.capacity() > LINE_BUF_KEEP {
+            buf.clear();
+            buf.shrink_to(LINE_BUF_KEEP);
+        }
         match read_line_capped(&mut reader, &mut buf, MAX_LINE_BYTES) {
             Ok(LineRead::Eof) => break,
             Ok(LineRead::Line { overflowed }) => {
@@ -848,10 +934,28 @@ fn apply(session: &Session, shared: &Shared, interpretation: Interpretation) {
         resume_not_found,
     } = interpretation;
 
+    let mut events = events;
     {
         let mut pending = lock(&session.pending);
-        pending.extend(new_pending);
+        // 이미 기다리는 ID 로 또 요청이 오면 카드를 또 만들지 않는다 (답은 한 번만 가야 한다).
+        let mut duplicates = Vec::new();
+        for (id, request) in new_pending {
+            if pending.iter().any(|(known, _)| *known == id) {
+                duplicates.push(id);
+            } else {
+                pending.push((id, request));
+            }
+        }
         pending.retain(|(id, _)| !cancelled.contains(id));
+        if !duplicates.is_empty() {
+            events.retain(|event| !is_request_card_for(event, &duplicates));
+            for id in duplicates {
+                events.push(SessionEvent::Warning {
+                    code: "duplicate_request".into(),
+                    detail: Some(truncate_chars(&id, 80)),
+                });
+            }
+        }
     }
     if let Some(id) = session_id {
         remember_session_id(session, shared, &id);
@@ -861,7 +965,8 @@ fn apply(session: &Session, shared: &Shared, interpretation: Interpretation) {
         if turn_started {
             flags.busy = true;
         }
-        if turn_ended {
+        // 미룬 말("다르게 말하기")이 있으면 `busy` 를 내리지 않는다 — 곧 그 말을 이어 보내므로, 그 사이에 다른 메시지가 끼어들 틈을 없앤다.
+        if turn_ended && flags.deferred.is_none() {
             flags.busy = false;
         }
     }
@@ -878,6 +983,15 @@ fn apply(session: &Session, shared: &Shared, interpretation: Interpretation) {
     }
     if turn_ended {
         send_deferred_message(session, shared);
+    }
+}
+
+/// 이 이벤트가 `ids` 중 하나의 요청 카드(권한 · 질문)인가.
+fn is_request_card_for(event: &SessionEvent, ids: &[String]) -> bool {
+    match event {
+        SessionEvent::PermissionRequest(info) => ids.contains(&info.request_id),
+        SessionEvent::QuestionRequest(info) => ids.contains(&info.request_id),
+        _ => false,
     }
 }
 
@@ -968,6 +1082,9 @@ fn read_stderr(session: &Session, shared: &Shared, stderr: ChildStderr) {
 /// 프로세스가 끝나기를 기다렸다가 뒷정리를 하고 끝났다고 알린다.
 fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &Receiver<()>) {
     let status = child.wait();
+    // CLI 가 스스로 끝났어도 stdin 쪽을 닫는다 — 안 그러면 쓰기 스레드가 (세션이 스스로 쥔 `Sender` 때문에) 영영 안 끝나
+    // 스레드 · stdin 핸들 · 세션 메모리가 남는다. 끝내기 경로(`stop`)는 이미 닫았을 수 있으니 두 번 닫아도 된다.
+    session.close_stdin();
     // 끝난 CLI 밑에 남은 프로세스(백그라운드 작업 등)는 함께 끈다 — 파이프를 쥐고 있으면 읽기도 안 끝난다.
     session.tree.kill();
     let deadline = Instant::now() + shared.config.reader_grace;
@@ -977,11 +1094,6 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
         .is_ok()
     {}
 
-    let leftover = std::mem::take(&mut *lock(&session.pending));
-    for (request_id, _) in leftover {
-        session.emit(shared, SessionEvent::RequestCancelled { request_id });
-    }
-
     let code = match status {
         Ok(status) => status.code(),
         Err(err) => {
@@ -989,6 +1101,13 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
             None
         }
     };
+    announce_end(session, shared, code, false);
+}
+
+/// 세션이 끝났다고 알리고 자리를 비운다. 알림은 세션마다 **한 번만** 나간다 (이미 나갔으면 아무것도 안 한다 —
+/// 강제로 꺼도 신호가 안 와서 `stop` 이 먼저 끝냈는데 프로세스가 뒤늦게 끝난 경우).
+/// `died` 는 끝내기가 실패한 경우 — 앱이 끝내라고 했어도 정상 종료로 치지 않는다.
+fn announce_end(session: &Session, shared: &Shared, code: Option<i32>, died: bool) {
     let (stop_requested, forced, mid_turn, stderr_tail) = {
         let flags = lock(&session.flags);
         (
@@ -998,7 +1117,7 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
             flags.stderr_tail.iter().cloned().collect::<Vec<_>>(),
         )
     };
-    let ended = if stop_requested || code == Some(0) {
+    let ended = if !died && (stop_requested || code == Some(0)) {
         EndKind::Normal
     } else {
         EndKind::Died
@@ -1006,6 +1125,16 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
     {
         // 이 뒤로는 어떤 스레드도 이벤트를 내지 못한다 (늦게 도착한 읽기 결과가 끝 알림 뒤에 섞이지 않게).
         let mut closed = lock(&session.emit_gate);
+        if *closed {
+            return;
+        }
+        // 기다리던 카드는 끝 알림 앞에서 닫는다.
+        let leftover = std::mem::take(&mut *lock(&session.pending));
+        for (request_id, _) in leftover {
+            shared
+                .sink
+                .emit(SessionEvent::RequestCancelled { request_id });
+        }
         // "끝남" 표시를 알림보다 먼저 한다 — 알림을 받은 화면이 바로 상태를 물어도 이미 꺼진 것으로 보이게.
         *lock(&session.exit) = Some(code);
         shared.sink.emit(SessionEvent::SessionEnded {
@@ -1019,8 +1148,8 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
     }
     session.exit_cv.notify_all();
     let mut slot = lock(&shared.slot);
-    if slot.as_ref().is_some_and(|s| s.id == session.id) {
-        *slot = None;
+    if slot.session.as_ref().is_some_and(|s| s.id == session.id) {
+        slot.session = None;
     }
 }
 
@@ -1366,7 +1495,7 @@ mod edge_tests {
 
     #[test]
     fn a_line_exactly_at_the_cap_is_kept_and_one_byte_more_is_dropped_with_the_next_line_intact() {
-        // 줄바꿈 글자까지 세므로 내용 4 바이트 + LF = 5 가 cap 5 에 딱 맞는다 (아래 ignore 시험이 이 세는 법을 다룬다)
+        // cap 은 줄바꿈 글자를 뺀 내용 길이 기준이다 (P3-05 에서 고침 — 내용이 cap 바이트 딱 맞는 줄도 남는다)
         let ok = read_all_bytes(b"abc\nnext\n", 5, 3);
         assert_eq!(ok, [(b"abc".to_vec(), false), (b"next".to_vec(), false)]);
         let over = read_all_bytes(b"abcdef\nnext\n", 5, 3);
@@ -1375,7 +1504,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(매우 낮음): read_line_capped 가 줄바꿈 글자까지 세어서 cap 바이트 딱 맞는 줄(+LF)도 넘친 것으로 버린다 (CRLF 면 cap-1 바이트 줄). 실제 cap 이 128 MiB 라 닿을 일은 거의 없다 — 세는 기준을 정하면(줄바꿈 제외) 고친다"]
     fn a_line_of_exactly_cap_bytes_with_lf_is_not_flagged_as_overflowing() {
         let lines = read_all_bytes(b"abcd\n", 4, 16);
         assert_eq!(lines, [(b"abcd".to_vec(), false)]);
@@ -1813,7 +1941,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 문서 어긋남(매우 낮음): `question_unreadable` 경고(protocol.rs)를 내보내는데 events.rs 의 Warning 문서 · ipc-types.ts 의 주석 · 시험 화면 목록에는 없다 — 화면이 이 코드를 모르는 코드로 보게 된다"]
     fn every_emitted_warning_code_is_listed_in_the_event_doc() {
         let (documented, used) = documented_and_emitted_warning_codes();
         let undocumented: Vec<_> = used.difference(&documented).collect();
@@ -1821,5 +1948,60 @@ mod edge_tests {
             undocumented.is_empty(),
             "내보내지만 문서에 없는 코드: {undocumented:?}"
         );
+    }
+}
+
+/// P3-05 — 줄 상한 · 줄 읽기 세는 법.
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn read_all(input: &[u8], cap: usize, chunk: usize) -> Vec<(Vec<u8>, bool)> {
+        let mut reader = BufReader::with_capacity(chunk, Cursor::new(input.to_vec()));
+        let mut buf = Vec::new();
+        let mut lines = Vec::new();
+        while let LineRead::Line { overflowed } =
+            read_line_capped(&mut reader, &mut buf, cap).unwrap()
+        {
+            lines.push((buf.clone(), overflowed));
+        }
+        lines
+    }
+
+    #[test]
+    fn the_line_cap_is_sixteen_mebibytes() {
+        assert_eq!(MAX_LINE_BYTES, 16 << 20);
+        const { assert!(LINE_BUF_KEEP < MAX_LINE_BYTES) };
+    }
+
+    #[test]
+    fn the_cap_counts_the_content_not_the_line_break() {
+        for chunk in [1, 2, 3, 4, 5, 64] {
+            // 내용이 cap 바이트 딱 맞는 줄은 LF 로 끝나도 남는다
+            assert_eq!(
+                read_all(b"abcd\nnext\n", 4, chunk),
+                [(b"abcd".to_vec(), false), (b"next".to_vec(), false)],
+                "chunk {chunk}"
+            );
+            // 한 바이트 넘치면 버려지고 다음 줄은 온전하다
+            let over = read_all(b"abcde\nnext\n", 4, chunk);
+            assert!(over[0].1, "chunk {chunk}");
+            assert_eq!(over[0].0, b"abcd");
+            assert_eq!(over[1], (b"next".to_vec(), false), "chunk {chunk}");
+        }
+    }
+
+    #[test]
+    fn a_crlf_line_counts_its_carriage_return_as_content() {
+        // CR 은 내용으로 센다 (줄 끝에서 떼어 내기 전) — cap 4 에 `abc\r\n` 은 딱 맞고 `abcd\r\n` 은 넘친다
+        assert_eq!(read_all(b"abc\r\n", 4, 3), [(b"abc".to_vec(), false)]);
+        assert!(read_all(b"abcd\r\n", 4, 3)[0].1);
+    }
+
+    #[test]
+    fn a_last_line_without_a_line_break_at_exactly_the_cap_is_kept() {
+        assert_eq!(read_all(b"abcd", 4, 2), [(b"abcd".to_vec(), false)]);
+        assert!(read_all(b"abcde", 4, 2)[0].1);
     }
 }

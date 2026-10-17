@@ -44,13 +44,29 @@ pub fn project_key(dir: &Path) -> String {
     let text = dir.to_string_lossy();
     let text = text.strip_prefix("\\\\?\\").unwrap_or(&text);
     if cfg!(windows) {
-        let unified = text.replace('/', "\\");
-        let trimmed = unified.trim_end_matches('\\');
+        let mut unified = text.replace('/', "\\");
+        // `\\?\UNC\서버\공유` 는 `\\서버\공유` 와 같은 폴더다
+        if unified
+            .get(..4)
+            .is_some_and(|head| head.eq_ignore_ascii_case("UNC\\"))
+        {
+            unified = format!("\\\\{}", &unified[4..]);
+        }
+        let (prefix, rest) = match unified.strip_prefix("\\\\") {
+            Some(rest) => ("\\\\", rest),
+            None => ("", unified.as_str()),
+        };
+        // 겹친 구분자 · 안쪽 `.` · 끝 구분자는 같은 폴더다
+        let joined = rest
+            .split('\\')
+            .filter(|part| !part.is_empty() && *part != ".")
+            .collect::<Vec<_>>()
+            .join("\\");
         // `C:\` 처럼 뿌리만 남으면 끝 `\` 를 살린다
-        let key = if trimmed.len() == 2 && trimmed.ends_with(':') {
-            format!("{trimmed}\\")
+        let key = if prefix.is_empty() && joined.len() == 2 && joined.ends_with(':') {
+            format!("{joined}\\")
         } else {
-            trimmed.to_string()
+            format!("{prefix}{joined}")
         };
         key.to_lowercase()
     } else {
@@ -63,9 +79,18 @@ pub fn project_key(dir: &Path) -> String {
     }
 }
 
-/// 세션 ID 로 쓸 수 있는 글자 모양인가 (인자로 들어가므로 엄격하게).
+/// 세션 ID 로 쓸 수 있는 모양인가 — UUID(`8-4-4-4-12` 의 16진수)만. `--resume <ID>` 인자로 들어가므로 엄격하게:
+/// `-` 로 시작하는 값(`--dangerously-skip-permissions` 등)은 CLI 가 옵션으로 읽을 수 있어 첫 글자부터 16진수여야 한다.
 pub fn is_valid_session_id(id: &str) -> bool {
-    (8..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    let bytes = id.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(i, &b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
 }
 
 #[derive(Debug)]
@@ -93,6 +118,18 @@ impl ResumeStore {
                 return store;
             }
         };
+        // 새 버전 파일은 모양이 달라도 건드리지 않는다 — `version` 만 먼저 본다 (옛 앱이 새 앱의 파일을 깨진 것으로 옮겨 버리지 않게).
+        let newer_version = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64))
+            .filter(|version| *version > u64::from(FORMAT_VERSION));
+        if let Some(version) = newer_version {
+            log::warn!(
+                "session store version {version} is newer than supported {FORMAT_VERSION}; leaving it untouched"
+            );
+            store.read_only = true;
+            return store;
+        }
         match serde_json::from_str::<StoreData>(&text) {
             Ok(data) if data.version <= FORMAT_VERSION => store.data = data,
             Ok(data) => {
@@ -363,7 +400,6 @@ mod edge_tests {
 
     #[cfg(windows)]
     #[test]
-    #[ignore = "P3-03 버그(낮음): `\\\\?\\UNC\\서버\\공유\\폴더` 와 `\\\\서버\\공유\\폴더` 는 같은 폴더인데 키가 다르다 — project_key 가 `\\\\?\\` 만 벗기고 `UNC\\` 를 `\\\\` 로 바꾸지 않아, 폴더 선택 창이 verbatim 경로를 주는 경우 이어 하기 기록이 따로 쌓인다 (같은 이유로 `C:\\p\\.\\x` · `C:\\p\\\\x` 처럼 안쪽 `.` · 겹친 구분자도 모으지 않는다)"]
     fn verbatim_unc_and_dotted_spellings_of_the_same_folder_share_a_key() {
         assert_eq!(
             project_key(Path::new("\\\\?\\UNC\\srv\\share\\proj")),
@@ -404,36 +440,40 @@ mod edge_tests {
 
     #[test]
     fn session_id_shapes_at_the_edges() {
+        // UUID (8-4-4-4-12 의 16진수) 만 — 대소문자는 가리지 않는다
         for ok in [
-            "abcdefgh",
-            &"a".repeat(64),
-            "ABCDEF-12",
             "00000000-0000-4000-8000-000000000001",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "123E4567-E89B-12D3-A456-426614174000",
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
         ] {
             assert!(is_valid_session_id(ok), "{ok}");
         }
         for bad in [
             "",
-            "abcdefg",
-            &"a".repeat(65),
-            "abc_defgh",
-            "abc defgh",
-            "abcdefgh\n",
-            "abcdefgh\0",
-            " abcdefgh",
-            "abc/defgh",
-            "abc.defgh",
+            "abcdefgh",
+            "ABCDEF-12",
+            &"a".repeat(36),
+            &"a".repeat(64),
+            "123e4567e89b12d3a456426614174000",      // 대시 없음
+            "123e4567-e89b-12d3-a456-42661417400",   // 한 글자 모자람
+            "123e4567-e89b-12d3-a456-4266141740000", // 한 글자 넘침
+            "123e4567-e89b-12d3-a456-42661417400g",
+            "123e4567_e89b_12d3_a456_426614174000",
+            "123e4567-e89b-12d3-a456-426614174000\n",
+            "123e4567-e89b-12d3-a456-426614174000\0",
+            " 123e4567-e89b-12d3-a456-42661417400",
+            "123e4567-e89b-12d3-a456-42661417400;",
+            "$(calc)7-e89b-12d3-a456-426614174000",
+            "０２３e4567-e89b-12d3-a456-426614174000", // 전각 숫자
             "아이디아이디아이디아이디",
-            "０１２３４５６７８", // 전각 숫자
-            "abcdefgh;ls",
-            "$(calc)xxxx",
+            "---------------------------------------",
         ] {
             assert!(!is_valid_session_id(bad), "{bad:?}");
         }
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음, 방어): is_valid_session_id 가 `-` 로 시작하는 값도 통과시킨다 — `--dangerously-skip-permissions` 는 글자 · 길이 조건을 모두 만족한다. 저장 파일(앱 데이터)이나 CLI 가 준 ID 가 이런 값이면 `--resume <값>` 에서 옵션으로 읽힐 수 있다 (`--resume` 의 값이 선택이면 `--resume` 다음 인자가 그냥 옵션이 된다). 세션 ID 는 UUID 모양이니 첫 글자가 영숫자인 것만 받으면 된다"]
     fn an_id_that_starts_with_a_dash_cannot_be_read_as_an_option_by_the_cli() {
         for bad in [
             "--dangerously-skip-permissions",
@@ -547,7 +587,6 @@ mod edge_tests {
     }
 
     #[test]
-    #[ignore = "P3-03 버그(낮음): 이 앱보다 새 버전(version 2)의 파일은 \"건드리지 않는다\" 가 설계인데, 모양이 다르면(예: projects 가 배열) 읽기 오류로 보고 `.corrupt` 로 옮겨 버린다 — 새 앱이 쓴 파일을 옛 앱으로 열었을 때 이어 하기 기록이 새 앱에서 사라진다. `version` 만 먼저 읽어 > 1 이면 모양과 상관없이 읽기 전용으로 둬야 한다"]
     fn a_newer_format_with_a_different_shape_is_left_in_place_not_moved_aside() {
         let dir = TempDir::new("newer-shape");
         let path = file_in(&dir);
@@ -672,5 +711,116 @@ mod edge_tests {
         let reopened = ResumeStore::open(path);
         assert_eq!(reopened.get("from-b").as_deref(), Some(ID_B));
         // 늦게 쓴 쪽이 옛 메모리 기준으로 덮으므로 앞 항목은 사라질 수 있다 — 깨지지만 않으면 된다
+    }
+}
+
+/// P3-05 — 세션 ID 는 UUID 만 · 폴더 키 · 새 버전 파일.
+#[cfg(test)]
+mod fix_tests {
+    use super::super::test_util::TempDir;
+    use super::*;
+
+    const ID_A: &str = "00000000-0000-4000-8000-000000000001";
+
+    fn file_in(dir: &TempDir) -> PathBuf {
+        dir.join("data").join("claude-sessions.json")
+    }
+
+    #[test]
+    fn a_dash_led_or_option_like_id_in_the_saved_file_is_not_returned() {
+        let dir = TempDir::new("evil-in-file");
+        let path = file_in(&dir);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            r#"{"version":1,"projects":{"k":{"sessionId":"--dangerously-skip-permissions","updatedAt":1},"ok":{"sessionId":"00000000-0000-4000-8000-000000000001","updatedAt":1}}}"#,
+        )
+        .unwrap();
+        let store = ResumeStore::open(path);
+        assert_eq!(store.get("k"), None, "읽을 때도 모양을 확인한다");
+        assert_eq!(store.get("ok").as_deref(), Some(ID_A));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keys_survive_multibyte_names_and_odd_prefixes_without_panicking() {
+        for text in [
+            "내",
+            "\\\\?\\내용",
+            "UN내",
+            "UNC",
+            "UNC\\",
+            "\\\\",
+            "\\\\?\\UNC\\",
+            "\\\\?\\UNC\\서버\\공유\\폴더",
+            "\\\\서버\\공유\\폴더\\",
+            "C:\\내\\.\\프로젝트\\\\",
+            "",
+            ".",
+            "\\",
+        ] {
+            let _ = project_key(Path::new(text));
+        }
+        assert_eq!(
+            project_key(Path::new("\\\\?\\UNC\\서버\\공유\\폴더")),
+            project_key(Path::new("\\\\서버\\공유\\폴더\\"))
+        );
+        assert_eq!(
+            project_key(Path::new("\\\\?\\unc\\Srv\\Share")),
+            "\\\\srv\\share"
+        );
+        // 다른 서버 · 다른 드라이브는 다른 키
+        assert_ne!(
+            project_key(Path::new("\\\\a\\s\\p")),
+            project_key(Path::new("\\\\b\\s\\p"))
+        );
+        assert_ne!(
+            project_key(Path::new("\\\\srv\\share")),
+            project_key(Path::new("C:\\srv\\share"))
+        );
+    }
+
+    #[test]
+    fn a_newer_version_file_is_left_alone_whatever_its_shape() {
+        for (n, body) in [
+            r#"{"version":2,"projects":[]}"#,
+            r#"{"version":2}"#,
+            r#"{"version":99,"data":"x"}"#,
+            r#"{"version":2,"projects":{"k":5}}"#,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let dir = TempDir::new(&format!("newer-{n}"));
+            let path = file_in(&dir);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, body).unwrap();
+            let mut store = ResumeStore::open(path.clone());
+            assert!(store.set("k", ID_A).is_err(), "{body}");
+            assert_eq!(fs::read_to_string(&path).unwrap(), *body);
+            assert!(!path.with_extension("json.corrupt").exists(), "{body}");
+        }
+    }
+
+    #[test]
+    fn a_broken_file_with_no_readable_version_is_still_moved_aside() {
+        for (n, body) in [
+            "{ not json",
+            "[]",
+            r#"{"projects":{}}"#,
+            r#"{"version":"2","projects":{}}"#,
+            r#"{"version":1,"projects":[]}"#,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let dir = TempDir::new(&format!("broken-{n}"));
+            let path = file_in(&dir);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, body).unwrap();
+            let mut store = ResumeStore::open(path.clone());
+            store.set("k", ID_A).unwrap();
+            assert!(path.with_extension("json.corrupt").exists(), "{body}");
+        }
     }
 }

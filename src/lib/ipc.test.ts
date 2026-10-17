@@ -42,3 +42,29 @@ describe("ipc (브라우저 가짜 모드)", () => {
     await expect(ipc.appInfo()).resolves.toEqual({ name: "Nyanitor", version: "0.0.0-browser" });
   });
 });
+
+describe("ipc (출시 빌드 · Tauri 밖)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("가짜로 돌지 않고 모든 명령 · 구독이 internal 오류를 낸다", async () => {
+    vi.stubEnv("DEV", false);
+    await expect(ipc.appInfo()).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.claudeDiscover()).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.claudeSessionStart({ projectDir: "C:\\p" })).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.claudeSessionState()).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.onClaudeEvent(() => undefined)).rejects.toMatchObject({ kind: "internal" });
+    // 개발 빌드(시험 환경 기본)에서는 같은 호출이 가짜로 돈다 (대조)
+    vi.stubEnv("DEV", true);
+    await expect(ipc.appInfo()).resolves.toMatchObject({ version: "0.0.0-browser" });
+  });
+
+  it("Tauri 안에서는 DEV 가 false 여도 실제 명령을 부른다", async () => {
+    vi.stubEnv("DEV", false);
+    const handler = vi.fn(() => ({ name: "Nyanitor", version: "9.9.9" }));
+    mockIPC(handler);
+    await expect(ipc.appInfo()).resolves.toEqual({ name: "Nyanitor", version: "9.9.9" });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});

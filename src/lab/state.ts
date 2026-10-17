@@ -63,8 +63,8 @@ function pushCard(cards: LabCard[], card: LabCard): LabCard[] {
 }
 
 function withLine(state: LabState, event: ClaudeEvent): LabState {
-  const text = describeEvent(event);
-  if (text === null) return state;
+  const text: string | null | undefined = describeEvent(event);
+  if (typeof text !== "string") return state;
   const line: LabLine = { id: state.nextLineId, type: event.type, text };
   return { ...state, lines: [...state.lines, line].slice(-MAX_LINES), nextLineId: state.nextLineId + 1 };
 }

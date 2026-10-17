@@ -2,6 +2,7 @@
 // 시나리오 — 실제 claude 와 stream-json 으로 주고받는 짧은 시험들.
 // 각 시나리오는 { describe, cost, run(ctx) }. 확인(check)은 "지금 CLI 가 예전 녹화본과 같게 동작하는가" 를 보는 기대값이다.
 // 허용하는 권한은 임시 폴더 안 파일 만들기 · mkdir · echo 같은 무해한 것만. (bypassPermissions 는 쓰지 않는다)
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -307,6 +308,133 @@ export const scenarios = {
         /* 없음 */
       }
       ctx.check("Edit 도구도 같은 규칙으로 묻지 않음 (sub/a.txt 가 ho 로 바뀜)", edited !== null && edited.trim() === "ho" && !asked.includes("sub/a.txt"), `${edited} / ${JSON.stringify(asked)}`);
+      ctx.check("result success", rp?.subtype === "success", rp?.subtype);
+      await p.shutdown();
+    },
+  },
+
+  "permission-root-file": {
+    describe: "3 권한 — 프로젝트 맨 위 파일 하나만 여는 규칙 `Edit(/README.md)` 이 그 파일만 여는가 (P3-05, D-45)",
+    cost: "턴 2",
+    async run(ctx) {
+      const rule = { toolName: "Edit", ruleContent: "/README.md" };
+      const dir = ctx.scratch("rootfile");
+      fs.mkdirSync(path.join(dir, "sub"));
+      const s = ctx.newSession({ label: "first", cwd: dir, maxTurns: 6 });
+      watch(s, (req) => ({
+        behavior: "allow",
+        updatedInput: req.input,
+        updatedPermissions: [{ type: "addRules", rules: [rule], behavior: "allow", destination: "localSettings" }],
+      }));
+      const r = await turn(s, "Use the Write tool to create the file README.md containing exactly: hi. Then reply done.");
+      const settings = readSettingsLocal(s);
+      s.note(`CLI 가 쓴 .claude/settings.local.json: ${settings === null ? "(없음)" : settings.replace(/\s+/g, " ")}`);
+      ctx.info(".claude/settings.local.json", settings === null ? "(없음)" : settings.replace(/\s+/g, " "));
+      ctx.check('{toolName:"Edit", ruleContent:"/README.md"} 이 "Edit(/README.md)" 로 쓰임', !!settings && /"allow"\s*:\s*\[\s*"Edit\(\/README\.md\)"/.test(settings), settings?.replace(/\s+/g, " "));
+      ctx.check("result success · README.md 만들어짐", r?.subtype === "success" && exists(s, "README.md"));
+      await s.shutdown();
+
+      // 같은 폴더에서 새 프로세스 — README.md 만 묻지 않고, 다른 맨 위 파일 · 하위 폴더의 같은 이름은 여전히 물어야 한다
+      const p = ctx.newSession({ label: "second", cwd: dir, maxTurns: 12 });
+      watch(p, (req) => allow(req));
+      const rp = await turn(
+        p,
+        "Do these in order. 1) Read README.md, then use the Edit tool on README.md to replace the text hi with ho. 2) Use the Write tool to create NOTES.md containing exactly: hi. 3) Use the Write tool to create sub/README.md containing exactly: hi. 4) Use the Write tool to create sub/x.txt containing exactly: hi. Then reply done.",
+        150000,
+      );
+      const asked = p.toolRequests.map((q) => path.relative(p.cwd, q.input?.file_path ?? "").replace(/\\/g, "/"));
+      ctx.info("두 번째 세션에서 물어 온 것", JSON.stringify(asked));
+      let edited = null;
+      try {
+        edited = fs.readFileSync(path.join(p.cwd, "README.md"), "utf8");
+      } catch {
+        /* 없음 */
+      }
+      ctx.check("그 파일(README.md) 고치기는 묻지 않고 됨", edited !== null && edited.trim() === "ho" && !asked.includes("README.md"), `${edited} / ${JSON.stringify(asked)}`);
+      ctx.check("다른 맨 위 파일(NOTES.md)은 여전히 물어 옴", asked.includes("NOTES.md"), JSON.stringify(asked));
+      ctx.check("하위 폴더의 같은 이름(sub/README.md)과 sub/x.txt 는 여전히 물어 옴", asked.includes("sub/README.md") && asked.includes("sub/x.txt"), JSON.stringify(asked));
+      ctx.check("result success", rp?.subtype === "success", rp?.subtype);
+      await p.shutdown();
+    },
+  },
+
+  "permission-git-subdir": {
+    describe: "3 권한 — git 저장소의 하위 폴더를 프로젝트로 했을 때 `Edit(/sub/**)` 의 `/` 기준 (P3-05, D-45)",
+    cost: "턴 2",
+    async run(ctx) {
+      const root = ctx.scratch("gitsub");
+      const init = spawnSync("git", ["init", "-q"], { cwd: root, windowsHide: true, encoding: "utf8" });
+      ctx.check("실험 폴더에 git init 이 됨", init.status === 0, init.stderr);
+      const app = path.join(root, "app");
+      for (const d of ["app", "app/sub", "app/other", "sub"]) fs.mkdirSync(path.join(root, d));
+      const rule = { toolName: "Edit", ruleContent: "/sub/**" };
+      const s = ctx.newSession({ label: "first", cwd: app, maxTurns: 6 });
+      watch(s, (req) => ({
+        behavior: "allow",
+        updatedInput: req.input,
+        updatedPermissions: [{ type: "addRules", rules: [rule], behavior: "allow", destination: "localSettings" }],
+      }));
+      const r = await turn(s, "Use the Write tool to create the file sub/a.txt containing exactly: hi. Then reply done.");
+      const inApp = fs.existsSync(path.join(app, ".claude", "settings.local.json"));
+      const inRoot = fs.existsSync(path.join(root, ".claude", "settings.local.json"));
+      ctx.info("settings.local.json 이 생긴 곳", `프로젝트 폴더(app) ${inApp} · git 뿌리 ${inRoot}`);
+      s.note(`settings.local.json 이 생긴 곳: 프로젝트 폴더 ${inApp} · git 뿌리 ${inRoot}`);
+      ctx.check("result success · 프로젝트 폴더의 sub/a.txt 만들어짐", r?.subtype === "success" && fs.existsSync(path.join(app, "sub", "a.txt")));
+      await s.shutdown();
+
+      // 새 프로세스 — `/sub/**` 가 프로젝트 폴더(app/sub) 기준인지 git 뿌리(sub) 기준인지는 무엇을 묻는지로 본다
+      const p = ctx.newSession({ label: "second", cwd: app, maxTurns: 10 });
+      watch(p, (req) => allow(req));
+      const outside = path.join(root, "sub", "z.txt");
+      const rp = await turn(
+        p,
+        `Do these in order. 1) Use the Write tool to create sub/b.txt containing exactly: hi. 2) Use the Write tool to create other/c.txt containing exactly: hi. 3) Use the Write tool to create the file ${outside} containing exactly: hi. Then reply done.`,
+        120000,
+      );
+      const asked = p.toolRequests.map((q) => path.relative(root, q.input?.file_path ?? "").replace(/\\/g, "/"));
+      ctx.info("두 번째 세션에서 물어 온 것 (git 뿌리 기준 경로)", JSON.stringify(asked));
+      const projectBase = !asked.includes("app/sub/b.txt");
+      const rootBase = !asked.includes("sub/z.txt");
+      ctx.info("`/` 기준", projectBase && !rootBase ? "프로젝트 폴더 (app)" : rootBase && !projectBase ? "git 뿌리" : projectBase && rootBase ? "둘 다 열림" : "둘 다 안 열림");
+      ctx.check("폴더 밖(app/other/c.txt)은 여전히 물어 옴", asked.includes("app/other/c.txt"), JSON.stringify(asked));
+      ctx.check("`/sub/**` 는 프로젝트 폴더 기준이다 (app/sub/b.txt 는 묻지 않음)", projectBase, JSON.stringify(asked));
+      ctx.check("`/sub/**` 가 git 뿌리의 sub 까지 열지는 않음 (sub/z.txt 는 물어 옴)", !rootBase, JSON.stringify(asked));
+      ctx.check("result success", rp?.subtype === "success", rp?.subtype);
+      await p.shutdown();
+    },
+  },
+
+  "permission-protected": {
+    describe: "3 권한 — (참고) 넓은 허용 규칙이 있을 때 `.claude/settings.local.json` · `.git/` 쓰기를 CLI 가 따로 보호하는가 (P3-05)",
+    cost: "턴 2",
+    async run(ctx) {
+      const dir = ctx.scratch("protected");
+      const init = spawnSync("git", ["init", "-q"], { cwd: dir, windowsHide: true, encoding: "utf8" });
+      ctx.check("실험 폴더에 git init 이 됨", init.status === 0, init.stderr);
+      // 실험용으로만 만드는 넓은 규칙 — 앱은 이런 규칙을 만들지 않는다 (D-45)
+      const rule = { toolName: "Edit", ruleContent: "/*" };
+      const s = ctx.newSession({ label: "first", cwd: dir, maxTurns: 6 });
+      watch(s, (req) => ({
+        behavior: "allow",
+        updatedInput: req.input,
+        updatedPermissions: [{ type: "addRules", rules: [rule], behavior: "allow", destination: "localSettings" }],
+      }));
+      const r = await turn(s, "Use the Write tool to create the file root.txt containing exactly: hi. Then reply done.");
+      ctx.check("result success · root.txt 만들어짐", r?.subtype === "success" && exists(s, "root.txt"));
+      await s.shutdown();
+
+      // 넓은 규칙이 있는 새 프로세스 — 보호되는 곳은 규칙이 있어도 물어 오는가
+      const p = ctx.newSession({ label: "second", cwd: dir, maxTurns: 12 });
+      watch(p, (req) => allow(req));
+      const rp = await turn(
+        p,
+        "Do these in order. 1) Use the Write tool to create other.txt containing exactly: hi. 2) Use the Write tool to create the file .git/probe-note.txt containing exactly: hi. 3) Use the Write tool to create the file .claude/probe-note.json containing exactly: {}. 4) Read .claude/settings.local.json, then use the Write tool to overwrite it with exactly the same content. Then reply done.",
+        150000,
+      );
+      const asked = p.toolRequests.map((q) => path.relative(p.cwd, q.input?.file_path ?? "").replace(/\\/g, "/"));
+      ctx.info("두 번째 세션에서 물어 온 것", JSON.stringify(asked));
+      ctx.info("파일이 만들어졌는가", JSON.stringify({ "other.txt": exists(p, "other.txt"), ".git/probe-note.txt": exists(p, ".git/probe-note.txt"), ".claude/probe-note.json": exists(p, ".claude/probe-note.json") }));
+      ctx.check("일반 파일(other.txt)은 넓은 규칙으로 묻지 않고 됨", exists(p, "other.txt") && !asked.includes("other.txt"), JSON.stringify(asked));
       ctx.check("result success", rp?.subtype === "success", rp?.subtype);
       await p.shutdown();
     },

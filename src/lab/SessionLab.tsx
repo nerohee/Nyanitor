@@ -58,6 +58,11 @@ function StatusPanel({
           <Fact label={t("lab.status.apiKey")}>
             {status.apiKeyPresent ? t("lab.status.apiKeyYes") : t("lab.status.apiKeyNo")}
           </Fact>
+          <Fact label={t("lab.status.otherBilling")}>
+            {status.otherBilling.length > 0
+              ? tf("lab.status.otherBillingYes", { names: status.otherBilling.join(", ") })
+              : t("lab.status.otherBillingNo")}
+          </Fact>
         </dl>
       )}
       <div className="lab-row">

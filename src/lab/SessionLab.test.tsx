@@ -61,7 +61,8 @@ describe("buildAnswers", () => {
 
 describe("ruleNote", () => {
   it("범위마다 무엇을 허용하는지 분명히 쓴다", () => {
-    expect(ruleNote({ rule: "Edit(/*)", scope: "project", folder: null })).toContain("모든 파일");
+    expect(ruleNote({ rule: "Edit(/README.md)", scope: "file", folder: null })).toContain("파일 하나");
+    expect(ruleNote({ rule: "Edit(/README.md)", scope: "file", folder: null })).not.toContain("모든 파일");
     expect(ruleNote({ rule: "Edit(/src/**)", scope: "folder", folder: "src" })).toContain("src 폴더");
     expect(ruleNote({ rule: "Bash(ls *)", scope: "suggested", folder: null })).toContain("제안한 규칙");
   });

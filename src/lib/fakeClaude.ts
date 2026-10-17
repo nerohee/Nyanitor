@@ -6,6 +6,7 @@
 import { t } from "../i18n/ko";
 import {
   AppError,
+  type AppInfo,
   type ClaudeEvent,
   type ClaudeResponse,
   type ClaudeSessionState,
@@ -23,6 +24,24 @@ type Handler = (args: Record<string, unknown>) => unknown;
 
 interface PendingFake {
   info: PermissionRequestInfo | QuestionRequestInfo;
+}
+
+/**
+ * 같은 폴더의 다른 표기(대소문자 · `/` · 끝 `\` · 겹친 구분자 · `\\?\`)를 한 키로 모은다 — Rust `store::project_key`(Windows)와 같은 규칙.
+ * 가짜 세션의 이어 하기 기록이 실제와 어긋나지 않게 한다.
+ */
+export function fakeProjectKey(dir: string): string {
+  let text = dir.trim().replace(/\//g, "\\");
+  if (text.startsWith("\\\\?\\")) text = text.slice(4);
+  if (/^unc\\/i.test(text)) text = `\\\\${text.slice(4)}`;
+  const unc = text.startsWith("\\\\");
+  const joined = text
+    .slice(unc ? 2 : 0)
+    .split("\\")
+    .filter((part) => part !== "" && part !== ".")
+    .join("\\");
+  const key = !unc && /^[A-Za-z]:$/.test(joined) ? `${joined}\\` : `${unc ? "\\\\" : ""}${joined}`;
+  return key.toLowerCase();
 }
 
 const EMPTY_USAGE = { inputTokens: 3, outputTokens: 42, cacheCreationInputTokens: 0, cacheReadInputTokens: 1200 };
@@ -53,7 +72,14 @@ export function createFakeClaude() {
   let counter = 0;
 
   const emit = (event: ClaudeEvent) => {
-    for (const listener of [...listeners]) listener(event);
+    for (const listener of [...listeners]) {
+      // 한 구독자의 오류가 뒤 구독자를 막지 않게 한다 (실제 Tauri 이벤트도 구독자마다 따로 불린다).
+      try {
+        listener(event);
+      } catch (error) {
+        console.error("fake claude: an event listener threw", error);
+      }
+    }
   };
   const later = (fn: () => void, ms = 5) => {
     setTimeout(fn, ms);
@@ -78,7 +104,7 @@ export function createFakeClaude() {
     log("send", JSON.stringify({ type: "user", message: { role: "user", content: text } }));
     later(() => {
       if (!session) return;
-      lastSessions.set(session.projectDir, session.sessionId);
+      lastSessions.set(fakeProjectKey(session.projectDir), session.sessionId);
       emit({ type: "turn_started", sessionId: session.sessionId, model: "fake-haiku", cliVersion: "2.1.296", permissionMode: "default", apiKeySource: "none" });
       emit({ type: "text", text: t("lab.fake.greeting") });
       if (text.includes("질문")) askQuestion();
@@ -172,6 +198,7 @@ export function createFakeClaude() {
       authMethod: "claude.ai",
       subscriptionType: "pro",
       apiKeyPresent: false,
+      otherBilling: [],
       problem: null,
     }),
     claude_open_login: () => undefined,
@@ -180,7 +207,7 @@ export function createFakeClaude() {
       const projectDir = request?.projectDir?.trim() ?? "";
       if (!projectDir) throw new AppError("invalid_input", "project folder is empty");
       if (session) throw new AppError("session_running", "a session is already running");
-      const saved = lastSessions.get(projectDir) ?? null;
+      const saved = lastSessions.get(fakeProjectKey(projectDir)) ?? null;
       if (request?.resume && !saved) throw new AppError("no_saved_session", "no saved session for this project");
       session = { projectDir, sessionId: saved ?? nextId("fake-session"), busy: false, turns: 0 };
       rawLog.length = 0;
@@ -256,7 +283,7 @@ export function createFakeClaude() {
         "questions" in info ? ({ type: "question_request", ...info } as const) : ({ type: "permission_request", ...info } as const),
       ),
     }),
-    claude_last_session: (args) => lastSessions.get(String(args.projectDir ?? "")) ?? null,
+    claude_last_session: (args) => lastSessions.get(fakeProjectKey(String(args.projectDir ?? ""))) ?? null,
     claude_raw_log: () => [...rawLog],
   };
 
@@ -281,3 +308,16 @@ export function createFakeClaude() {
 }
 
 export const fakeClaude = createFakeClaude();
+
+/** 브라우저 가짜 모드가 `ipc.ts` 대신 명령을 돌려주는 자리 — 앱 정보 가짜도 여기 둔다 (출시 빌드 번들에 안 들어가게 이 파일 안에만). */
+export async function fakeCall(command: string, args: Record<string, unknown>): Promise<unknown> {
+  const handlers: Record<string, Handler> = {
+    app_info: (): AppInfo => ({ name: "Nyanitor", version: "0.0.0-browser" }),
+    ...fakeClaude.handlers,
+  };
+  const handler = handlers[command];
+  if (!handler) {
+    throw new AppError("internal", `no fake handler for command: ${command}`);
+  }
+  return handler(args);
+}

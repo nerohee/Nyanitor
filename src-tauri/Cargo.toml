@@ -26,6 +26,24 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-log = "2"
 
+# 자식 프로세스 트리를 한꺼번에 끄기 (claude 가 시킨 bash · node 가 남지 않게) — src/claude/process_tree.rs 에서만 쓴다.
+# Windows 는 Job Object (앱이 비정상 종료해도 OS 가 자식을 끈다), 그 밖에는 프로세스 그룹.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[[example]]
+# 시험용 가짜 claude (P3-02). `cargo build` · `tauri build` 는 예제를 만들지 않으므로 설치본에 들어가지 않는다.
+name = "fake_claude"
+path = "examples/fake_claude.rs"
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

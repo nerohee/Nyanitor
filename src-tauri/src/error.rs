@@ -13,6 +13,24 @@ pub enum AppError {
     /// 앱 안쪽 문제 (설정이 깨졌거나 예상 못 한 상태).
     #[error("internal error: {0}")]
     Internal(String),
+    /// 이 PC 에서 `claude` 실행 파일을 찾지 못했다.
+    #[error("claude executable not found")]
+    ClaudeNotFound,
+    /// 돌아가는 세션이 이미 있다 (한 번에 하나 — D-12).
+    #[error("a session is already running")]
+    SessionRunning,
+    /// 돌아가는 세션이 없다.
+    #[error("no session is running")]
+    NoSession,
+    /// 이어 할 세션 기록이 없다.
+    #[error("no saved session for this project")]
+    NoSavedSession,
+    /// 그 요청 ID 를 기다리는 중이 아니다 (이미 답했거나 취소됐다).
+    #[error("request not found: {0}")]
+    RequestNotFound(String),
+    /// 지금 턴이 도는 중이라 새 메시지를 보낼 수 없다.
+    #[error("a turn is already in progress")]
+    TurnInProgress,
 }
 
 impl AppError {
@@ -20,6 +38,12 @@ impl AppError {
         match self {
             AppError::InvalidInput(_) => "invalid_input",
             AppError::Internal(_) => "internal",
+            AppError::ClaudeNotFound => "claude_not_found",
+            AppError::SessionRunning => "session_running",
+            AppError::NoSession => "no_session",
+            AppError::NoSavedSession => "no_saved_session",
+            AppError::RequestNotFound(_) => "request_not_found",
+            AppError::TurnInProgress => "turn_in_progress",
         }
     }
 }
@@ -68,5 +92,14 @@ mod tests {
             "invalid_input"
         );
         assert_eq!(AppError::Internal(String::new()).kind(), "internal");
+        assert_eq!(AppError::ClaudeNotFound.kind(), "claude_not_found");
+        assert_eq!(AppError::SessionRunning.kind(), "session_running");
+        assert_eq!(AppError::NoSession.kind(), "no_session");
+        assert_eq!(AppError::NoSavedSession.kind(), "no_saved_session");
+        assert_eq!(
+            AppError::RequestNotFound(String::new()).kind(),
+            "request_not_found"
+        );
+        assert_eq!(AppError::TurnInProgress.kind(), "turn_in_progress");
     }
 }

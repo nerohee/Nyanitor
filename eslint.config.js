@@ -25,6 +25,10 @@ export default tseslint.config(
               name: "@tauri-apps/api",
               message: "`src/lib/ipc.ts` 의 함수를 쓰세요. invoke 는 거기서만 부릅니다.",
             },
+            {
+              name: "@tauri-apps/api/event",
+              message: "`src/lib/ipc.ts` 의 `onClaudeEvent` 처럼 이벤트 구독도 거기에 모읍니다.",
+            },
           ],
         },
       ],

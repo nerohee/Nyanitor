@@ -1,0 +1,22 @@
+/* 시험 화면 — 디자인 없음. 읽기 편한 정도의 최소 모양만. */
+.lab-session { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; font-size: 14px; }
+.lab-session h1 { margin: 0; font-size: 20px; }
+.lab-session h2 { margin: 0 0 8px; font-size: 16px; }
+.lab-session section { border: 1px solid #8884; border-radius: 6px; padding: 12px; }
+.lab-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.lab-row input[type="text"], .lab-row textarea { flex: 1 1 280px; }
+.lab-field { display: grid; gap: 4px; margin: 6px 0; }
+.lab-field input { padding: 4px 6px; }
+.lab-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.lab-facts dt { color: #888; }
+.lab-facts dd { margin: 0; overflow-wrap: anywhere; }
+.lab-card { border: 1px solid #8886; border-radius: 6px; padding: 10px; margin: 8px 0; }
+.lab-card h3 { margin: 0 0 6px; font-size: 14px; }
+.lab-code { background: #8882; padding: 6px; overflow: auto; margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lab-note { color: #888; font-size: 12px; margin: 4px 0; }
+.lab-question { margin: 8px 0; }
+.lab-option { display: block; margin: 2px 0; }
+.lab-events { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; font-family: monospace; font-size: 12px; }
+.lab-events li { padding: 2px 0; border-bottom: 1px solid #8882; overflow-wrap: anywhere; }
+.lab-raw { max-height: 280px; overflow: auto; font-family: monospace; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lab-error { color: #c33; }

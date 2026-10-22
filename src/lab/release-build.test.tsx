@@ -41,6 +41,28 @@ describe("시험 화면의 출시 빌드 숨김", () => {
     }
   });
 
+  it("출시 빌드에서는 ?lab=harness 이어도 하네스 시험 화면 대신 기본 화면이고, 그 링크도 없다 (P4-02)", async () => {
+    for (const search of ["?lab=harness", "?lab=Harness", "?lab=harness%00", "?LAB=harness", "?lab=harness&lab=x"]) {
+      const { unmount } = await renderApp(false, search);
+      expect(await screen.findByText(t("app.placeholder")), search).toBeInTheDocument();
+      expect(screen.queryByTestId("harness-lab"), search).toBeNull();
+      expect(screen.queryByRole("link", { name: /하네스 설치 점검/ }), search).toBeNull();
+      expect(screen.queryByRole("heading", { name: /하네스 설치 시험 화면/ }), search).toBeNull();
+      expect(document.querySelector("a[href*='lab=']"), search).toBeNull();
+      unmount();
+      vi.resetModules();
+    }
+  });
+
+  it("개발 빌드에서는 ?lab=harness 가 하네스 시험 화면을 열고 기본 화면에 그 링크가 있다 (위 '안 보임' 의 대조)", async () => {
+    const { unmount } = await renderApp(true, "");
+    expect(await screen.findByRole("link", { name: /하네스 설치 점검/ })).toHaveAttribute("href", "?lab=harness");
+    unmount();
+    vi.resetModules();
+    await renderApp(true, "?lab=harness");
+    expect(await screen.findByRole("heading", { name: /하네스 설치 시험 화면/ })).toBeInTheDocument();
+  });
+
   it("개발 빌드에서는 같은 주소에서 시험 화면 링크가 기본 화면에 있다 (대조)", async () => {
     await renderApp(true, "");
     expect(await screen.findByRole("link", { name: /시험 화면/ })).toHaveAttribute("href", "?lab=session");

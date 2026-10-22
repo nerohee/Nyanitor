@@ -1,6 +1,7 @@
 pub mod claude;
 pub mod commands;
 pub mod error;
+pub mod harness;
 pub mod strings;
 pub mod tray;
 
@@ -55,6 +56,8 @@ pub fn run() {
                 store,
                 claude::session::ManagerConfig::default(),
             ));
+            // 하네스 일(받기 · 업데이트 · 설치 · 되돌리기)은 한 번에 하나 (P4-02).
+            app.manage(harness::HarnessState::default());
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
             tray::show_main_window(app.handle());
@@ -73,6 +76,15 @@ pub fn run() {
             claude::commands::claude_session_state,
             claude::commands::claude_last_session,
             claude::commands::claude_raw_log,
+            harness::commands::harness_status,
+            harness::commands::harness_clone,
+            harness::commands::harness_update_check,
+            harness::commands::harness_update_pull,
+            harness::commands::harness_install_plan,
+            harness::commands::harness_install,
+            harness::commands::harness_backups,
+            harness::commands::harness_restore_plan,
+            harness::commands::harness_restore,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

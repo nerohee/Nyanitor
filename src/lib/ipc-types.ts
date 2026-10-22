@@ -10,7 +10,8 @@ export type AppErrorKind =
   | "no_session"
   | "no_saved_session"
   | "request_not_found"
-  | "turn_in_progress";
+  | "turn_in_progress"
+  | "harness_busy";
 
 const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "invalid_input",
@@ -21,6 +22,7 @@ const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "no_saved_session",
   "request_not_found",
   "turn_in_progress",
+  "harness_busy",
 ];
 
 export class AppError extends Error {
@@ -220,6 +222,286 @@ export interface ClaudeSessionState {
   busy: boolean;
   /** 답을 기다리는 요청들 (`permission_request` · `question_request` 이벤트 모양) */
   pending: ClaudeEvent[];
+}
+
+// ───────────────────────── 하네스 설치 · 업데이트 (P4-02) — `src-tauri/src/harness/` 와 같이 맞춘다 ─────────────────────────
+// 화면이 Rust 에 넘기는 값은 백업 번호 하나뿐이다 (실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다).
+// 코드 이름(`reason` · `problem` · `outcome`)은 진단용 짧은 이름이고, 화면이 문구를 고른다. 모르는 값은 글 그대로 보인다.
+
+/** `~/.claude/harness` 가 가리키는 곳의 종류 (`locate.rs` 의 `OriginKind`) */
+export type HarnessOriginKind = "none" | "repo" | "developer" | "unreadable";
+
+export interface HarnessOrigin {
+  kind: HarnessOriginKind;
+  /** 가리키는 원본 폴더 (알 수 없으면 null) */
+  path: string | null;
+  /** `link` (링크 · 정션) · `copy` (복사 + 표시 파일) */
+  marker: "link" | "copy" | null;
+  /** `unreadable` 일 때: `link_broken` · `mark_broken` · `foreign` · `source_missing` · `script_missing` · `read_failed` */
+  reason: string | null;
+}
+
+export interface GitInfo {
+  found: boolean;
+  path: string | null;
+  version: string | null;
+  /** `version_failed` */
+  problem: string | null;
+}
+
+export interface GitBashInfo {
+  /** 이 OS 에서 필요한가 (Windows 만) */
+  required: boolean;
+  found: boolean;
+  path: string | null;
+  /** `env` (`CLAUDE_CODE_GIT_BASH_PATH`) · `git` (git 설치 폴더) */
+  source: "env" | "git" | null;
+  /** `env_path_missing` */
+  problem: string | null;
+}
+
+export interface HarnessRepoStatus {
+  present: boolean;
+  /** git 으로 확인한 결과: 우리 원본이다 (git 이 없거나 `repo` 가 없으면 null) */
+  usable: boolean | null;
+  /** `not_git_repo` · `remote_mismatch` · `check_failed` */
+  problem: string | null;
+  remote: string | null;
+  head: string | null;
+}
+
+/** 상태 (`harness_status`) — 읽기만 한다 */
+export interface HarnessStatus {
+  /** 지금 쓰는 `~/.claude` (위치를 정하지 못했으면 null) */
+  claudeDir: string | null;
+  /** 지금 쓰는 하네스 폴더 */
+  harnessHome: string | null;
+  /** 환경 변수(`CLAUDE_CONFIG_DIR` · `CLAUDE_HARNESS_HOME`)로 정한 위치인가 — 아니면 기본 위치 = 실제 폴더 */
+  claudeDirFromEnv: boolean;
+  harnessHomeFromEnv: boolean;
+  /** 이 PC 의 기본 위치(`~/.claude` · `~/.claude-harness`)와 같은 폴더인가 — 환경 변수로 정했어도 기본 위치를 가리키면 true (실제 폴더) */
+  claudeDirIsDefault: boolean;
+  harnessHomeIsDefault: boolean;
+  /** 위치를 정하지 못한 이유: `no_home` · `config_dir_not_absolute` · `harness_home_not_absolute` */
+  problem: string | null;
+  repoDir: string | null;
+  repo: HarnessRepoStatus | null;
+  origin: HarnessOrigin;
+  /** 개발자 모드 — 다른 원본을 쓰는 중이라 받기 · 업데이트를 하지 않는다 */
+  developerMode: boolean;
+  /** 스크립트를 돌릴 원본 폴더 (개발자 원본 또는 `repo`) */
+  sourceDir: string | null;
+  /** 돌릴 설치 스크립트 (파일이 있을 때만) */
+  scriptPath: string | null;
+  /** 원본이 네트워크 공유(UNC `\\서버\공유`)에 있다 — WSL(`\\wsl.localhost\…`)은 아니다. 막지는 않고 알린다 */
+  sourceIsNetwork: boolean;
+  git: GitInfo;
+  gitBash: GitBashInfo;
+  /** 백업을 몇 개 남기는가 */
+  keepBackups: number;
+}
+
+/** 받기 · 업데이트 확인 · 업데이트 받기의 결과 종류 (`git.rs` 의 `GitOutcome`) */
+export type GitOutcome =
+  | "cloned"
+  | "already_present"
+  | "checked"
+  | "updated"
+  | "up_to_date"
+  | "refused"
+  | "developer_mode"
+  | "git_missing"
+  | "repo_missing"
+  | "repo_unusable"
+  | "failed"
+  | "timed_out";
+
+export type UpdateState = "up_to_date" | "behind" | "ahead" | "diverged" | "detached" | "no_upstream";
+
+export interface HarnessCommit {
+  hash: string;
+  date: string;
+  subject: string;
+}
+
+export interface HarnessFileChange {
+  /** git 의 한 글자 상태: `A` 새로 · `M` 바뀜 · `D` 지워짐 · `T` 종류 바뀜 */
+  status: string;
+  path: string;
+}
+
+export interface UpdatePreview {
+  branch: string | null;
+  upstream: string | null;
+  /** 확인한 그때 따라가는 원격 브랜치의 전체 해시 — 받기는 이 커밋까지만 받는다 (확인 뒤 원본에 생긴 새 커밋은 받지 않는다) */
+  upstreamHash: string | null;
+  state: UpdateState;
+  ahead: number;
+  behind: number;
+  /** 로컬 변경(추적하는 파일)이 있다 */
+  dirty: boolean;
+  commits: HarnessCommit[];
+  commitsTotal: number;
+  files: HarnessFileChange[];
+  filesTotal: number;
+  /** 받기 단추를 켤 수 있다 (받을 커밋이 있고 로컬 변경이 없다) */
+  canPull: boolean;
+}
+
+export interface GitResult {
+  outcome: GitOutcome;
+  /** 거절 · 쓸 수 없음의 이유: `check_first` · `dirty` · `diverged` · `ahead` · `detached_head` · `no_upstream` · `not_fast_forward` · `not_git_repo` · `remote_mismatch` */
+  reason: string | null;
+  /** git 의 끝부분 몇 줄 · 다른 원격 주소 (주소의 계정 정보는 지웠다) */
+  detail: string | null;
+  /** 지금 `repo` 의 짧은 해시 */
+  head: string | null;
+  /** 받기 전의 짧은 해시 (업데이트 받기) */
+  before: string | null;
+  /** 업데이트 확인의 목록 */
+  update: UpdatePreview | null;
+  /** 업데이트 받기가 실제로 받은 커밋 (받기 전 HEAD..새 HEAD, 최신이 먼저, 상한 있음) */
+  pulled: HarnessCommit[];
+  /** 실제로 받은 커밋의 전체 수 (`pulled` 는 상한까지만) */
+  pulledTotal: number;
+}
+
+// 설치 스크립트 JSON (약속 문서 `shared/app-contract.md` 버전 1, 2-3절) — 모르는 코드는 글 그대로 온다
+
+export interface HarnessChange {
+  path: string;
+  /** `add` · `change` · `remove` · `skip` */
+  action: string;
+  /** `file` · `link` */
+  type: string;
+  reason: string | null;
+}
+
+export interface HarnessCounts {
+  add: number;
+  change: number;
+  remove: number;
+  skip: number;
+  same: number;
+}
+
+export interface HarnessCustomItem {
+  path: string;
+  /** `values` · `append` · `replace` · `new` · `config` */
+  kind: string;
+  originChanged: boolean | null;
+}
+
+export interface HarnessOriginChanged {
+  path: string;
+  recorded: string | null;
+  current: string | null;
+}
+
+export interface HarnessProblem {
+  path: string | null;
+  reason: string;
+  detail: string | null;
+}
+
+export interface HarnessBackupRef {
+  id: string;
+  dir: string | null;
+  files: number;
+}
+
+export interface HarnessBackupInfo {
+  id: string;
+  createdAt: string | null;
+  command: string | null;
+  added: number;
+  changed: number;
+  removed: number;
+  files: number;
+  bytes: number;
+  readable: boolean;
+}
+
+export interface HarnessErrorInfo {
+  code: string;
+  detail: string | null;
+}
+
+export interface HarnessReport {
+  contract: number;
+  /** `install` · `backups` · `restore` */
+  command: string;
+  ok: boolean;
+  exitCode: number;
+  dryRun: boolean;
+  claudeDir: string | null;
+  harnessHome: string | null;
+  repo: string | null;
+  /** `link` · `copy` */
+  mode: string | null;
+  developerMode: boolean;
+  existingSource: string | null;
+  restartNeeded: boolean;
+  custom: { dir: string | null; items: HarnessCustomItem[] } | null;
+  changes: HarnessChange[];
+  counts: HarnessCounts;
+  same: boolean;
+  originChanged: HarnessOriginChanged[];
+  problems: HarnessProblem[];
+  warnings: HarnessProblem[];
+  backup: HarnessBackupRef | null;
+  backups: HarnessBackupInfo[];
+  originHash: unknown;
+  rolledBack: boolean | null;
+  error: HarnessErrorInfo | null;
+}
+
+/** 스크립트를 돌린 결과 종류 (`script.rs` 의 `ScriptOutcome`) */
+export type ScriptOutcome = "ran" | "unreadable" | "no_script" | "refused" | "timed_out" | "spawn_failed";
+
+/** 읽을 수 없는 이유 (`script.rs` 의 `UnreadableReason`) */
+export type UnreadableReason = "no_json" | "bad_json" | "unknown_contract" | "bad_shape" | "unexpected_command";
+
+export interface HarnessUnreadable {
+  reason: UnreadableReason;
+  /** JSON 의 `contract` 값 (있으면, 글로) */
+  contract: string | null;
+  /** 표준 출력 앞부분 */
+  head: string;
+  /** 표준 오류 앞부분 */
+  stderrHead: string;
+}
+
+/** 설치 뒤 백업 정리 결과 */
+export interface HarnessPrune {
+  removed: number;
+  kept: number;
+  removedIds: string[];
+  /** 번호 모양이지만 링크 · 정션이거나 폴더가 아니라서 건너뛴 이름 */
+  skippedEntries: string[];
+  /** 지우려다 실패한 번호 */
+  failed: string[];
+  /** 정리를 아예 하지 않은 이유: `backups_is_link` · `read_failed` · `locked` (설치 스크립트의 잠금이 남아 있다) */
+  skipped: string | null;
+}
+
+export interface ScriptResult {
+  outcome: ScriptOutcome;
+  /** 프로세스 종료 코드 */
+  exitCode: number | null;
+  report: HarnessReport | null;
+  /** 읽은 JSON 한 줄 (원문 보기용) */
+  raw: string | null;
+  unreadable: HarnessUnreadable | null;
+  /** 쓰는 중 실패(종료 코드 3) · 시간 초과 · 결과를 알 수 없음(설치 · 되돌리기) — 백업에서 되돌리기를 권한다 */
+  restoreAdvised: boolean;
+  /** 돌린 스크립트 */
+  script: string | null;
+  /** 설치 뒤 백업 정리 결과 (설치만) */
+  prune: HarnessPrune | null;
+  detail: string | null;
+  /** `refused` 의 이유: `plan_first` (미리보기를 본 적 없음) · `source_changed` (미리보기 뒤 원본이 바뀜) */
+  reason: string | null;
 }
 
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */

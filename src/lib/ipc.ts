@@ -14,7 +14,10 @@ import {
   type ClaudeResponse,
   type ClaudeSessionState,
   type ClaudeStatus,
+  type GitResult,
+  type HarnessStatus,
   type RawLogEntry,
+  type ScriptResult,
   type StartInfo,
   type StartRequest,
   type StopInfo,
@@ -88,4 +91,24 @@ export const ipc = {
   claudeLastSession: (projectDir: string) => call<string | null>("claude_last_session", { projectDir }),
   claudeRawLog: () => call<RawLogEntry[]>("claude_raw_log"),
   onClaudeEvent,
+
+  // 하네스 설치 · 업데이트 (P4-02). 넘기는 값은 백업 번호 하나뿐 — 실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다.
+  /** 위치 · 원본(개발자 모드) · 받은 원본 · git · Git Bash. 읽기만 한다 */
+  harnessStatus: () => call<HarnessStatus>("harness_status"),
+  /** 하네스 원본 받기 (`repo` 가 없을 때만) */
+  harnessClone: () => call<GitResult>("harness_clone"),
+  /** 업데이트 확인 — 받을 커밋 · 바뀔 파일 미리보기. 본 커밋을 앱(Rust)이 기억한다 */
+  harnessUpdateCheck: () => call<GitResult>("harness_update_check"),
+  /** 업데이트 받기 — 확인 때 본 커밋까지만 빨리 감기로 (확인이 없으면 `refused` · `check_first`) */
+  harnessUpdatePull: () => call<GitResult>("harness_update_pull"),
+  /** 설치 미리보기 — 아무것도 쓰지 않는다. 돌린 원본을 앱(Rust)이 기억한다 */
+  harnessInstallPlan: () => call<ScriptResult>("harness_install_plan"),
+  /** 설치 (미리보기를 본 그 원본으로만 — 아니면 `refused` · `plan_first` · `source_changed`) */
+  harnessInstall: () => call<ScriptResult>("harness_install"),
+  /** 백업 목록 */
+  harnessBackups: () => call<ScriptResult>("harness_backups"),
+  /** 되돌리기 미리보기 — 아무것도 쓰지 않는다 */
+  harnessRestorePlan: (backupId: string) => call<ScriptResult>("harness_restore_plan", { backupId }),
+  /** 되돌리기 (같은 번호의 되돌리기 미리보기를 본 뒤에만) */
+  harnessRestore: (backupId: string) => call<ScriptResult>("harness_restore", { backupId }),
 };

@@ -4,6 +4,7 @@
 //  · 허용 / 항상 허용 / 거부 / 다르게 말하기 / 질문 답 / 중단 / 끝내기 / 이어 하기
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
+import { fakeHarness } from "./fakeHarness";
 import {
   AppError,
   type AppInfo,
@@ -314,6 +315,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
   const handlers: Record<string, Handler> = {
     app_info: (): AppInfo => ({ name: "Nyanitor", version: "0.0.0-browser" }),
     ...fakeClaude.handlers,
+    ...fakeHarness.handlers,
   };
   const handler = handlers[command];
   if (!handler) {

@@ -1,0 +1,2 @@
+Something went wrong before the JSON could be written
+{"contract":1,"command":"install","ok":tr

@@ -2,6 +2,12 @@
 // Rust 쪽 목록은 소스 파일 글을 읽어(`?raw`) 뽑는다. 읽는 모양이 바뀌면 이 시험이 먼저 "못 찾음" 으로 실패한다.
 import errorRs from "../../src-tauri/src/error.rs?raw";
 import eventsRs from "../../src-tauri/src/claude/events.rs?raw";
+import harnessBackupsRs from "../../src-tauri/src/harness/backups.rs?raw";
+import harnessFlowRs from "../../src-tauri/src/harness/flow.rs?raw";
+import harnessGitRs from "../../src-tauri/src/harness/git.rs?raw";
+import harnessLocateRs from "../../src-tauri/src/harness/locate.rs?raw";
+import harnessScriptRs from "../../src-tauri/src/harness/script.rs?raw";
+import harnessStatusRs from "../../src-tauri/src/harness/status.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
 import {
@@ -11,7 +17,33 @@ import {
   type AppErrorKind,
   type ClaudeEventType,
   type ClaudeResponse,
+  type GitBashInfo,
+  type GitInfo,
+  type GitOutcome,
+  type GitResult,
+  type HarnessBackupInfo,
+  type HarnessBackupRef,
+  type HarnessChange,
+  type HarnessCommit,
+  type HarnessCounts,
+  type HarnessCustomItem,
+  type HarnessErrorInfo,
+  type HarnessFileChange,
+  type HarnessOrigin,
+  type HarnessOriginChanged,
+  type HarnessOriginKind,
+  type HarnessProblem,
+  type HarnessPrune,
+  type HarnessReport,
+  type HarnessRepoStatus,
+  type HarnessStatus,
+  type HarnessUnreadable,
+  type ScriptResult,
+  type UpdatePreview,
+  type ScriptOutcome,
   type TurnOutcome,
+  type UnreadableReason,
+  type UpdateState,
 } from "./ipc";
 
 // 아래 `Record<…, true>` 는 TS 쪽에서 종류가 하나 늘면 컴파일(`tsc`)이 실패하게 하는 장치다.
@@ -24,6 +56,7 @@ const TS_ERROR_KINDS: Record<AppErrorKind, true> = {
   no_saved_session: true,
   request_not_found: true,
   turn_in_progress: true,
+  harness_busy: true,
 };
 
 const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
@@ -54,6 +87,93 @@ const TS_RESPONSE_KINDS: Record<ClaudeResponse["kind"], true> = {
 
 const TS_OUTCOMES: Record<TurnOutcome, true> = { success: true, interrupted: true, error: true, limit: true };
 const TS_SCOPES: Record<AlwaysScope, true> = { suggested: true, folder: true, file: true };
+
+// 하네스 (P4-02) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_GIT_OUTCOMES: Record<GitOutcome, true> = {
+  cloned: true,
+  already_present: true,
+  checked: true,
+  updated: true,
+  up_to_date: true,
+  refused: true,
+  developer_mode: true,
+  git_missing: true,
+  repo_missing: true,
+  repo_unusable: true,
+  failed: true,
+  timed_out: true,
+};
+const TS_UPDATE_STATES: Record<UpdateState, true> = {
+  up_to_date: true,
+  behind: true,
+  ahead: true,
+  diverged: true,
+  detached: true,
+  no_upstream: true,
+};
+const TS_ORIGIN_KINDS: Record<HarnessOriginKind, true> = { none: true, repo: true, developer: true, unreadable: true };
+const TS_SCRIPT_OUTCOMES: Record<ScriptOutcome, true> = {
+  ran: true,
+  unreadable: true,
+  no_script: true,
+  refused: true,
+  timed_out: true,
+  spawn_failed: true,
+};
+const TS_UNREADABLE: Record<UnreadableReason, true> = {
+  no_json: true,
+  bad_json: true,
+  unknown_contract: true,
+  bad_shape: true,
+  unexpected_command: true,
+};
+
+// 하네스 결과의 필드 이름 — 화면 타입과 Rust 구조체(serde camelCase)가 같은 키를 쓰는지. 한쪽만 늘면 컴파일 또는 아래 시험이 실패한다.
+const TS_FIELDS = {
+  HarnessStatus: { claudeDir: 1, harnessHome: 1, claudeDirFromEnv: 1, harnessHomeFromEnv: 1, claudeDirIsDefault: 1, harnessHomeIsDefault: 1, problem: 1, repoDir: 1, repo: 1, origin: 1, developerMode: 1, sourceDir: 1, scriptPath: 1, sourceIsNetwork: 1, git: 1, gitBash: 1, keepBackups: 1 } satisfies Record<keyof HarnessStatus, 1>,
+  RepoStatus: { present: 1, usable: 1, problem: 1, remote: 1, head: 1 } satisfies Record<keyof HarnessRepoStatus, 1>,
+  Origin: { kind: 1, path: 1, marker: 1, reason: 1 } satisfies Record<keyof HarnessOrigin, 1>,
+  GitInfo: { found: 1, path: 1, version: 1, problem: 1 } satisfies Record<keyof GitInfo, 1>,
+  GitBashInfo: { required: 1, found: 1, path: 1, source: 1, problem: 1 } satisfies Record<keyof GitBashInfo, 1>,
+  GitResult: { outcome: 1, reason: 1, detail: 1, head: 1, before: 1, update: 1, pulled: 1, pulledTotal: 1 } satisfies Record<keyof GitResult, 1>,
+  UpdatePreview: { branch: 1, upstream: 1, upstreamHash: 1, state: 1, ahead: 1, behind: 1, dirty: 1, commits: 1, commitsTotal: 1, files: 1, filesTotal: 1, canPull: 1 } satisfies Record<keyof UpdatePreview, 1>,
+  CommitInfo: { hash: 1, date: 1, subject: 1 } satisfies Record<keyof HarnessCommit, 1>,
+  FileChange: { status: 1, path: 1 } satisfies Record<keyof HarnessFileChange, 1>,
+  ScriptResult: { outcome: 1, exitCode: 1, report: 1, raw: 1, unreadable: 1, restoreAdvised: 1, script: 1, prune: 1, detail: 1, reason: 1 } satisfies Record<keyof ScriptResult, 1>,
+  Report: { contract: 1, command: 1, ok: 1, exitCode: 1, dryRun: 1, claudeDir: 1, harnessHome: 1, repo: 1, mode: 1, developerMode: 1, existingSource: 1, restartNeeded: 1, custom: 1, changes: 1, counts: 1, same: 1, originChanged: 1, problems: 1, warnings: 1, backup: 1, backups: 1, originHash: 1, rolledBack: 1, error: 1 } satisfies Record<keyof HarnessReport, 1>,
+  CustomItem: { path: 1, kind: 1, originChanged: 1 } satisfies Record<keyof HarnessCustomItem, 1>,
+  Change: { path: 1, action: 1, type: 1, reason: 1 } satisfies Record<keyof HarnessChange, 1>,
+  Counts: { add: 1, change: 1, remove: 1, skip: 1, same: 1 } satisfies Record<keyof HarnessCounts, 1>,
+  OriginChanged: { path: 1, recorded: 1, current: 1 } satisfies Record<keyof HarnessOriginChanged, 1>,
+  Problem: { path: 1, reason: 1, detail: 1 } satisfies Record<keyof HarnessProblem, 1>,
+  BackupRef: { id: 1, dir: 1, files: 1 } satisfies Record<keyof HarnessBackupRef, 1>,
+  BackupInfo: { id: 1, createdAt: 1, command: 1, added: 1, changed: 1, removed: 1, files: 1, bytes: 1, readable: 1 } satisfies Record<keyof HarnessBackupInfo, 1>,
+  ErrorInfo: { code: 1, detail: 1 } satisfies Record<keyof HarnessErrorInfo, 1>,
+  Unreadable: { reason: 1, contract: 1, head: 1, stderrHead: 1 } satisfies Record<keyof HarnessUnreadable, 1>,
+  PruneResult: { removed: 1, kept: 1, removedIds: 1, skippedEntries: 1, failed: 1, skipped: 1 } satisfies Record<keyof HarnessPrune, 1>,
+};
+
+const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+
+/** `pub struct <name> {` 의 바로 아래(들여쓰기 4칸) `pub` 필드를 serde camelCase 이름으로 (`#[serde(rename = "type")]` 인 `kind` 는 `type`) */
+function rustFields(source: string, structName: string): string[] {
+  const start = source.indexOf(`pub struct ${structName} {`);
+  if (start < 0) throw new Error(`struct ${structName} not found`);
+  const rest = source.slice(start);
+  const body = rest.slice(0, rest.indexOf("\n}"));
+  const names: string[] = [];
+  let renamedToType = false;
+  for (const line of body.split("\n")) {
+    if (/^ {4}#\[serde\(rename = "type"\)\]/.test(line)) renamedToType = true;
+    const field = /^ {4}pub ([a-z_0-9]+):/.exec(line);
+    if (field) {
+      names.push(renamedToType ? "type" : camel(field[1] as string));
+      renamedToType = false;
+    }
+  }
+  if (names.length === 0) throw new Error(`no fields in ${structName}`);
+  return names;
+}
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
@@ -106,6 +226,67 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(sorted(Object.keys(TS_SCOPES))).toEqual(sorted(rustVariants(eventsRs, "AlwaysScope").map(snake)));
   });
 
+  it("하네스 종류: git.rs · locate.rs · script.rs 의 enum 과 ipc-types 의 글 종류", () => {
+    expect(sorted(Object.keys(TS_GIT_OUTCOMES))).toEqual(sorted(rustVariants(harnessGitRs, "GitOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_UPDATE_STATES))).toEqual(sorted(rustVariants(harnessGitRs, "UpdateState").map(snake)));
+    expect(sorted(Object.keys(TS_ORIGIN_KINDS))).toEqual(sorted(rustVariants(harnessLocateRs, "OriginKind").map(snake)));
+    expect(sorted(Object.keys(TS_SCRIPT_OUTCOMES))).toEqual(sorted(rustVariants(harnessScriptRs, "ScriptOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_UNREADABLE))).toEqual(sorted(rustVariants(harnessScriptRs, "UnreadableReason").map(snake)));
+  });
+
+  it("하네스 결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다", () => {
+    const sources: Record<string, [string, string]> = {
+      HarnessStatus: [harnessStatusRs, "HarnessStatus"],
+      RepoStatus: [harnessStatusRs, "RepoStatus"],
+      Origin: [harnessLocateRs, "Origin"],
+      GitInfo: [harnessGitRs, "GitInfo"],
+      GitBashInfo: [harnessGitRs, "GitBashInfo"],
+      GitResult: [harnessGitRs, "GitResult"],
+      UpdatePreview: [harnessGitRs, "UpdatePreview"],
+      CommitInfo: [harnessGitRs, "CommitInfo"],
+      FileChange: [harnessGitRs, "FileChange"],
+      ScriptResult: [harnessScriptRs, "ScriptResult"],
+      Report: [harnessScriptRs, "Report"],
+      CustomItem: [harnessScriptRs, "CustomItem"],
+      Change: [harnessScriptRs, "Change"],
+      Counts: [harnessScriptRs, "Counts"],
+      OriginChanged: [harnessScriptRs, "OriginChanged"],
+      Problem: [harnessScriptRs, "Problem"],
+      BackupRef: [harnessScriptRs, "BackupRef"],
+      BackupInfo: [harnessScriptRs, "BackupInfo"],
+      ErrorInfo: [harnessScriptRs, "ErrorInfo"],
+      Unreadable: [harnessScriptRs, "Unreadable"],
+      PruneResult: [harnessBackupsRs, "PruneResult"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_FIELDS[name as keyof typeof TS_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+  });
+
+  it("하네스 종류마다 시험 화면 문구가 있다 (코드를 글 그대로 보이는 일이 없게)", () => {
+    for (const outcome of Object.keys(TS_GIT_OUTCOMES)) expect(isTextKey(`lab.harness.git.${outcome}`), outcome).toBe(true);
+    for (const state of Object.keys(TS_UPDATE_STATES)) expect(isTextKey(`lab.harness.update.state.${state}`), state).toBe(true);
+    for (const kind of Object.keys(TS_ORIGIN_KINDS)) expect(isTextKey(`lab.harness.origin.${kind}`), kind).toBe(true);
+    for (const outcome of Object.keys(TS_SCRIPT_OUTCOMES)) expect(isTextKey(`lab.harness.script.${outcome}`), outcome).toBe(true);
+    for (const reason of Object.keys(TS_UNREADABLE)) expect(isTextKey(`lab.harness.unreadable.${reason}`), reason).toBe(true);
+  });
+
+  it("Rust 가 거절하며 보내는 이유마다 시험 화면 문구가 있다 (받기 거절 · 설치 · 되돌리기 거절)", () => {
+    const gitReasons = [...harnessGitRs.matchAll(/refuse\("([a-z_]+)"\)/g)].map((m) => m[1] as string);
+    expect(gitReasons).toEqual(expect.arrayContaining(["check_first", "dirty", "diverged", "ahead", "detached_head", "no_upstream", "not_fast_forward"]));
+    for (const reason of gitReasons) expect(isTextKey(`lab.harness.reason.${reason}`), `git 거절 이유 ${reason}`).toBe(true);
+    const scriptReasons = [...harnessFlowRs.matchAll(/refused\("([a-z_]+)"\)/g)].map((m) => m[1] as string);
+    expect(sorted(new Set(scriptReasons))).toEqual(["plan_first", "source_changed"]);
+    for (const reason of scriptReasons) expect(isTextKey(`lab.harness.refused.${reason}`), `설치 거절 이유 ${reason}`).toBe(true);
+    // 설치 뒤 백업 정리를 건너뛴 이유 (backups.rs)
+    for (const reason of [...harnessBackupsRs.matchAll(/skipped = Some\("([a-z_]+)"\.into\(\)\)/g)].map((m) => m[1] as string)) {
+      expect(isTextKey(`lab.harness.pruneSkipped.${reason}`), `정리 건너뜀 이유 ${reason}`).toBe(true);
+    }
+    expect(isTextKey("lab.harness.pruneSkipped.locked")).toBe(true); // script.rs 가 잠금을 보고 건너뛴다
+  });
+
   it("화면이 듣는 이벤트 이름은 commands.rs 와 같다", async () => {
     const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
     const { CLAUDE_SESSION_EVENT } = await import("./ipc");
@@ -119,11 +300,76 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(called.length).toBeGreaterThan(8);
     for (const command of called) {
       if (command === "app_info") continue;
-      expect(libRs, `${command} 이 lib.rs 에 없음`).toContain(`claude::commands::${command}`);
+      const module = command.startsWith("harness_") ? "harness" : "claude";
+      expect(libRs, `${command} 이 lib.rs 에 없음`).toContain(`${module}::commands::${command}`);
     }
-    // 반대로, Rust 에 등록된 Claude 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
-    const registered = [...libRs.matchAll(/claude::commands::(claude_[a-z_]+)/g)].map((m) => m[1] as string);
+    // 반대로, Rust 에 등록된 Claude · 하네스 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
+    const registered = [
+      ...libRs.matchAll(/claude::commands::(claude_[a-z_]+)/g),
+      ...libRs.matchAll(/harness::commands::(harness_[a-z_]+)/g),
+    ].map((m) => m[1] as string);
     expect(sorted(registered)).toEqual(sorted(called.filter((c) => c !== "app_info")));
+  });
+
+  it("하네스 명령이 화면에서 받는 값은 백업 번호 하나뿐이다 (실행 파일 · 인자 · 경로 · URL 을 받는 길이 없다)", async () => {
+    const commandsRs = (await import("../../src-tauri/src/harness/commands.rs?raw")).default;
+    const signatures = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (harness_[a-z_]+)\(([^)]*)\)/g)];
+    expect(signatures.length).toBe(9);
+    for (const [, name, params] of signatures) {
+      const names = (params as string)
+        .replace(/<[^>]*>/g, "") // `State<'_, HarnessState>` 안의 쉼표는 매개변수 구분이 아니다
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "")
+        .map((p) => p.split(":")[0]?.trim());
+      const allowed = name === "harness_status" ? [] : name === "harness_restore" || name === "harness_restore_plan" ? ["state", "backup_id"] : ["state"];
+      expect(names, `${name} 의 매개변수`).toEqual(allowed);
+    }
+    // 화면 쪽 호출도 같다: 백업 번호 말고는 인자를 넘기지 않는다
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    const harnessCalls = [...ipcTs.matchAll(/harness[A-Za-z]+: \(([^)]*)\) => call<[^>]*>\("(harness_[a-z_]+)"(, \{[^}]*\})?/g)];
+    expect(harnessCalls.length).toBe(9);
+    for (const [, params, command, args] of harnessCalls) {
+      const takesId = command === "harness_restore" || command === "harness_restore_plan";
+      expect(params, command).toBe(takesId ? "backupId: string" : "");
+      expect(args ?? "", command).toBe(takesId ? ", { backupId }" : "");
+    }
+  });
+
+  it("쓰는 하네스 명령은 모두 flow 를 거친다 — 한 번에 하나 잠금과 본 것만 한다 규칙을 건너뛰는 명령이 없다", async () => {
+    const commandsRs = (await import("../../src-tauri/src/harness/commands.rs?raw")).default;
+    const flowRs = (await import("../../src-tauri/src/harness/flow.rs?raw")).default;
+    const bodies = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (harness_[a-z_]+)\([^)]*\)[^{]*\{([\s\S]*?)\n\}/g)];
+    expect(bodies.length).toBe(9);
+    const expected: Record<string, string> = {
+      harness_clone: "clone_origin",
+      harness_update_check: "update_check",
+      harness_update_pull: "update_pull",
+      harness_install_plan: "install_plan",
+      harness_install: "install",
+      harness_backups: "backups_list",
+      harness_restore_plan: "restore_plan",
+      harness_restore: "restore",
+    };
+    for (const [, name, body] of bodies) {
+      if (name === "harness_status") continue; // 읽기만 한다 — 잠그지 않는다
+      expect(body, `${name} 은 flow::${expected[name as string]} 를 불러야 한다`).toMatch(new RegExp(`flow::${expected[name as string]}\\b`));
+      // git · 스크립트를 직접 부르지 않는다 (잠금 · 기억을 건너뛰게 된다)
+      expect(body, `${name} 이 git/script 를 직접 부름`).not.toMatch(/\b(git|script)::/);
+    }
+    // flow 의 함수는 모두 맨 앞에서 잠금(begin)을 잡는다
+    const fns = [...flowRs.matchAll(/pub fn ([a-z_]+)\([^)]*\)[^{]*\{\n([\s\S]*?)\n\}/g)];
+    expect(fns.map((m) => m[1]).sort()).toEqual(Object.values(expected).sort());
+    for (const [, name, body] of fns) {
+      expect((body as string).trimStart(), `flow::${name} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.begin\(\)\?;/);
+    }
+  });
+
+  it("창 권한(capabilities)은 하네스 때문에 넓어지지 않았다 — 앱 명령만 더했다", async () => {
+    const capability = JSON.parse((await import("../../src-tauri/capabilities/default.json?raw")).default) as {
+      permissions: string[];
+    };
+    expect(capability.permissions).toEqual(["core:default"]);
   });
 
   it("오류 · 이벤트가 아닌 모양(null · 숫자 · 종류만 있고 문구가 없는 객체)도 internal AppError 가 된다", () => {

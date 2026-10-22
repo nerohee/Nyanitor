@@ -39,7 +39,7 @@ impl EventSink for TauriSink {
     }
 }
 
-async fn blocking<T, F>(work: F) -> Result<T, AppError>
+pub(crate) async fn blocking<T, F>(work: F) -> Result<T, AppError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, AppError> + Send + 'static,

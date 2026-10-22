@@ -325,3 +325,118 @@ pub fn wait_for_file(path: &Path, within: Duration) -> String {
     }
     panic!("{} did not appear", path.display());
 }
+
+// ───────────────────────────── 하네스 시험 도우미 (P4-02) ─────────────────────────────
+
+use nyanitor_lib::harness::Context;
+use nyanitor_lib::harness::git::locate_git_here;
+use nyanitor_lib::harness::locate::Locations;
+
+/// 폴더 링크 만들기 — Windows 는 정션(`mklink /J`, 권한이 필요 없다), 그 밖은 심볼릭 링크. 실패하면 `false`.
+pub fn make_dir_link(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let status = std::process::Command::new("cmd")
+            .raw_arg(format!(
+                "/C mklink /J \"{}\" \"{}\"",
+                link.display(),
+                target.display()
+            ))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        status.is_ok_and(|s| s.success())
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+}
+
+/// 시험 폴더 한 벌: 가짜 `~/.claude` · 하네스 폴더가 모두 `root` 아래에 있다 (실제 홈 폴더는 어디에도 안 쓰인다).
+pub struct HarnessRoot {
+    pub root: PathBuf,
+    pub locations: Locations,
+}
+
+impl HarnessRoot {
+    pub fn new(name: &str) -> Self {
+        let root = unique_dir(name);
+        let locations = Locations {
+            claude_dir: root.join("claude"),
+            harness_home: root.join("hh"),
+            claude_dir_from_env: true,
+            harness_home_from_env: true,
+        };
+        fs::create_dir_all(&locations.claude_dir).unwrap();
+        fs::create_dir_all(&locations.harness_home).unwrap();
+        Self { root, locations }
+    }
+
+    pub fn ctx(&self) -> Context {
+        Context::new(self.locations.clone(), Some(git_exe()))
+    }
+
+    pub fn ctx_without_git(&self) -> Context {
+        Context::new(self.locations.clone(), None)
+    }
+}
+
+impl Drop for HarnessRoot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+pub fn git_exe() -> PathBuf {
+    locate_git_here().expect("git must be installed to run the harness tests")
+}
+
+/// 시험용 git 한 번 — 작성자 · 서명 · 줄바꿈 설정을 못 박고 실패하면 멈춘다. 표준 출력(끝 공백 뺌)을 돌려준다.
+pub fn git(dir: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new(git_exe())
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "-c",
+            "user.name=Tester",
+            "-c",
+            "user.email=tester@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.autocrlf=false",
+        ])
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim_end().to_string()
+}
+
+/// 파일을 쓰고 커밋한다 (폴더는 알아서 만든다).
+pub fn commit_file(repo: &Path, name: &str, text: &str, message: &str) {
+    let path = repo.join(name);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, text).unwrap();
+    git(repo, &["add", "--", name]);
+    git(repo, &["commit", "-q", "-m", message]);
+}
+
+/// 원격 대신 쓸 로컬 저장소 (`main`, 첫 커밋 하나)
+pub fn make_origin_repo(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "-q", "-b", "main"]);
+    commit_file(dir, "README.md", "hello\n", "feat: 처음");
+}
+
+/// 경로를 git 이 받는 주소 모양으로 (Windows 는 `/`)
+pub fn as_url(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}

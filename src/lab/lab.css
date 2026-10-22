@@ -20,3 +20,11 @@
 .lab-events li { padding: 2px 0; border-bottom: 1px solid #8882; overflow-wrap: anywhere; }
 .lab-raw { max-height: 280px; overflow: auto; font-family: monospace; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lab-error { color: #c33; }
+
+/* 하네스 시험 화면 맨 위 — 지금 쓰는 위치를 크게. 환경 변수로 정한 시험 폴더가 아니면 붉게 (실제 폴더) */
+.lab-where { border: 3px solid #2a8a4a !important; padding: 16px !important; font-size: 16px; }
+.lab-where.lab-where-real { border-color: #c33 !important; background: #c331; }
+.lab-where h2 { font-size: 18px; }
+.lab-where-facts dd code { font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.lab-backups { list-style: none; margin: 4px 0; padding: 0; }
+.lab-backups li { padding: 2px 0; }

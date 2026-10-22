@@ -31,6 +31,9 @@ pub enum AppError {
     /// 지금 턴이 도는 중이라 새 메시지를 보낼 수 없다.
     #[error("a turn is already in progress")]
     TurnInProgress,
+    /// 다른 하네스 작업(받기 · 업데이트 · 설치 · 되돌리기)이 진행 중이다 (한 번에 하나).
+    #[error("another harness task is in progress")]
+    HarnessBusy,
 }
 
 impl AppError {
@@ -44,6 +47,7 @@ impl AppError {
             AppError::NoSavedSession => "no_saved_session",
             AppError::RequestNotFound(_) => "request_not_found",
             AppError::TurnInProgress => "turn_in_progress",
+            AppError::HarnessBusy => "harness_busy",
         }
     }
 }
@@ -101,5 +105,6 @@ mod tests {
             "request_not_found"
         );
         assert_eq!(AppError::TurnInProgress.kind(), "turn_in_progress");
+        assert_eq!(AppError::HarnessBusy.kind(), "harness_busy");
     }
 }

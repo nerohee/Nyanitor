@@ -1358,6 +1358,8 @@ const ko = {
   "home.usage.readAgo": "{ago} 읽음",
   "home.usage.refresh": "다시 읽기",
   "home.usage.reading": "읽는 중…",
+  "home.usage.readingSince": "읽는 중… · {ago} 기준",
+  "home.usage.staleSince": "갱신 실패 · {ago} 기준",
   "home.usage.unavailable": "확인할 수 없음",
   "home.usage.noEffect": "앱 기능에는 영향이 없어요.",
   "home.usage.reason.not_subscription": "구독 계정이 아니라서 츄르를 볼 수 없어요.",

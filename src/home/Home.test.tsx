@@ -155,13 +155,51 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
     fireEvent.click(refresh);
     expect(read).toHaveBeenCalledTimes(2);
     expect(refresh).toBeDisabled();
-    expect(screen.getByText("읽는 중…")).toBeInTheDocument();
-    // 이전 값은 그대로
+    // 이전 값과 그 값을 읽은 때는 그대로
+    expect(screen.getByText("읽는 중… · 방금 기준")).toBeInTheDocument();
     expect(screen.getByText("10% 먹음")).toBeInTheDocument();
 
     await act(async () => resolvers[1](second));
     expect(screen.getByText("77% 먹음")).toBeInTheDocument();
     expect(refresh).toBeEnabled();
+  });
+
+  const tenMinutesAgo = () => ({ ...OK_USAGE, readAt: Math.floor(Date.now() / 1000) - 10 * 60 });
+  const transient: [string, () => Promise<UsageResult>][] = [
+    ["시간 초과", async () => ({ state: "unavailable", reason: "timeout" })],
+    ["실패", async () => ({ state: "unavailable", reason: "failed" })],
+    ["빈 응답", async () => ({ ...OK_USAGE, fiveHour: null, sevenDay: null })],
+    ["앱 오류", () => Promise.reject(new Error("boom"))],
+  ];
+  for (const [name, fail] of transient) {
+    it(`받은 뒤 잠깐 못 받으면(${name}) 마지막 숫자를 남기고 '갱신 실패 · n분 전 기준', 다시 받으면 새 값`, async () => {
+      const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
+      render(<Home />);
+      expect(await screen.findByText("10분 전 읽음")).toBeInTheDocument();
+
+      read.mockImplementation(fail);
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "다시 읽기" })));
+      expect(screen.getByText("갱신 실패 · 10분 전 기준")).toBeInTheDocument();
+      expect(screen.getByText("42% 먹음")).toBeInTheDocument();
+      expect(screen.queryByText("확인할 수 없음")).not.toBeInTheDocument();
+
+      read.mockResolvedValue({ ...OK_USAGE, readAt: Math.floor(Date.now() / 1000) });
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "다시 읽기" })));
+      expect(screen.getByText("방금 읽음")).toBeInTheDocument();
+      expect(screen.queryByText(/갱신 실패/)).not.toBeInTheDocument();
+    });
+  }
+
+  it("받은 뒤 이유가 분명하면(로그인 풀림) 숫자를 지우고 이유를 보인다", async () => {
+    const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
+    render(<Home />);
+    await screen.findByText("10분 전 읽음");
+
+    read.mockResolvedValue({ state: "unavailable", reason: "not_logged_in" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "다시 읽기" })));
+    expect(screen.getByText("Claude 에 로그인하면 사용량을 볼 수 있어요.")).toBeInTheDocument();
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
+    expect(screen.queryByText(/기준|읽음/)).not.toBeInTheDocument();
   });
 
   it("못 받은 뒤 다시 읽어서 받으면 막대가 나온다", async () => {

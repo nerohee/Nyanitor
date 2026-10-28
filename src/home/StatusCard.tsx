@@ -109,9 +109,17 @@ interface UsageCardProps extends UsageState {
   onRefresh: () => void;
 }
 
-export function UsageBlock({ result, reading, now, onRefresh }: UsageCardProps) {
+/** 아래 줄 — 읽은 때를 읽는 중 · 갱신 실패에도 남긴다 */
+function readLine(reading: boolean, stale: boolean, readAt: number | null, now: Date): string {
+  if (readAt === null) return reading ? t("home.usage.reading") : "";
+  const ago = formatAgo(readAt, now);
+  if (reading) return tf("home.usage.readingSince", { ago });
+  return tf(stale ? "home.usage.staleSince" : "home.usage.readAgo", { ago });
+}
+
+export function UsageBlock({ result, reading, stale, now, onRefresh }: UsageCardProps) {
   const reason = reasonKey(result);
-  const readAt = result?.state === "ok" ? result.readAt : null;
+  const readAt = result?.state === "ok" && !reason ? result.readAt : null;
   return (
     <div className="hm-usage" aria-busy={reading}>
       {result === null ? (
@@ -126,7 +134,7 @@ export function UsageBlock({ result, reading, now, onRefresh }: UsageCardProps) 
       ) : null}
       <div className="hm-usage__foot">
         <span className="hm-usage__read" role="status">
-          {reading ? t("home.usage.reading") : readAt !== null ? tf("home.usage.readAgo", { ago: formatAgo(readAt, now) }) : ""}
+          {readLine(reading, stale, readAt, now)}
         </span>
         <button type="button" className="hm-btn" onClick={onRefresh} disabled={reading}>
           <Icon name="refresh" size={16} />

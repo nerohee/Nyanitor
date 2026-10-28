@@ -5,6 +5,7 @@ import {
   FAKE_PLANS,
   pickPose,
   pickRoam,
+  REST_ALL,
   staggerDelays,
   STAGGER_MIN_MS,
   STAGGER_SPAN_MS,
@@ -82,6 +83,19 @@ describe("자리 배정", () => {
   });
 });
 
+describe("모두 쉬는 일정 (실제 화면)", () => {
+  it("일하는 고양이가 없다 — 모두 쉬는 자리에 한 마리씩, 캣휠 · 캣타워 · 댓돌은 비어 있다", () => {
+    for (const cat of CAT_IDS) expect(REST_ALL[cat]).toBe("rest");
+    const spots = assignSpots(REST_ALL, {}, fixed(0));
+    const used = Object.values(spots);
+    expect(new Set(used).size).toBe(CAT_IDS.length);
+    for (const spot of used) expect(SPOTS[spot].kind).toBe("rest");
+    expect(used).not.toContain("wheel");
+    expect(used).not.toContain("tower");
+    expect(used).not.toContain("stone");
+  });
+});
+
 describe("가끔 일어나는 일", () => {
   const spots = assignSpots(FAKE_PLANS[0]);
   const poses = Object.fromEntries(CAT_IDS.map((cat) => [cat, SPOTS[spots[cat]].poses[0]])) as Parameters<
@@ -108,6 +122,15 @@ describe("가끔 일어나는 일", () => {
       const roam = pickRoam(FAKE_PLANS[0], spots, poses, () => (i + 0.5) / 40, "nabi");
       expect(roam?.cat).not.toBe("nabi");
     }
+  });
+
+  it("집에 없는 고양이는 옮기지 않는다", () => {
+    const absent = CAT_IDS.filter((cat) => cat !== "nabi");
+    for (let i = 0; i < 40; i++) {
+      const roam = pickRoam(REST_ALL, assignSpots(REST_ALL), poses, () => (i + 0.5) / 40, null, absent);
+      if (roam) expect(roam.cat).toBe("nabi");
+    }
+    expect(pickRoam(REST_ALL, assignSpots(REST_ALL), poses, fixed(0.1), null, CAT_IDS)).toBeNull();
   });
 
   it("쉬는 고양이가 없으면 아무 일도 없다", () => {

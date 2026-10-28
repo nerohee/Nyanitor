@@ -1,5 +1,7 @@
 // Rust 와 화면이 같은 목록을 쓰는지 지키는 시험 (P3-03) — 한쪽만 늘면 여기서 실패한다.
 // Rust 쪽 목록은 소스 파일 글을 읽어(`?raw`) 뽑는다. 읽는 모양이 바뀌면 이 시험이 먼저 "못 찾음" 으로 실패한다.
+import agentsConfigRs from "../../src-tauri/src/agents/config.rs?raw";
+import agentsRs from "../../src-tauri/src/agents/mod.rs?raw";
 import errorRs from "../../src-tauri/src/error.rs?raw";
 import eventsRs from "../../src-tauri/src/claude/events.rs?raw";
 import harnessBackupsRs from "../../src-tauri/src/harness/backups.rs?raw";
@@ -8,11 +10,19 @@ import harnessGitRs from "../../src-tauri/src/harness/git.rs?raw";
 import harnessLocateRs from "../../src-tauri/src/harness/locate.rs?raw";
 import harnessScriptRs from "../../src-tauri/src/harness/script.rs?raw";
 import harnessStatusRs from "../../src-tauri/src/harness/status.rs?raw";
+import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
 import {
   AppError,
   toAppError,
+  type AgentInfo,
+  type AgentRole,
+  type AgentUnreadable,
+  type AgentUnreadableReason,
+  type AgentsConfigState,
+  type AgentsList,
+  type AgentsState,
   type AlwaysScope,
   type AppErrorKind,
   type ClaudeEventType,
@@ -44,6 +54,10 @@ import {
   type TurnOutcome,
   type UnreadableReason,
   type UpdateState,
+  type UsageResult,
+  type UsageScopedWindow,
+  type UsageUnavailableReason,
+  type UsageWindow,
 } from "./ipc";
 
 // 아래 `Record<…, true>` 는 TS 쪽에서 종류가 하나 늘면 컴파일(`tsc`)이 실패하게 하는 장치다.
@@ -151,6 +165,41 @@ const TS_FIELDS = {
   ErrorInfo: { code: 1, detail: 1 } satisfies Record<keyof HarnessErrorInfo, 1>,
   Unreadable: { reason: 1, contract: 1, head: 1, stderrHead: 1 } satisfies Record<keyof HarnessUnreadable, 1>,
   PruneResult: { removed: 1, kept: 1, removedIds: 1, skippedEntries: 1, failed: 1, skipped: 1 } satisfies Record<keyof HarnessPrune, 1>,
+};
+
+// 에이전트 · 사용량 (P5-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_AGENT_ROLES: Record<AgentRole, true> = { main: true, designer: true, ui: true, system: true, tester: true, helper: true, reviewer: true };
+const TS_AGENT_UNREADABLE: Record<AgentUnreadableReason, true> = {
+  too_large: true,
+  read_failed: true,
+  not_utf8: true,
+  no_frontmatter: true,
+  unclosed_frontmatter: true,
+  missing_name: true,
+  name_mismatch: true,
+  missing_description: true,
+};
+const TS_AGENTS_STATES: Record<AgentsState, true> = { ok: true, no_harness: true, location_unusable: true };
+const TS_AGENTS_CONFIG_STATES: Record<AgentsConfigState, true> = { local: true, example: true, none: true, unreadable: true };
+const TS_USAGE_REASONS: Record<UsageUnavailableReason, true> = {
+  not_subscription: true,
+  not_logged_in: true,
+  no_claude: true,
+  not_supported: true,
+  timeout: true,
+  failed: true,
+};
+const TS_USAGE_STATES: Record<UsageResult["state"], true> = { ok: true, unavailable: true };
+type UsageOk = Extract<UsageResult, { state: "ok" }>;
+
+const TS_HOUSE_FIELDS = {
+  AgentInfo: { role: 1, file: 1, name: 1, description: 1, model: 1, effort: 1, color: 1, readOnly: 1 } satisfies Record<keyof AgentInfo, 1>,
+  AgentUnreadable: { role: 1, file: 1, reason: 1 } satisfies Record<keyof AgentUnreadable, 1>,
+  AgentsList: { state: 1, config: 1, agents: 1, missingRoles: 1 } satisfies Record<keyof AgentsList, 1>,
+  UsageWindow: { utilization: 1, resetsAt: 1, severity: 1 } satisfies Record<keyof UsageWindow, 1>,
+  ScopedWindow: { label: 1, utilization: 1, resetsAt: 1, severity: 1 } satisfies Record<keyof UsageScopedWindow, 1>,
+  // 태그(`state`)는 serde 가 붙이므로 구조체 필드가 아니다
+  UsageReading: { fiveHour: 1, sevenDay: 1, scoped: 1, extraUsageEnabled: 1, readAt: 1 } satisfies Record<Exclude<keyof UsageOk, "state">, 1>,
 };
 
 const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
@@ -287,6 +336,36 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(isTextKey("lab.harness.pruneSkipped.locked")).toBe(true); // script.rs 가 잠금을 보고 건너뛴다
   });
 
+  it("에이전트 · 사용량 종류: Rust enum 과 ipc-types 의 글 종류", () => {
+    expect(sorted(Object.keys(TS_AGENT_ROLES))).toEqual(sorted(rustVariants(agentsRs, "AgentRole").map(snake)));
+    expect(sorted(Object.keys(TS_AGENT_UNREADABLE))).toEqual(sorted(rustVariants(agentsRs, "UnreadableReason").map(snake)));
+    expect(sorted(Object.keys(TS_AGENTS_STATES))).toEqual(sorted(rustVariants(agentsRs, "AgentsState").map(snake)));
+    expect(sorted(Object.keys(TS_AGENTS_CONFIG_STATES))).toEqual(sorted(rustVariants(agentsConfigRs, "ConfigState").map(snake)));
+    expect(sorted(Object.keys(TS_USAGE_REASONS))).toEqual(sorted(rustVariants(usageRs, "UnavailableReason").map(snake)));
+    // 태그가 붙는 enum: 변형 이름이 곧 `state` 값 (`Ok` → `ok`)
+    expect(sorted(Object.keys(TS_USAGE_STATES))).toEqual(sorted(rustVariants(usageRs, "UsageResult").map(snake)));
+    expect(sorted(["ok", "unreadable"])).toEqual(sorted(rustVariants(agentsRs, "AgentEntry").map(snake)));
+  });
+
+  it("에이전트 · 사용량 결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다", () => {
+    const sources: Record<string, [string, string]> = {
+      AgentInfo: [agentsRs, "AgentInfo"],
+      AgentUnreadable: [agentsRs, "AgentUnreadable"],
+      AgentsList: [agentsRs, "AgentsList"],
+      UsageWindow: [usageRs, "UsageWindow"],
+      ScopedWindow: [usageRs, "ScopedWindow"],
+      UsageReading: [usageRs, "UsageReading"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_HOUSE_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_HOUSE_FIELDS[name as keyof typeof TS_HOUSE_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+    // 태그 이름은 `state` 하나 — serde `tag = "state"` 가 두 enum 에 있다
+    expect(agentsRs).toContain('#[serde(tag = "state", rename_all = "snake_case")]\npub enum AgentEntry');
+    expect(usageRs).toContain('#[serde(tag = "state", rename_all = "snake_case")]\npub enum UsageResult');
+  });
+
   it("화면이 듣는 이벤트 이름은 commands.rs 와 같다", async () => {
     const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
     const { CLAUDE_SESSION_EVENT } = await import("./ipc");
@@ -300,13 +379,15 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(called.length).toBeGreaterThan(8);
     for (const command of called) {
       if (command === "app_info") continue;
-      const module = command.startsWith("harness_") ? "harness" : "claude";
+      const module = command.startsWith("harness_") ? "harness" : command.startsWith("agents_") ? "agents" : command.startsWith("usage_") ? "usage" : "claude";
       expect(libRs, `${command} 이 lib.rs 에 없음`).toContain(`${module}::commands::${command}`);
     }
     // 반대로, Rust 에 등록된 Claude · 하네스 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
     const registered = [
       ...libRs.matchAll(/claude::commands::(claude_[a-z_]+)/g),
       ...libRs.matchAll(/harness::commands::(harness_[a-z_]+)/g),
+      ...libRs.matchAll(/agents::commands::(agents_[a-z_]+)/g),
+      ...libRs.matchAll(/usage::commands::(usage_[a-z_]+)/g),
     ].map((m) => m[1] as string);
     expect(sorted(registered)).toEqual(sorted(called.filter((c) => c !== "app_info")));
   });
@@ -333,6 +414,39 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       const takesId = command === "harness_restore" || command === "harness_restore_plan";
       expect(params, command).toBe(takesId ? "backupId: string" : "");
       expect(args ?? "", command).toBe(takesId ? ", { backupId }" : "");
+    }
+  });
+
+  it("에이전트 · 사용량 명령은 화면에서 아무 값도 받지 않는다 (경로 · 파일 이름 · 실행 파일 · 인자를 받는 길이 없다)", async () => {
+    const agentsCommands = (await import("../../src-tauri/src/agents/commands.rs?raw")).default;
+    const usageCommands = (await import("../../src-tauri/src/usage/commands.rs?raw")).default;
+    const signatures = [
+      ...agentsCommands.matchAll(/#\[tauri::command\]\s+pub async fn (agents_[a-z_]+)\(([^)]*)\)/g),
+      ...usageCommands.matchAll(/#\[tauri::command\]\s+pub async fn (usage_[a-z_]+)\(([^)]*)\)/g),
+    ];
+    expect(signatures.map((m) => m[1]).sort()).toEqual(["agents_list", "usage_read"]);
+    for (const [, name, params] of signatures) {
+      const names = (params as string)
+        .replace(/<[^>]*>/g, "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "")
+        .map((p) => p.split(":")[0]?.trim());
+      // `usage_read` 는 앱이 들고 있는 기억(State)만 받는다
+      expect(names, `${name} 의 매개변수`).toEqual(name === "usage_read" ? ["state"] : []);
+    }
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('agentsList: () => call<AgentsList>("agents_list"),');
+    expect(ipcTs).toContain('usageRead: () => call<UsageResult>("usage_read"),');
+  });
+
+  it("사용량을 읽는 코드는 인자를 고정 목록으로 만들고, 받은 줄을 로그에 남기지 않는다", async () => {
+    const fetchRs = (await import("../../src-tauri/src/usage/fetch.rs?raw")).default;
+    expect(fetchRs).toContain("cmd.command(build_args())");
+    const logCalls = [...fetchRs.matchAll(/log::(?:info|warn|error|debug)!\(([^;]*)\);/g)];
+    expect(logCalls.length).toBeGreaterThan(0);
+    for (const call of logCalls) {
+      expect(call[1], "로그에 받은 줄이 들어감").not.toMatch(/\b(line|value|report|buf)\b/);
     }
   });
 

@@ -1,7 +1,8 @@
 /* global process */
 // 녹화본에서 개인 정보를 가짜 값으로 바꾸고, 남았는지 검사한다.
 // 가리는 것: 홈 경로 · 사용자 이름 · 호스트 이름 · 이메일 · 조직 이름/ID · 모든 UUID(세션 ID 포함) ·
-//           임시 폴더 이름의 무작위 부분 · thinking 서명 · 사용량 수치 · 목록이 긴 필드(줄임)
+//           임시 폴더 이름의 무작위 부분 · thinking 서명 · 사용량 수치 · 목록이 긴 필드(줄임) ·
+//           `/usage` 글의 "무엇이 한도를 쓰는가" 부분(내 스킬 · 에이전트 이름) · 시간대 이름
 // 모양(키 · 순서 · 형식)은 그대로 둔다.
 import os from "node:os";
 import { spawnSync } from "node:child_process";
@@ -26,6 +27,11 @@ const TRIM_KEYS = new Map([
   ["mcp_servers", 2],
   ["available_output_styles", 5],
 ]);
+
+// `/usage` 의 글에서 "What's contributing to your limits usage?" 아래는 이 PC 에서 쓴 스킬 · 에이전트 이름이 드러난다 → 고정 글로
+const USAGE_BEHAVIOR_MARK = "What's contributing to your limits usage?";
+const USAGE_BEHAVIOR_FAKE = `${USAGE_BEHAVIOR_MARK}\nApproximate, based on local sessions on this machine — does not include other devices or claude.ai. Behaviors are independent characteristics, not a breakdown.\n\nLast 24h · 10 requests · 1 sessions\n  10% of your usage was at >150k context`;
+const LOCAL_COMMAND_TAIL = "</local-command-stdout>";
 
 function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -131,12 +137,23 @@ export class Redactor {
     return out;
   }
 
+  /** `/usage` 가 사람에게 보이는 글: 사용률 숫자 · 시간대 · 쓴 스킬 이름을 가린다 (다른 글은 그대로). */
+  usageText(s) {
+    if (typeof s !== "string") return s;
+    let out = s;
+    const at = out.indexOf(USAGE_BEHAVIOR_MARK);
+    if (at >= 0) out = out.slice(0, at) + USAGE_BEHAVIOR_FAKE + (out.endsWith(LOCAL_COMMAND_TAIL) ? LOCAL_COMMAND_TAIL : "");
+    out = out.replace(/\d+% used/g, "10% used");
+    out = out.replace(/(resets [^\n(]*)\(([A-Za-z_]+(?:\/[A-Za-z_]+)+)\)/g, "$1(UTC)");
+    return out;
+  }
+
   /** 값 전체를 훑으며 바꾼다. 새 객체를 돌려준다. */
   value(v, key = "") {
     if (typeof v === "string") {
       if (key === "signature" && v.length > 24) return "REDACTED-SIGNATURE";
       if (key === "subscriptionType") return "pro";
-      return this.text(v);
+      return this.usageText(this.text(v));
     }
     if (Array.isArray(v)) {
       let arr = v;
@@ -147,13 +164,22 @@ export class Redactor {
         const first = arr.findIndex((t) => typeof t === "string" && t.startsWith("mcp__"));
         arr = arr.filter((t, i) => typeof t !== "string" || !t.startsWith("mcp__") || i === first).map((t) => (typeof t === "string" && t.startsWith("mcp__") ? "mcp__example__tool" : t));
       }
-      return arr.map((x, i) => (key === "mcp_servers" && x && typeof x === "object" ? { ...this.value(x, key), name: `example server ${i + 1}` } : this.value(x, key)));
+      return arr.map((x, i) => {
+        if (key === "mcp_servers" && x && typeof x === "object") return { ...this.value(x, key), name: `example server ${i + 1}` };
+        // get_usage 의 behaviors: 많이 쓴 에이전트 · 스킬 이름 ({name, pct})
+        if ((key === "agents" || key === "skills" || key === "plugins") && x && typeof x === "object" && typeof x.name === "string" && "pct" in x) {
+          return { ...this.value(x, key), name: `example-${key}-${i + 1}` };
+        }
+        return this.value(x, key);
+      });
     }
     if (v && typeof v === "object") {
       const out = {};
       for (const [k, val] of Object.entries(v)) {
         let nv = this.value(val, k);
         if (k === "utilization" && typeof val === "number") nv = 0.1;
+        // usage_report 의 한도 줄(`percent`)과 get_usage 의 `pct` · 요청 수 — 내 사용량이라 가짜 값으로
+        if ((k === "percent" || k === "pct") && typeof val === "number") nv = 10;
         if (k === "pid" && typeof val === "number") nv = 4242;
         if (k === "description" && typeof nv === "string" && nv.length > 80 && key !== "" && TRIM_KEYS.has(key)) nv = nv.slice(0, 80);
         out[this.text(k)] = nv;

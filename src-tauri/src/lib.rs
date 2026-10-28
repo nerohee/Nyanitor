@@ -1,9 +1,11 @@
+pub mod agents;
 pub mod claude;
 pub mod commands;
 pub mod error;
 pub mod harness;
 pub mod strings;
 pub mod tray;
+pub mod usage;
 
 use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, log};
@@ -58,6 +60,8 @@ pub fn run() {
             ));
             // 하네스 일(받기 · 업데이트 · 설치 · 되돌리기)은 한 번에 하나 (P4-02).
             app.manage(harness::HarnessState::default());
+            // 사용량 한도 읽기: 받은 값을 잠깐 기억하고 한 번에 하나만 읽는다 (P5-01).
+            app.manage(usage::UsageState::default());
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
             tray::show_main_window(app.handle());
@@ -85,6 +89,8 @@ pub fn run() {
             harness::commands::harness_backups,
             harness::commands::harness_restore_plan,
             harness::commands::harness_restore,
+            agents::commands::agents_list,
+            usage::commands::usage_read,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

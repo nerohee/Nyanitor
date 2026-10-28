@@ -128,9 +128,9 @@ describe("목록 읽기 (cat-assets.md §A8)", () => {
 describe("에이전트 연결 (cat-assets.md §A9)", () => {
   it("기본 연결 — 메인 대화는 먹물, 나비는 시스템 구현 (D-37)", () => {
     expect(catForAgent("main")).toBe("mukmul");
-    expect(catForAgent("builder-system")).toBe("nabi");
+    expect(catForAgent("system")).toBe("nabi");
     expect(catForAgent("designer")).toBe("mulgam");
-    expect(catForAgent("builder-ui")).toBe("danchu");
+    expect(catForAgent("ui")).toBe("danchu");
     expect(catForAgent("tester")).toBe("kkaebi");
     expect(catForAgent("helper")).toBe("dubu");
     expect(catForAgent("reviewer")).toBe("gureum");

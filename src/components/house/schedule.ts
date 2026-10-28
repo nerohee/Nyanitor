@@ -129,9 +129,12 @@ export function pickRoam(
   rng: Rng = Math.random,
   /** 정보 패널이 열려 있는 고양이 — 그 자리에 둔다 */
   pinned: CatId | null = null,
+  /** 이 집에 없는 고양이(에이전트가 없다) — 자리를 옮기지 않는다 */
+  absent: readonly CatId[] = [],
 ): Roam {
   const resting = CAT_IDS.filter(
-    (cat) => cat !== pinned && intents[cat] === "rest" && SPOTS[spots[cat]].kind === "rest",
+    (cat) =>
+      cat !== pinned && !absent.includes(cat) && intents[cat] === "rest" && SPOTS[spots[cat]].kind === "rest",
   );
   if (resting.length === 0) return null;
   const cat = resting[Math.floor(rng() * resting.length)];
@@ -199,7 +202,8 @@ export function travel(from: SpotId, to: SpotId): Travel {
 
 // ── 가짜 일정 (시안 · P5 전까지) ──
 
-const REST_ALL: Intents = {
+/** 모두 쉬는 일정 — 실제 화면(P5)은 일하는 고양이가 없어 이것만 쓴다 (캣휠 · 캣타워 · 댓돌 자리는 비어 있다) */
+export const REST_ALL: Intents = {
   mukmul: "rest",
   nabi: "rest",
   mulgam: "rest",

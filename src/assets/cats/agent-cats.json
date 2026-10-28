@@ -3,8 +3,8 @@
   "agents": {
     "main": "mukmul",
     "designer": "mulgam",
-    "builder-ui": "danchu",
-    "builder-system": "nabi",
+    "ui": "danchu",
+    "system": "nabi",
     "tester": "kkaebi",
     "helper": "dubu",
     "reviewer": "gureum"

@@ -34,6 +34,11 @@ CLI 가 바뀌었는지 보는 순서: `run all --out <새 폴더>` → 끝에 �
   Claude Code 안에서 이 도구를 돌릴 때 부모가 넣어 둔 값이고 실제 앱 환경에는 없다. 특히 `CLAUDE_CODE_QUESTION_PREVIEW_FORMAT` 는 질문 선택지에 미리보기를 켜 버려 결과가 달라진다. 뺀 이름은 녹화본 첫 줄(`meta.strippedEnv`)에 남는다.
 - 끝나면 띄운 `claude` 프로세스가 모두 꺼졌는지 확인한다 (시나리오마다 "띄운 claude 프로세스가 모두 꺼짐"). 시간이 초과되면 프로세스 트리를 강제로 끈다.
 
+## 사용량 시나리오 (`usage`, P5-01 · D-24)
+
+`node scripts/cli-probe/probe.mjs run usage` — stream-json 세션에 `/usage` 를 보내 `usage_report` 가 오는지(구독 한도 %·초기화 시각), 모델 호출이 있는지, 걸린 시간을 녹화한다. 같은 시나리오가 `claude -p "/usage" --output-format json` 한 번과 control 요청 `get_usage` 한 번도 본다 (`usage.jsonl` · `usage.print-json.json`).
+이 시나리오는 모델을 부르지 않아 비용이 0 이지만, 구독 한도를 읽는 호출이라 반복해서 돌리지는 않는다. 녹화본은 사용률 숫자 · 시간대 · 내가 많이 쓴 스킬 · 에이전트 이름을 가짜 값으로 바꾼다 (`redact.mjs`).
+
 ## 녹화 형식 (`*.jsonl`, 한 줄에 JSON 하나)
 
 첫 줄은 `meta` (형식 `nyanitor-cli-record/1`, 시나리오, CLI 버전, 모델, 실행 인자, 뺀 환경 변수). 그 다음은 시간 순서:

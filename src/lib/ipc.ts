@@ -9,6 +9,7 @@ import {
   AppError,
   CLAUDE_SESSION_EVENT,
   toAppError,
+  type AgentsList,
   type AppInfo,
   type ClaudeEvent,
   type ClaudeResponse,
@@ -21,6 +22,7 @@ import {
   type StartInfo,
   type StartRequest,
   type StopInfo,
+  type UsageResult,
 } from "./ipc-types";
 
 export * from "./ipc-types";
@@ -111,4 +113,10 @@ export const ipc = {
   harnessRestorePlan: (backupId: string) => call<ScriptResult>("harness_restore_plan", { backupId }),
   /** 되돌리기 (같은 번호의 되돌리기 미리보기를 본 뒤에만) */
   harnessRestore: (backupId: string) => call<ScriptResult>("harness_restore", { backupId }),
+
+  // 고양이 집 (P5-01). 넘기는 값이 없다 — 경로 · 파일 이름 · 실행 파일 · 인자를 넘기는 길은 없다.
+  /** 설치된 에이전트 목록 — 오케스트레이터 + `<설정 폴더>/agents/*.md` 앞머리. 깨진 파일 · 설정 · 하네스 없음은 오류가 아니라 결과의 상태다 */
+  agentsList: () => call<AgentsList>("agents_list"),
+  /** 구독 사용량 한도 (5시간 · 7일 · 초기화 시각) — 짧은 별도 세션으로 읽고 잠깐 기억한다. 못 받아도 오류가 아니라 `unavailable` 과 이유 */
+  usageRead: () => call<UsageResult>("usage_read"),
 };

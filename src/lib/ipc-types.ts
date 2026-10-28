@@ -504,6 +504,99 @@ export interface ScriptResult {
   reason: string | null;
 }
 
+// ───────────────────────── 에이전트 · 사용량 (P5-01) — `src-tauri/src/agents/` · `src-tauri/src/usage/` 와 같이 맞춘다 ─────────────────────────
+
+/** 역할 (`agents/mod.rs` 의 `AgentRole`). 고양이 ↔ 역할 대응은 `src/assets/cats/agent-cats.json` (키가 이 역할 이름) */
+export type AgentRole = "main" | "designer" | "ui" | "system" | "tester" | "helper" | "reviewer";
+
+/** 읽은 에이전트 한 명 */
+export interface AgentInfo {
+  /** 하네스 역할 (하네스 작업자가 아니면 null) */
+  role: AgentRole | null;
+  /** 파일 이름 (경로 아님). 오케스트레이터는 파일이 없어 null */
+  file: string | null;
+  name: string;
+  description: string | null;
+  model: string | null;
+  effort: string | null;
+  color: string | null;
+  /** `disallowedTools` 로 `Write` · `Edit` 를 모두 못 쓰게 했다 (감사관) */
+  readOnly: boolean;
+}
+
+/** 읽을 수 없는 이유 (`agents/mod.rs` 의 `UnreadableReason`) */
+export type AgentUnreadableReason =
+  | "too_large"
+  | "read_failed"
+  | "not_utf8"
+  | "no_frontmatter"
+  | "unclosed_frontmatter"
+  | "missing_name"
+  | "name_mismatch"
+  | "missing_description";
+
+/** 읽을 수 없는 에이전트 파일 — 그 항목만, 나머지는 그대로 */
+export interface AgentUnreadable {
+  /** 설정이 이 파일을 작업자로 가리키면 그 역할 */
+  role: AgentRole | null;
+  file: string;
+  reason: AgentUnreadableReason;
+}
+
+export type AgentEntry = ({ state: "ok" } & AgentInfo) | ({ state: "unreadable" } & AgentUnreadable);
+
+/** 목록 전체의 상태: `no_harness` 는 하네스가 설치되지 않음 (빈 목록), `location_unusable` 은 설정 폴더 위치를 정할 수 없음 */
+export type AgentsState = "ok" | "no_harness" | "location_unusable";
+
+/** 어느 설정을 읽었나 — `unreadable` 이면 오케스트레이터의 모델 · 수준과 작업자 역할을 알 수 없다 */
+export type AgentsConfigState = "local" | "example" | "none" | "unreadable";
+
+/** `agents_list` 의 결과 — 오류가 아니라 상태다 (깨진 파일 · 설정 · 하네스 없음도 결과로 온다) */
+export interface AgentsList {
+  state: AgentsState;
+  config: AgentsConfigState;
+  /** 오케스트레이터(`role: "main"`)가 맨 앞, 그 뒤는 파일 이름 순 */
+  agents: AgentEntry[];
+  /** 설정이 작업자로 정했는데 파일이 없는 역할 */
+  missingRoles: AgentRole[];
+}
+
+/** 한 한도 창 (5시간 · 7일) — 돌아가는 세션의 `rate_limit` 이벤트와 같은 뜻 · 단위 */
+export interface UsageWindow {
+  /** 사용률 0~1 (100% 를 넘기면 1 보다 클 수 있다) */
+  utilization: number;
+  /** 초기화 시각 (유닉스 초). 모르면 null */
+  resetsAt: number | null;
+  /** 서버가 매긴 정도 (`normal` · `warning` · `critical` …, 글 그대로) */
+  severity: string | null;
+}
+
+/** 모델 · 표면별 주간 한도 */
+export interface UsageScopedWindow {
+  /** 서버가 준 이름 (예: 모델 이름) */
+  label: string;
+  utilization: number;
+  resetsAt: number | null;
+  severity: string | null;
+}
+
+/** 못 받는 이유 (`usage/mod.rs` 의 `UnavailableReason`) */
+export type UsageUnavailableReason = "not_subscription" | "not_logged_in" | "no_claude" | "not_supported" | "timeout" | "failed";
+
+/** `usage_read` 의 결과 — 못 받아도 오류가 아니라 `unavailable` 과 이유 */
+export type UsageResult =
+  | {
+      state: "ok";
+      fiveHour: UsageWindow | null;
+      sevenDay: UsageWindow | null;
+      scoped: UsageScopedWindow[];
+      /** 추가 사용(초과 요금)을 켰는가 (금액은 읽지 않는다) */
+      extraUsageEnabled: boolean | null;
+      /** 읽은 때 (유닉스 초). Rust 가 기억한 값이면 처음 읽은 때 */
+      readAt: number;
+    }
+  | { state: "unavailable"; reason: UsageUnavailableReason };
+
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */
 export const CLAUDE_SESSION_EVENT = "claude:session";
 

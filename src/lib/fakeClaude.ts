@@ -5,6 +5,7 @@
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
 import { fakeHarness } from "./fakeHarness";
+import { fakeHouse } from "./fakeHouse";
 import {
   AppError,
   type AppInfo,
@@ -316,6 +317,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     app_info: (): AppInfo => ({ name: "Nyanitor", version: "0.0.0-browser" }),
     ...fakeClaude.handlers,
     ...fakeHarness.handlers,
+    ...fakeHouse.handlers,
   };
   const handler = handlers[command];
   if (!handler) {

@@ -86,12 +86,14 @@ class RunContext {
   }
 
   /** `claude <args>` 를 한 번 돌려 결과를 받는다 (auth status 등). 정리한 환경으로. */
-  run(args, envExtra = {}) {
+  run(args, envExtra = {}, timeoutMs = 60000) {
     const r = spawnSync(this.bin, args, {
       env: { ...this.baseEnv, ...envExtra },
       encoding: "utf8",
       windowsHide: true,
       cwd: this.scratch("run"),
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
     });
     return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
   }

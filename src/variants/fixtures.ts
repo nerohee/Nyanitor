@@ -32,7 +32,8 @@ const AGENT_ROWS: readonly AgentRow[] = [
 export const AGENTS: readonly AgentFixture[] = AGENT_ROWS.map((row) => ({
   ...row,
   // 기본 연결은 모두 기본 7마리를 가리킨다
-  cat: catForAgent(row.agent) as CatId,
+  // 시제품의 에이전트 이름(`builder-ui`)은 Rust 역할 이름(`ui`)에서 `builder-` 만 더한 것 — 연결 파일은 역할 이름으로 읽는다
+  cat: catForAgent(row.agent.replace(/^builder-/, "")) as CatId,
 }));
 
 /** 오케스트레이터(메인 대화)를 가리키는 고양이 — 기본은 먹물 (D-37) */

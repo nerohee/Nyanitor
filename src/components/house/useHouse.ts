@@ -94,7 +94,13 @@ function posesOf(placements: Placements): Record<CatId, ScenePose> {
  * `pinned`(정보 패널이 열린 고양이)는 가끔 옮기는 일에서 빠진다.
  * 반환은 Tab 순서(`TAB_ORDER`) — 고양이가 옮겨 다녀도 바뀌지 않는다.
  */
-export function useHouseSchedule(intents: Intents, motion: SceneMotion, pinned: CatId | null = null): CatPlacement[] {
+export function useHouseSchedule(
+  intents: Intents,
+  motion: SceneMotion,
+  pinned: CatId | null = null,
+  /** 집에 있는 고양이만 가끔 옮긴다 (없으면 7마리 모두). 집에 없는 고양이의 자리는 눈에 보이지 않는다 */
+  present: readonly CatId[] = CAT_IDS,
+): CatPlacement[] {
   const [placements, setPlacements] = useState<Placements>(() => initialPlacements(assignSpots(intents)));
   const latest = useRef(placements);
   const timers = useRef(new Set<number>());
@@ -103,10 +109,12 @@ export function useHouseSchedule(intents: Intents, motion: SceneMotion, pinned: 
   const intentsRef = useRef(intents);
   const motionRef = useRef(motion);
   const pinnedRef = useRef(pinned);
+  const absentRef = useRef<readonly CatId[]>([]);
   useEffect(() => {
     intentsRef.current = intents;
     motionRef.current = motion;
     pinnedRef.current = pinned;
+    absentRef.current = CAT_IDS.filter((cat) => !present.includes(cat));
   });
 
   useEffect(() => {
@@ -192,6 +200,7 @@ export function useHouseSchedule(intents: Intents, motion: SceneMotion, pinned: 
               posesOf(latest.current),
               Math.random,
               pinnedRef.current,
+              absentRef.current,
             );
         if (roam?.kind === "pose") update(roam.cat, { pose: roam.pose });
         else if (roam?.kind === "move") moveCat(roam.cat, roam.to);

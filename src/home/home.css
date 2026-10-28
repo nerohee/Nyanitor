@@ -1,0 +1,596 @@
+/*
+ * 실제 메인 화면 — 고양이 집. 시안 a 「들여다보는 창」(집이 무대, 카드는 그림의 빈 곳)에 ③ 스티커 수첩(D-43) 모양을 입혔다.
+ * 시제품(`variants/a/house.css` + `skins/skin-3.css`)에서 이 화면에 쓰는 것만 옮겨 왔고, 값은 모두 tokens.css 의 토큰이다.
+ * `data-skin="3"` 과 `data-time` 은 화면 뿌리(.home)에 달려 tokens.css 가 본다.
+ */
+body:has(.home) {
+  margin: 0;
+}
+/* 스크롤 막대 · 입력칸도 테마를 따르게 */
+:root:has(.home) {
+  color-scheme: light dark;
+}
+:root[data-theme="light"]:has(.home) {
+  color-scheme: light;
+}
+:root[data-theme="dark"]:has(.home) {
+  color-scheme: dark;
+}
+
+.home {
+  /* 손으로 그린 듯 조금씩 다른 모서리 · 테이프 양끝 톱니 (스티커 수첩) */
+  --wobble: 14px 9px 13px 8px / 9px 14px 8px 13px;
+  --wobble-sm: 10px 7px 9px 6px / 7px 10px 6px 9px;
+  --tape-clip: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 88% 0, 92% 10%, 96% 0, 100% 8%, 100% 92%, 96% 100%, 92% 90%, 88% 100%, 12% 100%, 8% 90%, 4% 100%, 0 92%);
+  /* 아래 판(slab)의 높이 — 시제품과 같다. P6 에서 내용만 바뀐다 */
+  --slab-h: 132px;
+  /* 왼쪽 위 카드의 바깥 폭 — 시제품(.ha-status: 내용 248 + 안쪽 여백 + 선)과 같게 */
+  --status-w: calc(248px + var(--space-4) * 2 + var(--ui-line-w) * 2);
+  height: 100vh;
+  /* 창이 아주 작거나 배율이 크면 세로로만 스크롤 — 카드끼리 겹치지 않게 (가로 스크롤은 없다) */
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  /* 한국어는 낱말 중간에서 줄을 바꾸지 않는다 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  font-synthesis: none; /* Jua 는 굵기가 하나 — 가짜 굵게를 막는다 */
+}
+.home :focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+.hm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── 장면 ── */
+/* 위 카드 · 아래 판은 위아래로 흐르는 두 칸 — 창이 넉넉하면 위 · 아래 끝에 붙고, 모자라면 장면이 그만큼만 길어져
+   세로로 스크롤된다 (카드가 길어지는 상태 — 에이전트 안내 줄 · 사용량 못 받음 — 에서도 서로 겹치지 않는다) */
+.hm-scene {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--scene-ground);
+}
+/* 한옥 마당 그림이 장면 전체 — 카드는 그 위에 (왼쪽 위 담장 · 아래 잔디의 빈 곳) */
+.hm-room {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+/* 정보 패널 층 — 장면 · 카드보다 앞. 비어 있을 때는 아래를 가리지 않는다.
+   패널은 이 층 안에서 고양이를 가리지 않는 쪽에 놓인다 (HouseScene 의 placeBubble — 카드는 모른다).
+   창이 좁으면 (배율 150% 이상) 위 카드 · 고양이 · 패널(296)이 나란히 들어갈 자리가 없어 패널이 위 카드를 덮을 수 있다 — 일부러 그대로 둔다:
+   층을 카드 옆으로 줄여 보면 패널이 고른 고양이를 덮었다 (더 나쁨). 패널은 사용자가 고양이를 눌러 연 잠깐의 위층이고,
+   흰 테 · 딱딱한 그림자로 층이 분명하며, Esc · 닫기로 바로 걷힌다.
+   아주 좁은 창 (CSS 폭 640 미만 — 최소 창의 배율 200%) 에서는 장면이 창보다 길어 스크롤되므로, 패널이 아래로 빠져 안 보이지 않게
+   아래 판 위까지만 쓴다 */
+.hm-bubbles {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+@media (max-width: 639px) {
+  .hm-bubbles {
+    bottom: var(--slab-h);
+  }
+}
+.hm-bubbles > * {
+  pointer-events: auto;
+}
+/* 패널이 층보다 크면 패널 안에서 스크롤 (잘리지 않게) */
+.hm-bubbles .hs-bubble {
+  display: flex;
+  max-height: calc(100% - 16px);
+}
+/* 패널의 마스킹 테이프 — 패널 안은 스크롤(overflow)이라 잘리므로, 바깥 틀(.hs-bubble)에 붙인다 (시제품 .ha-bubble::before) */
+.hm-bubbles .hs-bubble::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: -13px;
+  left: 28px;
+  width: 84px;
+  height: 22px;
+  background: var(--ui-3);
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(-5deg);
+  pointer-events: none;
+}
+
+/* ── 장면 위 이름표: 흰 테 스티커 (시제품 ③ 의 .hs-tag) — 바탕 · 글자 · 선 색은 시간대와 상관없는 이름표 토큰 그대로 ── */
+.home .hs-tag {
+  border-width: 2px;
+  border-radius: 8px 6px 8px 5px;
+  box-shadow:
+    0 0 0 3px var(--sticker-edge),
+    2px 3px 0 3px rgb(var(--shadow-color) / 0.35);
+}
+.home .hs-tag b {
+  font-family: var(--font-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* ── 종이 카드: 갈색 선 + 오려 낸 흰 테 + 딱딱한 그림자 ── */
+.hm-card {
+  position: relative;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    4px 6px 0 5px rgb(var(--shadow-color) / 0.28);
+}
+/* 마스킹 테이프 */
+.hm-status::before,
+.hm-slab__card::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 84px;
+  height: 22px;
+  margin-left: -42px;
+  background: var(--ui-1);
+  opacity: 0.9;
+  clip-path: var(--tape-clip);
+  transform: rotate(-3deg);
+  pointer-events: none;
+}
+.hm-slab__card::before {
+  left: auto;
+  right: 28px;
+  background: var(--ui-2);
+  transform: rotate(4deg);
+}
+
+.hm-status {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  align-self: flex-start;
+  margin: var(--space-4);
+  box-sizing: border-box;
+  width: var(--status-w);
+  max-width: calc(100% - var(--space-4) * 2);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transform: rotate(-0.8deg);
+}
+
+/* ── 단추 ── */
+.hm-btn,
+.hm-icon-btn,
+.hm-link {
+  font: inherit;
+  cursor: default;
+}
+.hm-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  /* ③ 의 한 줄 조작 높이 (시제품 .hbtn 34 = tokens.css [data-skin="3"] --field-h) */
+  height: var(--field-h);
+  padding: 0 var(--space-3);
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-round);
+  /* 시제품 ③ 의 .hbtn 과 같게 — Jua 는 시스템 글꼴보다 작아 보여 본문 크기 그대로 */
+  font-size: var(--text-md);
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ui-line);
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.hm-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.hm-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--ui-line);
+}
+.hm-btn:disabled {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-subtle);
+  box-shadow: none;
+}
+.hm-icon-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--ui-line);
+  box-shadow: 2px 2px 0 var(--ui-line);
+}
+.hm-icon-btn:hover {
+  background: var(--ui-2);
+}
+.hm-link {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-soft-text);
+  font-size: var(--text-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hm-btn {
+    transition: none;
+  }
+  .hm-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* ── 준비 상태 ── */
+.hm-ready {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding-bottom: var(--space-3);
+  border-bottom: var(--ui-line-w) dashed var(--color-border);
+  color: var(--color-success);
+}
+.hm-ready[data-state="partial"] {
+  color: var(--color-warning);
+}
+.hm-ready[data-state="loading"] {
+  color: var(--color-text-subtle);
+}
+.hm-ready > .icon {
+  box-sizing: border-box;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--ui-1);
+  color: var(--ui-line);
+}
+.hm-ready__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--color-text);
+}
+.hm-ready strong {
+  font-family: var(--font-round);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+.hm-ready__detail {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+/* 하네스 없음 · 목록 못 읽음 안내 */
+.hm-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── 사용량: 빗금 채운 손그림 막대 ── */
+.hm-usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hm-usage__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hm-usage__line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-family: var(--font-round);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.hm-usage__line strong {
+  font-weight: 400;
+}
+.hm-usage__bar {
+  height: 12px;
+  margin: var(--space-1) 0;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 7px 5px 6px 4px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.hm-usage__bar > span {
+  display: block;
+  height: 100%;
+  border-right: var(--ui-line-w) solid var(--ui-line);
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(var(--shadow-color) / 0.22) 4px 6px),
+    var(--accent);
+}
+/* 처음 읽는 중 — 자리는 그대로, 글자만 흐리게 */
+.hm-usage__row--wait .hm-usage__line {
+  color: var(--color-text-subtle);
+}
+.hm-usage__reset {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hm-usage__none {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--color-warning);
+}
+.hm-usage__none > .icon {
+  flex: none;
+}
+.hm-usage__none strong {
+  color: var(--color-text);
+}
+.hm-usage__none p {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hm-usage__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.hm-usage__read {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── 아래 판(slab): 프로젝트 자리 — 지금은 빈 상태 ── */
+.hm-slab {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  height: var(--slab-h);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  /* 띠 자체는 비어 있다 — 카드 둘레의 잔디를 눌러도 장면이 받는다 */
+  pointer-events: none;
+}
+.hm-slab > * {
+  pointer-events: auto;
+}
+/* 창이 낮으면 (최소 창의 배율 150% 이상) 판을 카드 높이로 줄여 세로 스크롤을 줄인다 — 넉넉하면 시제품 높이 그대로 */
+@media (max-height: 470px) {
+  .hm-slab {
+    height: auto;
+  }
+}
+/* 빈 상태 카드는 글만큼만 — 판을 가로지르는 긴 띠 대신 왼쪽 잔디 위 쪽지 (P6 에서 새 프로젝트 단추 + 목록으로 바뀐다) */
+.hm-slab__card {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
+    var(--color-surface);
+}
+.hm-slab__title {
+  margin: 0;
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+.hm-slab__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ── 고양이 정보 패널 ── */
+.hm-info {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    4px 6px 0 5px rgb(var(--shadow-color) / 0.28);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+.hm-info__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.hm-info__title {
+  flex: 1;
+  min-width: 0;
+}
+.hm-info h2 {
+  display: inline-block;
+  margin: 0;
+  padding: 0 var(--space-1);
+  background: linear-gradient(transparent 55%, var(--ui-4) 55% 92%, transparent 92%);
+  font-family: var(--font-round);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: var(--leading-tight);
+}
+/* 패널 제목은 열릴 때 포커스만 받는 자리 (조작 대상이 아님) */
+.hm-info h2:focus {
+  outline: none;
+}
+.hm-info__agent {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hm-info__agent code,
+.hm-info__reason code {
+  font-family: var(--font-mono);
+}
+.hm-info__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--space-3) 0 0;
+  padding: 2px var(--space-3);
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+}
+.hm-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+}
+.hm-info__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+.hm-info__meta > div {
+  display: flex;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  font-size: var(--text-xs);
+}
+.hm-info__meta dt {
+  color: var(--color-text-muted);
+}
+.hm-info__meta dd {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+.hm-info__summary {
+  margin: var(--space-3) 0 0;
+}
+.hm-info__label {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-round);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+.hm-info__duties {
+  margin: 2px 0 0;
+  white-space: pre-line;
+}
+.hm-info__duties[data-folded="true"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.hm-info__broken {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  color: var(--color-warning);
+}
+.hm-info__broken > .icon {
+  flex: none;
+}
+.hm-info__broken > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hm-info__broken strong {
+  color: var(--color-text);
+}
+.hm-info__reason {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── 개발 빌드 전용 시험 화면 링크 — 눈에 덜 띄게 오른쪽 위 구석에 (출시 빌드에는 그려지지 않는다) ── */
+.hm-dev {
+  position: absolute;
+  z-index: 2;
+  top: var(--space-2);
+  right: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  /* 위 카드 오른쪽의 빈 곳 안에서만 (좁은 창에서 카드에 붙지 않게) */
+  max-width: min(40%, calc(100% - var(--space-4) - var(--status-w) - var(--space-3) * 2));
+  font-size: var(--text-xs);
+  opacity: 0.6;
+}
+.hm-dev:hover,
+.hm-dev:focus-within {
+  opacity: 1;
+}
+.hm-dev a {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}

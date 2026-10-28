@@ -732,6 +732,71 @@ export const scenarios = {
     },
   },
 
+  usage: {
+    describe: "9 사용량 — stream-json 에 /usage 를 보내면 usage_report 가 오는가 (D-24) · claude -p \"/usage\" --output-format json · get_usage 요청",
+    cost: "모델 호출 없음이 기대 (있으면 턴 1)",
+    async run(ctx) {
+      // 모델 호출이 없다면 세션 시작 뒤 첫 메시지로 바로 /usage 를 보낸다
+      const s = ctx.newSession({ maxTurns: 1 });
+      watch(s, null);
+      const t0 = Date.now();
+      s.send(userMessage("/usage"));
+      const r = await s.next(isResult, 60000);
+      const seconds = ((Date.now() - t0) / 1000).toFixed(1);
+      ctx.info("/usage 를 보내고 result 까지 걸린 시간(초)", seconds);
+      ctx.check("/usage 에 result 가 옴", !!r, r ? `${r.subtype} / ${r.terminal_reason}` : "result 없음");
+      ctx.info("받은 메시지 종류 순서", s.recv.map((m) => m.type + (m.subtype ? "/" + m.subtype : "")).join(" "));
+      const carrier = s.recv.find((m) => m && typeof m === "object" && "usage_report" in m);
+      ctx.check("usage_report 를 실은 메시지가 옴", !!carrier);
+      ctx.info("usage_report 를 실은 메시지", carrier ? `${carrier.type} (최상위 키: ${Object.keys(carrier).join(",")})` : "(없음)");
+      const report = carrier?.usage_report;
+      ctx.info("usage_report 최상위 키", report ? Object.keys(report).join(",") : "(없음)");
+      ctx.check("usage_report.session 에 total_cost_usd", typeof report?.session?.total_cost_usd === "number");
+      const limits = report?.rate_limits?.limits;
+      ctx.info("rate_limits", report?.rate_limits === null ? "null (받지 못함)" : Array.isArray(limits) ? `${limits.length}줄` : "(없음)");
+      ctx.check("구독 로그인이면 rate_limits.limits 가 배열", Array.isArray(limits), JSON.stringify(report?.rate_limits)?.slice(0, 200));
+      if (Array.isArray(limits)) {
+        for (const [i, l] of limits.entries()) {
+          ctx.info(`limits[${i}] 키 · kind · group · severity · is_active`, `${Object.keys(l).join(",")} · ${l.kind} · ${l.group} · ${l.severity} · ${l.is_active}`);
+        }
+        ctx.check(
+          "각 줄에 kind · group · percent(숫자) · resets_at · severity · is_active",
+          limits.every((l) => hasKeys(l, ["kind", "group", "percent", "resets_at", "severity", "is_active"]) && typeof l.percent === "number"),
+        );
+        ctx.info("percent 범위 (0~100 가정)", limits.map((l) => l.percent).join(","));
+        ctx.info("resets_at 모양", limits.map((l) => String(l.resets_at)).join(" | "));
+      }
+      ctx.info("extra_usage 키", report?.rate_limits === undefined ? "" : JSON.stringify(Object.keys(report?.extra_usage ?? report?.rate_limits?.extra_usage ?? {})));
+      ctx.info("result 비용 · 토큰 · 호출 수", JSON.stringify({ total_cost_usd: r?.total_cost_usd, num_turns: r?.num_turns, duration_ms: r?.duration_ms, duration_api_ms: r?.duration_api_ms, usage: r?.usage }));
+      const modelCalls = s.recv.filter((m) => m.type === "assistant" && m.message?.model && m.message.model !== "<synthetic>");
+      ctx.check("모델 호출이 없음 (진짜 assistant 메시지 없음 · 비용 0)", modelCalls.length === 0 && (r?.total_cost_usd ?? 0) === 0, `assistant 모델: ${modelCalls.map((m) => m.message.model).join(",") || "(없음)"} / 비용 ${r?.total_cost_usd}`);
+      ctx.info("result 의 result 글 길이", String((r?.result || "").length));
+      // 같은 프로세스에서 control 요청 get_usage (표에 쓸 참고 — 비공식)
+      s.send(controlRequest("probe-get-usage-1", { subtype: "get_usage" }));
+      const g = await s.next((m) => m.type === "control_response", 20000);
+      ctx.info("get_usage 에 대한 응답", g ? `${g.response?.subtype} / 키: ${Object.keys(g.response?.response ?? g.response?.error ?? {}).join(",")}` : "응답 없음");
+      await s.shutdown();
+      ctx.info("정상 종료 정보", JSON.stringify(s.exited));
+
+      // 다른 공식 출력: claude -p "/usage" --output-format json
+      const t1 = Date.now();
+      const j = ctx.run(["-p", "/usage", "--output-format", "json", "--no-session-persistence", "--model", ctx.model, "--max-turns", "1"], {}, 90000);
+      ctx.info("-p /usage --output-format json 걸린 시간(초) · 종료 코드", `${((Date.now() - t1) / 1000).toFixed(1)} · ${j.status}`);
+      let parsed = null;
+      try {
+        parsed = JSON.parse(j.stdout);
+      } catch {
+        /* JSON 이 아님 */
+      }
+      const lastObj = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
+      ctx.info("-p json 출력 모양", parsed ? `${Array.isArray(parsed) ? "배열 " + parsed.length : "객체"} · 키: ${Object.keys(lastObj || {}).join(",")}` : `JSON 아님: ${j.stdout.slice(0, 200)}`);
+      ctx.info("-p json 에 usage_report 가 있음", String(JSON.stringify(parsed ?? "").includes("usage_report")));
+      ctx.info("-p json 의 비용", JSON.stringify({ total_cost_usd: lastObj?.total_cost_usd, num_turns: lastObj?.num_turns, result: String(lastObj?.result ?? "").slice(0, 200) }));
+      ctx.info("-p json stderr", j.stderr.slice(0, 200));
+      return { files: { "usage.print-json.json": { exitCode: j.status, parsed, stdoutHead: parsed ? null : j.stdout.slice(0, 2000) } } };
+    },
+  },
+
   env: {
     describe: "7 환경 — auth status · 로그인 안 됨 · 실행 파일 위치 · API 키가 있을 때 (가짜 키)",
     cost: "턴 1 (가짜 키라 실제 호출 안 됨)",

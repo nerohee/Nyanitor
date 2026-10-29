@@ -762,10 +762,7 @@ fn a_session_id_of_a_strange_shape_is_not_saved_the_old_one_survives_and_the_ses
         h.manager.stop().unwrap();
         h.wait_ended();
         assert_eq!(
-            h.manager
-                .last_session(&h.project.display().to_string())
-                .unwrap()
-                .as_deref(),
+            h.manager.last_session(1).unwrap().as_deref(),
             Some(SESSION_ID),
             "a strange id ({id:?}) replaced the saved one"
         );
@@ -811,39 +808,46 @@ fn a_session_id_that_looks_like_an_option_is_never_saved_nor_passed_back_as_an_a
 }
 
 #[test]
-fn when_the_session_file_cannot_be_written_the_session_still_runs_and_only_warns() {
-    let mut h = Harness::new("store-unwritable");
-    // 데이터 폴더 자리에 파일이 있어 만들 수 없다
-    fs::write(h.root.join("data"), b"i am a file").unwrap();
+fn when_the_app_database_cannot_be_used_the_session_still_runs_and_only_warns() {
+    // 데이터 폴더 자리에 파일이 있어 DB 를 열 수 없다
+    let mut h = Harness::with_unusable_db("store-unwritable");
     let cmd = h.fake("start", &[]);
     h.start(&cmd).unwrap();
     h.manager.send_message("pong").unwrap();
-    assert_eq!(h.wait_for("warning", warning_code), "session_store_failed");
+    // 세션 ID 를 못 적었다는 알림 (채팅 기록을 못 쓴다는 알림이 먼저 올 수도 있다 — 둘 다 막지 않는 알림이다)
+    h.wait_for("store warning", |e| match e {
+        SessionEvent::Warning { code, .. } if code == "session_store_failed" => Some(()),
+        _ => None,
+    });
     assert_eq!(h.wait_for("turn end", turn_outcome), TurnOutcome::Success);
     assert_eq!(
-        h.manager
-            .last_session(&h.project.display().to_string())
-            .unwrap(),
-        None,
-        "nothing was saved, so nothing is claimed"
+        h.manager.last_session(1).unwrap_err().kind(),
+        "db_unavailable",
+        "nothing was saved, and the screen is told why"
     );
-    // 다음 이어 하기는 기록이 없다고 분명히 말한다
+    // 다음 이어 하기는 못 읽는다고 분명히 말한다 (기록이 없다고 거짓말하지 않는다)
     h.manager.stop().unwrap();
     let again = h.fake("start", &[]);
-    assert_eq!(
-        h.start_resume(&again).unwrap_err().kind(),
-        "no_saved_session"
-    );
+    assert_eq!(h.start_resume(&again).unwrap_err().kind(), "db_unavailable");
+    // 채팅 기록을 못 쓴다는 알림은 세션마다 한 번이다
+    let history_warnings = h
+        .seen()
+        .iter()
+        .filter(
+            |e| matches!(e, SessionEvent::Warning { code, .. } if code == "history_write_failed"),
+        )
+        .count();
+    assert!(history_warnings <= 1, "{history_warnings}");
 }
 
 #[cfg(windows)]
 #[test]
-fn the_saved_session_is_found_when_the_same_folder_is_typed_in_another_case_with_a_trailing_slash()
-{
+fn the_saved_session_is_found_by_project_id_whatever_way_the_folder_is_spelled() {
     let mut h = Harness::with_saved_session("spelling", SESSION_ID);
+    // 같은 폴더를 대소문자 · 끝 `\` 로 다르게 적어도 이어 하기는 프로젝트 번호로 찾는다
     let respelled = format!("{}\\", h.project.display().to_string().to_uppercase());
     assert_eq!(
-        h.manager.last_session(&respelled).unwrap().as_deref(),
+        h.manager.last_session(1).unwrap().as_deref(),
         Some(SESSION_ID)
     );
     let cmd = h.fake("resume.second", &[]);
@@ -993,10 +997,7 @@ fn a_session_id_the_cli_reports_that_is_not_a_uuid_is_never_saved_or_used_to_res
     );
     h.wait_ended();
     assert_eq!(
-        h.manager
-            .last_session(&h.project.display().to_string())
-            .unwrap()
-            .as_deref(),
+        h.manager.last_session(1).unwrap().as_deref(),
         Some(SESSION_ID)
     );
     // 이어 하기 인자에는 저장된 UUID 만 들어간다

@@ -1,10 +1,11 @@
-//! 프로젝트 폴더별 마지막 세션 ID — 앱 데이터 폴더의 작은 JSON 파일 (이어 하기용).
+//! 프로젝트별 세션 ID (이어 하기용) — 앱 DB 의 `sessions` 표 (P6-03, D-20) + 옛 `claude-sessions.json` 가져오기.
 //!
-//! 파일 모양 (버전 1): `{ "version": 1, "projects": { "<폴더 키>": { "sessionId": "...", "updatedAt": <초> } } }`
-//! - 세션 ID 외에는 아무것도 저장하지 않는다 (대화 내용 · 계정 정보 없음).
-//! - 쓰기는 임시 파일에 쓴 뒤 이름을 바꿔 덮는다 (쓰다가 끊겨도 옛 파일이 남는다).
-//! - 깨진 파일은 `.corrupt` 로 옮겨 두고 빈 상태로 시작한다. 이 앱보다 새 버전의 파일은 건드리지 않고(읽기 전용) 알린다.
-//! - 이 파일은 P4 이후 앱 DB(SQLite, D-20)로 옮겨질 수 있다 — 그때 번호를 붙여 이전한다.
+//! - 표: 프로젝트마다 CLI 세션 ID 여럿, 이어 하기는 `last_seen_at` 이 가장 늦은 것. 세션 ID 외에는 아무것도 저장하지 않는다 (대화 내용 · 계정 정보 없음).
+//! - 옛 JSON (P3~P5 가 앱 데이터 폴더에 쓰던 `{ "version": 1, "projects": { "<폴더 키>": { "sessionId", "updatedAt" } } }`)은 앱을 켤 때 **한 번** 가져온다:
+//!   등록된 프로젝트의 폴더 키(`project_key`)와 맞는 것만, 세션 ID 모양이 맞는 것만. 끝나면 파일 이름을 `.imported` 로 바꿔 다시 가져오지 않는다 (지우지 않는다).
+//!   그때 등록되지 않은 폴더의 항목은 가져오지 못한다 (이름을 바꾼 파일에는 그대로 남아 있다).
+//!   DB 를 못 써서 못 가져왔으면 파일을 그대로 두고 다음 실행에서 다시 한다 (이미 있는 항목은 건드리지 않아 몇 번을 해도 같다).
+//!   이 앱보다 새 모양(`version` 이 큼)이거나 읽지 못한 파일은 건드리지 않는다. 깨진 파일은 `.corrupt` 로 옮겨 둔다.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -12,32 +13,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde::Deserialize;
 use tauri_plugin_log::log;
 
-const FORMAT_VERSION: u32 = 1;
+use crate::db::AppDb;
+use crate::error::AppError;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Entry {
-    session_id: String,
-    updated_at: u64,
-}
+/// 옛 JSON 파일 이름 (앱 데이터 폴더 안)
+pub const LEGACY_FILE: &str = "claude-sessions.json";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct StoreData {
-    version: u32,
-    projects: BTreeMap<String, Entry>,
-}
-
-impl Default for StoreData {
-    fn default() -> Self {
-        Self {
-            version: FORMAT_VERSION,
-            projects: BTreeMap::new(),
-        }
-    }
-}
+/// 옛 파일 모양의 가장 새 버전 — 이보다 큰 `version` 은 모르는 모양이라 건드리지 않는다
+const LEGACY_VERSION: u32 = 1;
 
 /// 같은 폴더를 가리키는 서로 다른 글자(`C:\Dev\App\` 와 `c:/dev/app`)를 한 키로 모은다.
 pub fn project_key(dir: &Path) -> String {
@@ -93,136 +80,565 @@ pub fn is_valid_session_id(id: &str) -> bool {
         })
 }
 
-#[derive(Debug)]
-pub struct ResumeStore {
-    path: PathBuf,
-    data: StoreData,
-    /// 이 앱보다 새 버전 파일이라 쓰지 않는다
-    read_only: bool,
+// ───────────────────────── 앱 DB 의 `sessions` 표 ─────────────────────────
+
+/// 이 프로젝트가 이 세션 ID 를 쓰고 있다고 적는다 — 처음이면 새 줄, 이미 있으면 마지막 때만 늦춘다 (거꾸로 가지 않는다).
+/// 세션 ID 모양이 아니면 `invalid_input` (`--resume <ID>` 인자로 들어가므로).
+pub fn remember(
+    conn: &Connection,
+    project_id: i64,
+    session_id: &str,
+    now: i64,
+) -> Result<(), AppError> {
+    if !is_valid_session_id(session_id) {
+        return Err(AppError::InvalidInput(
+            "session id has unexpected characters".into(),
+        ));
+    }
+    conn.execute(
+        "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at)
+         VALUES (?1, ?2, ?3, ?3)
+         ON CONFLICT(project_id, session_id)
+         DO UPDATE SET last_seen_at = MAX(last_seen_at, excluded.last_seen_at)",
+        params![project_id, session_id, now],
+    )?;
+    Ok(())
 }
 
-impl ResumeStore {
-    /// 파일을 읽는다. 없으면 빈 상태, 깨졌으면 `.corrupt` 로 옮기고 빈 상태.
-    pub fn open(path: PathBuf) -> Self {
-        let mut store = Self {
-            path,
-            data: StoreData::default(),
-            read_only: false,
-        };
-        let text = match fs::read_to_string(&store.path) {
-            Ok(text) => text,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return store,
-            Err(err) => {
-                log::warn!("could not read the session store: {err}");
-                store.read_only = true; // 읽지 못한 파일을 빈 것으로 덮어쓰지 않는다
-                return store;
-            }
-        };
-        // 새 버전 파일은 모양이 달라도 건드리지 않는다 — `version` 만 먼저 본다 (옛 앱이 새 앱의 파일을 깨진 것으로 옮겨 버리지 않게).
-        let newer_version = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64))
-            .filter(|version| *version > u64::from(FORMAT_VERSION));
-        if let Some(version) = newer_version {
-            log::warn!(
-                "session store version {version} is newer than supported {FORMAT_VERSION}; leaving it untouched"
-            );
-            store.read_only = true;
-            return store;
-        }
-        match serde_json::from_str::<StoreData>(&text) {
-            Ok(data) if data.version <= FORMAT_VERSION => store.data = data,
-            Ok(data) => {
-                log::warn!(
-                    "session store version {} is newer than supported {FORMAT_VERSION}; leaving it untouched",
-                    data.version
-                );
-                store.read_only = true;
-            }
-            Err(err) => {
-                log::warn!("session store is corrupt ({err}); moving it aside");
-                let aside = store.path.with_extension("json.corrupt");
-                if let Err(err) = fs::rename(&store.path, &aside) {
-                    log::warn!("could not move the corrupt session store aside: {err}");
-                    store.read_only = true;
-                }
-            }
-        }
-        store
-    }
-
-    pub fn get(&self, key: &str) -> Option<String> {
-        self.data
-            .projects
-            .get(key)
-            .map(|entry| entry.session_id.clone())
-            .filter(|id| is_valid_session_id(id))
-    }
-
-    /// 저장한다. 같은 값이면 파일을 다시 쓰지 않는다. 쓰지 못하면 오류 (메모리에는 반영하지 않는다).
-    pub fn set(&mut self, key: &str, session_id: &str) -> io::Result<()> {
-        if !is_valid_session_id(session_id) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "session id has unexpected characters",
-            ));
-        }
-        if self.read_only {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "session store is read-only (newer or unreadable file)",
-            ));
-        }
-        if self.get(key).as_deref() == Some(session_id) {
-            return Ok(());
-        }
-        let mut next = self.data.clone();
-        next.projects.insert(
-            key.to_string(),
-            Entry {
-                session_id: session_id.to_string(),
-                updated_at: now_secs(),
-            },
-        );
-        write_atomically(&self.path, &next)?;
-        self.data = next;
-        Ok(())
-    }
+/// 이 프로젝트의 마지막 세션 ID (이어 하기용). 없으면 `None`. 모양이 이상한 ID (DB 를 손으로 고친 경우)는 건너뛰고 다음으로 새것을 찾는다.
+pub fn last_for_project(conn: &Connection, project_id: i64) -> Result<Option<String>, AppError> {
+    let mut statement = conn.prepare(
+        "SELECT session_id FROM sessions WHERE project_id = ?1
+         ORDER BY last_seen_at DESC, id DESC LIMIT 20",
+    )?;
+    let ids = statement
+        .query_map([project_id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ids.into_iter().find(|id| is_valid_session_id(id)))
 }
 
-fn now_secs() -> u64 {
+// ───────────────────────── 옛 JSON 가져오기 ─────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyEntry {
+    session_id: String,
+    updated_at: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct LegacyData {
+    version: u32,
+    projects: BTreeMap<String, LegacyEntry>,
+}
+
+/// 옛 파일 가져오기의 결과
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyImport {
+    /// 옛 파일이 없다 (처음 쓰는 PC · 이미 가져옴)
+    NoFile,
+    /// 가져왔다. `imported`: 새로 들어간 항목 수 · `skipped`: 건너뛴 항목 수 (등록 안 된 폴더 · 모양이 이상한 세션 ID · 이미 있던 것)
+    Imported { imported: usize, skipped: usize },
+    /// 이 앱보다 새 모양이거나 읽지 못해 그대로 뒀다
+    Left,
+    /// 깨진 파일이라 `.corrupt` 로 옮겼다
+    Corrupt,
+    /// 앱 DB 를 쓸 수 없어 못 가져왔다 (파일은 그대로 — 다음 실행에서 다시)
+    DbNotWritable,
+}
+
+fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
 
-fn write_atomically(path: &Path, data: &StoreData) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// 가져온 파일의 새 이름 — `<파일>.imported` (이미 있으면 `.imported-<시각>[-번호]`)
+fn imported_name(path: &Path, now: i64) -> PathBuf {
+    let plain = with_suffix(path, ".imported");
+    if !plain.exists() {
+        return plain;
     }
-    let tmp = path.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(data).map_err(io::Error::other)?;
-    fs::write(&tmp, text.as_bytes())?;
-    fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = fs::remove_file(&tmp);
-    })
+    let mut attempt = 0;
+    loop {
+        let tail = if attempt == 0 {
+            format!(".imported-{now}")
+        } else {
+            format!(".imported-{now}-{attempt}")
+        };
+        let candidate = with_suffix(path, &tail);
+        if !candidate.exists() {
+            return candidate;
+        }
+        attempt += 1;
+    }
+}
+
+/// 옛 `claude-sessions.json` 을 한 번 가져온다 (위 설명). 앱을 켤 때 부른다. 실패해도 앱은 뜬다 — 결과를 돌려줄 뿐이다.
+pub fn import_legacy(db: &AppDb, path: &Path) -> LegacyImport {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return LegacyImport::NoFile,
+        // UTF-8 이 아니다 = 깨진 파일
+        Err(err) if err.kind() == io::ErrorKind::InvalidData => return move_corrupt(path),
+        Err(err) => {
+            log::warn!("could not read the old session file: {err}");
+            return LegacyImport::Left;
+        }
+    };
+    // 새 버전 파일은 모양이 달라도 건드리지 않는다 — `version` 만 먼저 본다 (옛 앱이 새 앱의 파일을 깨진 것으로 옮겨 버리지 않게).
+    let newer = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64))
+        .is_some_and(|version| version > u64::from(LEGACY_VERSION));
+    if newer {
+        log::warn!("the old session file is newer than supported; leaving it untouched");
+        return LegacyImport::Left;
+    }
+    let data = match serde_json::from_str::<LegacyData>(&text) {
+        Ok(data) if data.version <= LEGACY_VERSION => data,
+        Ok(_) => return LegacyImport::Left,
+        Err(err) => {
+            log::warn!("the old session file is corrupt ({err}); moving it aside");
+            return move_corrupt(path);
+        }
+    };
+    match db.write(|conn| import_entries(conn, &data)) {
+        Ok((imported, skipped)) => {
+            let target = imported_name(path, now_secs());
+            if let Err(err) = fs::rename(path, &target) {
+                // 이름을 못 바꿔도 다음 실행에서 다시 가져올 뿐이다 (이미 있는 항목은 그대로)
+                log::warn!("could not mark the old session file as imported: {err}");
+            }
+            log::info!(
+                "imported {imported} saved session(s) from the old file ({skipped} skipped)"
+            );
+            LegacyImport::Imported { imported, skipped }
+        }
+        Err(err) => {
+            log::warn!("could not import the old session file: {err}");
+            LegacyImport::DbNotWritable
+        }
+    }
+}
+
+fn move_corrupt(path: &Path) -> LegacyImport {
+    let aside = path.with_extension("json.corrupt");
+    match fs::rename(path, &aside) {
+        Ok(()) => LegacyImport::Corrupt,
+        Err(err) => {
+            log::warn!("could not move the corrupt old session file aside: {err}");
+            LegacyImport::Left
+        }
+    }
+}
+
+/// 한 트랜잭션으로: 폴더 키가 등록된 프로젝트와 맞고 세션 ID 모양이 맞는 항목만 넣는다. 이미 있는 (프로젝트, 세션 ID) 는 그대로 둔다.
+fn import_entries(conn: &mut Connection, data: &LegacyData) -> Result<(usize, usize), AppError> {
+    let tx = conn.transaction()?;
+    let (mut imported, mut skipped) = (0, 0);
+    for (key, entry) in &data.projects {
+        if !is_valid_session_id(&entry.session_id) {
+            skipped += 1;
+            continue;
+        }
+        let project_id: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM projects WHERE path_key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(project_id) = project_id else {
+            skipped += 1;
+            continue;
+        };
+        let at = i64::try_from(entry.updated_at).unwrap_or(i64::MAX);
+        let added = tx.execute(
+            "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?3)
+             ON CONFLICT(project_id, session_id) DO NOTHING",
+            params![project_id, entry.session_id, at],
+        )?;
+        if added == 0 {
+            skipped += 1;
+        } else {
+            imported += 1;
+        }
+    }
+    tx.commit()?;
+    Ok((imported, skipped))
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::test_util::TempDir;
     use super::*;
+    use crate::db::{AppDb, DB_FILE};
+    use crate::projects::store as projects_store;
 
     const ID_A: &str = "00000000-0000-4000-8000-000000000001";
     const ID_B: &str = "00000000-0000-4000-8000-000000000002";
 
-    /// 시험마다 새 폴더 — 안에 쓸 저장 파일 경로. 폴더 손잡이를 쥐고 있는 동안만 남는다.
-    fn temp_file(name: &str) -> (TempDir, PathBuf) {
-        let dir = TempDir::new(name);
-        let file = dir.join("data").join("claude-sessions.json");
-        (dir, file)
+    /// 키 하나마다 프로젝트 하나 (번호는 1 부터 차례로)
+    fn db_with_projects(dir: &TempDir, keys: &[&str]) -> AppDb {
+        let db = AppDb::open(&dir.join(DB_FILE));
+        for key in keys {
+            db.write(|conn| projects_store::insert(conn, key, key, key, None, 1))
+                .unwrap();
+        }
+        db
     }
+
+    fn legacy_path(dir: &TempDir) -> PathBuf {
+        dir.join(LEGACY_FILE)
+    }
+
+    fn sessions_of(db: &AppDb, project_id: i64) -> Vec<(String, i64, i64)> {
+        db.read(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT session_id, first_seen_at, last_seen_at FROM sessions WHERE project_id = ?1 ORDER BY id",
+            )?;
+            Ok(statement
+                .query_map([project_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .unwrap()
+    }
+
+    fn last(db: &AppDb, project_id: i64) -> Option<String> {
+        db.read(|conn| last_for_project(conn, project_id)).unwrap()
+    }
+
+    fn legacy_json(entries: &[(&str, &str, u64)]) -> String {
+        let projects: Vec<String> = entries
+            .iter()
+            .map(|(key, id, at)| {
+                format!(
+                    "{}: {{\"sessionId\": \"{id}\", \"updatedAt\": {at}}}",
+                    serde_json::to_string(key).unwrap()
+                )
+            })
+            .collect();
+        format!(
+            "{{\"version\": 1, \"projects\": {{{}}}}}",
+            projects.join(",")
+        )
+    }
+
+    // ───────── sessions 표 ─────────
+
+    #[test]
+    fn the_last_session_is_the_one_seen_most_recently() {
+        let dir = TempDir::new("sess-last");
+        let db = db_with_projects(&dir, &["a", "b"]);
+        assert_eq!(last(&db, 1), None);
+        db.write(|conn| remember(conn, 1, ID_A, 100)).unwrap();
+        db.write(|conn| remember(conn, 1, ID_B, 200)).unwrap();
+        db.write(|conn| remember(conn, 2, ID_A, 50)).unwrap();
+        assert_eq!(last(&db, 1).as_deref(), Some(ID_B));
+        assert_eq!(last(&db, 2).as_deref(), Some(ID_A));
+        // 앞 세션을 다시 쓰면(이어 하기) 그것이 마지막이 된다 — 처음 본 때는 그대로
+        db.write(|conn| remember(conn, 1, ID_A, 300)).unwrap();
+        assert_eq!(last(&db, 1).as_deref(), Some(ID_A));
+        assert_eq!(
+            sessions_of(&db, 1),
+            [(ID_A.into(), 100, 300), (ID_B.into(), 200, 200)]
+        );
+        // 마지막 때는 거꾸로 가지 않는다
+        db.write(|conn| remember(conn, 1, ID_A, 10)).unwrap();
+        assert_eq!(sessions_of(&db, 1)[0], (ID_A.into(), 100, 300));
+    }
+
+    #[test]
+    fn the_same_time_goes_to_the_one_written_later() {
+        let dir = TempDir::new("sess-tie");
+        let db = db_with_projects(&dir, &["a"]);
+        db.write(|conn| remember(conn, 1, ID_A, 100)).unwrap();
+        db.write(|conn| remember(conn, 1, ID_B, 100)).unwrap();
+        assert_eq!(last(&db, 1).as_deref(), Some(ID_B));
+    }
+
+    #[test]
+    fn bad_session_ids_are_refused_before_anything_is_written() {
+        let dir = TempDir::new("sess-bad");
+        let db = db_with_projects(&dir, &["a"]);
+        for bad in [
+            "",
+            "short",
+            "has space in it 123456",
+            "--resume;rm -rf",
+            "--dangerously-skip-permissions",
+            &"x".repeat(65),
+        ] {
+            let err = db.write(|conn| remember(conn, 1, bad, 1)).unwrap_err();
+            assert_eq!(err.kind(), "invalid_input", "{bad}");
+        }
+        assert!(sessions_of(&db, 1).is_empty());
+    }
+
+    #[test]
+    fn a_session_of_an_unregistered_project_is_refused_by_the_database() {
+        let dir = TempDir::new("sess-fk");
+        let db = db_with_projects(&dir, &["a"]);
+        assert!(db.write(|conn| remember(conn, 9, ID_A, 1)).is_err());
+    }
+
+    #[test]
+    fn an_id_that_became_odd_in_the_file_is_skipped_for_an_older_good_one() {
+        let dir = TempDir::new("sess-tampered");
+        let db = db_with_projects(&dir, &["a"]);
+        db.write(|conn| remember(conn, 1, ID_A, 100)).unwrap();
+        // 36 글자지만 UUID 모양이 아닌 글이 손으로 들어갔다 (CHECK 는 길이만 본다)
+        db.write(|conn| {
+            conn.execute(
+                "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (1, ?1, 200, 200)",
+                [&"-".repeat(36)],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(last(&db, 1).as_deref(), Some(ID_A));
+    }
+
+    // ───────── 옛 JSON 가져오기 ─────────
+
+    #[test]
+    fn matching_entries_are_imported_once_and_the_file_is_renamed_not_deleted() {
+        let dir = TempDir::new("legacy-ok");
+        let db = db_with_projects(&dir, &["c:\\dev\\a", "c:\\dev\\b"]);
+        let path = legacy_path(&dir);
+        fs::write(
+            &path,
+            legacy_json(&[
+                ("c:\\dev\\a", ID_A, 1_700_000_000),
+                ("c:\\dev\\b", ID_B, 1_700_000_500),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            import_legacy(&db, &path),
+            LegacyImport::Imported {
+                imported: 2,
+                skipped: 0
+            }
+        );
+        assert_eq!(
+            sessions_of(&db, 1),
+            [(ID_A.into(), 1_700_000_000, 1_700_000_000)]
+        );
+        assert_eq!(last(&db, 2).as_deref(), Some(ID_B));
+        // 지우지 않고 이름만 바꿨다
+        assert!(!path.exists());
+        assert!(with_suffix(&path, ".imported").exists());
+        // 두 번째 실행: 옛 파일이 없으니 아무 일도 없다
+        assert_eq!(import_legacy(&db, &path), LegacyImport::NoFile);
+        assert_eq!(sessions_of(&db, 1).len(), 1);
+    }
+
+    #[test]
+    fn entries_of_unregistered_folders_and_odd_ids_are_skipped() {
+        let dir = TempDir::new("legacy-skip");
+        let db = db_with_projects(&dir, &["a"]);
+        let path = legacy_path(&dir);
+        fs::write(
+            &path,
+            legacy_json(&[
+                ("a", ID_A, 10),
+                ("not-registered", ID_B, 20),
+                ("a2", "--dangerously-skip-permissions", 30),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            import_legacy(&db, &path),
+            LegacyImport::Imported {
+                imported: 1,
+                skipped: 2
+            }
+        );
+        assert_eq!(last(&db, 1).as_deref(), Some(ID_A));
+        let total: i64 = db
+            .read(|c| Ok(c.query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn importing_the_same_file_again_changes_nothing() {
+        // 이름을 못 바꿔 다시 가져오게 된 경우를 흉내 낸다 — 이미 있는 항목은 그대로, 새 세션이 마지막인 채로
+        let dir = TempDir::new("legacy-twice");
+        let db = db_with_projects(&dir, &["a"]);
+        let path = legacy_path(&dir);
+        let body = legacy_json(&[("a", ID_A, 100)]);
+        fs::write(&path, &body).unwrap();
+        import_legacy(&db, &path);
+        db.write(|conn| remember(conn, 1, ID_B, 5000)).unwrap();
+        fs::write(&path, &body).unwrap();
+        assert_eq!(
+            import_legacy(&db, &path),
+            LegacyImport::Imported {
+                imported: 0,
+                skipped: 1
+            }
+        );
+        assert_eq!(
+            last(&db, 1).as_deref(),
+            Some(ID_B),
+            "옛 것이 새 세션을 밀어내지 않는다"
+        );
+        assert_eq!(sessions_of(&db, 1).len(), 2);
+        // 이미 `.imported` 가 있어도 덮어쓰지 않고 새 이름으로 옮겼다
+        assert!(with_suffix(&path, ".imported").exists());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_broken_file_is_moved_aside_and_nothing_is_imported() {
+        for (n, text) in [
+            "",
+            "   ",
+            "null",
+            "[]",
+            "{}",
+            "{ not json",
+            "{\"version\":1}",
+            "{\"version\":\"1\",\"projects\":{}}",
+            "{\"version\":1,\"projects\":[]}",
+            "{\"version\":1,\"projects\":{\"k\":5}}",
+            "{\"version\":1,\"projects\":{\"k\":{\"sessionId\":\"x\"}}}",
+            "{\"version\":-1,\"projects\":{}}",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let dir = TempDir::new(&format!("legacy-corrupt{n}"));
+            let db = db_with_projects(&dir, &["k"]);
+            let path = legacy_path(&dir);
+            fs::write(&path, text).unwrap();
+            assert_eq!(import_legacy(&db, &path), LegacyImport::Corrupt, "{text:?}");
+            assert!(!path.exists(), "{text:?}");
+            assert!(path.with_extension("json.corrupt").exists(), "{text:?}");
+            assert_eq!(last(&db, 1), None);
+        }
+    }
+
+    #[test]
+    fn a_non_utf8_file_is_corrupt_too() {
+        let dir = TempDir::new("legacy-binary");
+        let db = db_with_projects(&dir, &["k"]);
+        let path = legacy_path(&dir);
+        fs::write(&path, [0xff, 0xfe, 0x00, 0x7b, 0x00]).unwrap();
+        assert_eq!(import_legacy(&db, &path), LegacyImport::Corrupt);
+        assert!(path.with_extension("json.corrupt").exists());
+    }
+
+    #[test]
+    fn a_newer_format_file_is_left_in_place_whatever_its_shape() {
+        for (n, body) in [
+            r#"{"version":2,"projects":[]}"#,
+            r#"{"version":2}"#,
+            r#"{"version":99,"data":"x"}"#,
+            r#"{"version":2,"projects":{"k":5}}"#,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let dir = TempDir::new(&format!("legacy-newer{n}"));
+            let db = db_with_projects(&dir, &["k"]);
+            let path = legacy_path(&dir);
+            fs::write(&path, body).unwrap();
+            assert_eq!(import_legacy(&db, &path), LegacyImport::Left, "{body}");
+            assert_eq!(fs::read_to_string(&path).unwrap(), *body);
+            assert!(!path.with_extension("json.corrupt").exists(), "{body}");
+        }
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_left_alone() {
+        // 파일 자리에 폴더가 있다 → 읽을 수 없다 (옮기지도 지우지도 않는다)
+        let dir = TempDir::new("legacy-isdir");
+        let db = db_with_projects(&dir, &["k"]);
+        let path = legacy_path(&dir);
+        fs::create_dir(&path).unwrap();
+        assert_eq!(import_legacy(&db, &path), LegacyImport::Left);
+        assert!(path.is_dir());
+    }
+
+    #[test]
+    fn extra_fields_and_version_zero_are_tolerated() {
+        let dir = TempDir::new("legacy-extra");
+        let db = db_with_projects(&dir, &["k"]);
+        let path = legacy_path(&dir);
+        fs::write(
+            &path,
+            format!(
+                r#"{{"version":0,"future":true,"projects":{{"k":{{"sessionId":"{ID_A}","updatedAt":1,"note":"x"}}}}}}"#
+            ),
+        )
+        .unwrap();
+        assert!(matches!(
+            import_legacy(&db, &path),
+            LegacyImport::Imported { imported: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn a_database_that_cannot_be_written_keeps_the_file_for_the_next_run() {
+        let dir = TempDir::new("legacy-nodb");
+        // 데이터 폴더 자리에 파일이 있어 DB 를 못 연다
+        let blocker = dir.join("data");
+        fs::write(&blocker, b"i am a file").unwrap();
+        let db = AppDb::open(&blocker.join(DB_FILE));
+        let path = legacy_path(&dir);
+        let body = legacy_json(&[("k", ID_A, 1)]);
+        fs::write(&path, &body).unwrap();
+        assert_eq!(import_legacy(&db, &path), LegacyImport::DbNotWritable);
+        assert_eq!(fs::read_to_string(&path).unwrap(), body);
+        assert!(!with_suffix(&path, ".imported").exists());
+    }
+
+    #[test]
+    fn a_read_only_newer_database_does_not_take_the_import() {
+        let dir = TempDir::new("legacy-newerdb");
+        let db_path = dir.join(DB_FILE);
+        drop(db_with_projects(&dir, &["k"]));
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.pragma_update(None, "user_version", crate::db::SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+        let db = AppDb::open(&db_path);
+        let path = legacy_path(&dir);
+        fs::write(&path, legacy_json(&[("k", ID_A, 1)])).unwrap();
+        assert_eq!(import_legacy(&db, &path), LegacyImport::DbNotWritable);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn the_imported_name_never_overwrites_an_earlier_imported_file() {
+        let dir = TempDir::new("legacy-names");
+        let path = legacy_path(&dir);
+        fs::write(with_suffix(&path, ".imported"), "old one").unwrap();
+        let name = imported_name(&path, 42);
+        assert_eq!(name, with_suffix(&path, ".imported-42"));
+        fs::write(&name, "second").unwrap();
+        assert_eq!(
+            imported_name(&path, 42),
+            with_suffix(&path, ".imported-42-1")
+        );
+    }
+
+    // ───────── 폴더 키 · 세션 ID 모양 (옛 저장소 시험에서 옮김) ─────────
 
     #[test]
     fn keys_unify_slashes_case_and_trailing_separators_on_windows() {
@@ -239,124 +655,6 @@ mod tests {
             assert_eq!(project_key(Path::new("/")), "/");
         }
     }
-
-    #[test]
-    fn missing_file_is_an_empty_store_and_the_dir_is_created_on_first_write() {
-        let (_dir, path) = temp_file("missing");
-        let mut store = ResumeStore::open(path.clone());
-        assert_eq!(store.get("k"), None);
-        store.set("k", ID_A).unwrap();
-        assert!(path.exists());
-        assert!(!path.with_extension("json.tmp").exists());
-        assert_eq!(ResumeStore::open(path).get("k").as_deref(), Some(ID_A));
-    }
-
-    #[test]
-    fn values_are_kept_per_project_and_replaced_on_change() {
-        let (_dir, path) = temp_file("replace");
-        let mut store = ResumeStore::open(path.clone());
-        store.set("a", ID_A).unwrap();
-        store.set("b", ID_B).unwrap();
-        store.set("a", ID_B).unwrap();
-        let reopened = ResumeStore::open(path);
-        assert_eq!(reopened.get("a").as_deref(), Some(ID_B));
-        assert_eq!(reopened.get("b").as_deref(), Some(ID_B));
-    }
-
-    #[test]
-    fn the_file_holds_only_ids_and_times() {
-        let (_dir, path) = temp_file("shape");
-        ResumeStore::open(path.clone()).set("k", ID_A).unwrap();
-        let value: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(value["version"], 1);
-        assert_eq!(value["projects"]["k"]["sessionId"], ID_A);
-        assert!(value["projects"]["k"]["updatedAt"].is_u64());
-        assert_eq!(value["projects"]["k"].as_object().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn a_corrupt_file_is_moved_aside_and_the_store_starts_empty() {
-        let (_dir, path) = temp_file("corrupt");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "{ not json").unwrap();
-        let mut store = ResumeStore::open(path.clone());
-        assert_eq!(store.get("k"), None);
-        assert!(path.with_extension("json.corrupt").exists());
-        store.set("k", ID_A).unwrap();
-        assert_eq!(ResumeStore::open(path).get("k").as_deref(), Some(ID_A));
-    }
-
-    #[test]
-    fn a_newer_version_file_is_left_alone() {
-        let (_dir, path) = temp_file("newer");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let original = r#"{"version":99,"projects":{"k":{"sessionId":"00000000-0000-4000-8000-000000000001","updatedAt":1}}}"#;
-        fs::write(&path, original).unwrap();
-        let mut store = ResumeStore::open(path.clone());
-        let err = store.set("k", ID_B).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
-        assert_eq!(fs::read_to_string(path).unwrap(), original);
-    }
-
-    #[test]
-    fn bad_session_ids_are_refused_before_touching_the_file() {
-        let (_dir, path) = temp_file("badid");
-        let mut store = ResumeStore::open(path.clone());
-        for bad in [
-            "",
-            "short",
-            "has space in it 123456",
-            "--resume;rm -rf",
-            &"x".repeat(65),
-        ] {
-            assert!(store.set("k", bad).is_err(), "{bad}");
-        }
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn a_stored_id_with_a_bad_shape_is_not_returned() {
-        let (_dir, path) = temp_file("tampered");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            &path,
-            r#"{"version":1,"projects":{"k":{"sessionId":"--evil --flag","updatedAt":1}}}"#,
-        )
-        .unwrap();
-        assert_eq!(ResumeStore::open(path).get("k"), None);
-    }
-
-    #[test]
-    fn writing_the_same_value_again_does_not_rewrite_the_file() {
-        let (_dir, path) = temp_file("same");
-        let mut store = ResumeStore::open(path.clone());
-        store.set("k", ID_A).unwrap();
-        let before = fs::read_to_string(&path).unwrap();
-        store.set("k", ID_A).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), before);
-    }
-}
-
-/// P3-03 — 저장소 경계 시험 (파일 없음 · 깨짐 · 다른 버전 · 쓰기 실패 · 폴더 표기 · 세션 ID 모양).
-#[cfg(test)]
-mod edge_tests {
-    use super::super::test_util::TempDir;
-    use super::*;
-
-    const ID_A: &str = "00000000-0000-4000-8000-000000000001";
-    const ID_B: &str = "00000000-0000-4000-8000-000000000002";
-
-    fn file_in(dir: &TempDir) -> PathBuf {
-        dir.join("data").join("claude-sessions.json")
-    }
-
-    fn write_raw(path: &Path, text: &[u8]) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-    }
-
-    // ───────── 폴더 표기 ─────────
 
     #[cfg(windows)]
     #[test]
@@ -416,29 +714,6 @@ mod edge_tests {
     }
 
     #[test]
-    fn odd_keys_round_trip_through_the_file() {
-        let dir = TempDir::new("odd-keys");
-        let path = file_in(&dir);
-        let keys = [
-            String::new(),
-            "c:\\내 프로젝트 (1)".to_string(),
-            "quote\"and\\slash".to_string(),
-            "line\nbreak".to_string(),
-            "k".repeat(10_000),
-        ];
-        let mut store = ResumeStore::open(path.clone());
-        for key in &keys {
-            store.set(key, ID_A).unwrap();
-        }
-        let reopened = ResumeStore::open(path);
-        for key in &keys {
-            assert_eq!(reopened.get(key).as_deref(), Some(ID_A));
-        }
-    }
-
-    // ───────── 세션 ID 모양 ─────────
-
-    #[test]
     fn session_id_shapes_at_the_edges() {
         // UUID (8-4-4-4-12 의 16진수) 만 — 대소문자는 가리지 않는다
         for ok in [
@@ -471,274 +746,6 @@ mod edge_tests {
         ] {
             assert!(!is_valid_session_id(bad), "{bad:?}");
         }
-    }
-
-    #[test]
-    fn an_id_that_starts_with_a_dash_cannot_be_read_as_an_option_by_the_cli() {
-        for bad in [
-            "--dangerously-skip-permissions",
-            "--------",
-            "-p-p-p-p-p",
-            "--resume",
-        ] {
-            assert!(!is_valid_session_id(bad), "{bad}");
-        }
-        let dir = TempDir::new("dash-id");
-        let mut store = ResumeStore::open(file_in(&dir));
-        assert!(store.set("k", "--dangerously-skip-permissions").is_err());
-    }
-
-    #[test]
-    fn a_stored_id_that_became_invalid_on_disk_is_hidden_but_does_not_break_other_projects() {
-        let dir = TempDir::new("mixed");
-        let path = file_in(&dir);
-        write_raw(
-            &path,
-            format!(
-                r#"{{"version":1,"projects":{{"bad":{{"sessionId":"x y","updatedAt":1}},"good":{{"sessionId":"{ID_A}","updatedAt":2}}}}}}"#
-            )
-            .as_bytes(),
-        );
-        let mut store = ResumeStore::open(path);
-        assert_eq!(store.get("bad"), None);
-        assert_eq!(store.get("good").as_deref(), Some(ID_A));
-        // 나쁜 항목은 새 값으로 바꿀 수 있다
-        store.set("bad", ID_B).unwrap();
-        assert_eq!(store.get("bad").as_deref(), Some(ID_B));
-    }
-
-    // ───────── 파일 상태 ─────────
-
-    #[test]
-    fn files_with_the_wrong_shape_are_moved_aside_and_the_store_starts_empty() {
-        for (n, text) in [
-            "",
-            "   ",
-            "null",
-            "[]",
-            "{}",
-            "[1,2,3]",
-            "\"text\"",
-            "{\"version\":1}",
-            "{\"version\":\"1\",\"projects\":{}}",
-            "{\"version\":1,\"projects\":[]}",
-            "{\"version\":1,\"projects\":{\"k\":5}}",
-            "{\"version\":1,\"projects\":{\"k\":{\"sessionId\":5,\"updatedAt\":1}}}",
-            "{\"version\":-1,\"projects\":{}}",
-            "{\"version\":1,\"projects\":{\"k\":{\"sessionId\":\"x\"}}}",
-            "\u{0}\u{0}\u{0}",
-            "{\"version\":1,\"projects\":{",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let dir = TempDir::new(&format!("shape{n}"));
-            let path = file_in(&dir);
-            write_raw(&path, text.as_bytes());
-            let mut store = ResumeStore::open(path.clone());
-            assert_eq!(store.get("k"), None, "{text:?}");
-            assert!(
-                path.with_extension("json.corrupt").exists(),
-                "옛 파일을 옆으로 옮겨 두지 않았다: {text:?}"
-            );
-            assert!(!path.exists());
-            // 그다음에는 평소처럼 저장된다
-            store.set("k", ID_A).unwrap();
-            assert_eq!(ResumeStore::open(path).get("k").as_deref(), Some(ID_A));
-        }
-    }
-
-    #[test]
-    fn a_non_utf8_file_is_treated_as_corrupt_not_as_a_crash() {
-        let dir = TempDir::new("binary");
-        let path = file_in(&dir);
-        write_raw(&path, &[0xff, 0xfe, 0x00, 0x7b, 0x00]);
-        let store = ResumeStore::open(path.clone());
-        assert_eq!(store.get("k"), None);
-        // 읽기 자체가 실패한 파일은 지우거나 덮어쓰지 않는다
-        assert!(path.exists() || path.with_extension("json.corrupt").exists());
-    }
-
-    #[test]
-    fn a_second_corruption_keeps_the_latest_bad_file_aside_and_never_loses_the_good_one() {
-        let dir = TempDir::new("twice");
-        let path = file_in(&dir);
-        write_raw(&path, b"first {");
-        let mut store = ResumeStore::open(path.clone());
-        store.set("k", ID_A).unwrap();
-        // 좋은 파일이 생긴 뒤 다시 깨졌다
-        fs::write(&path, b"second {").unwrap();
-        let again = ResumeStore::open(path.clone());
-        assert_eq!(again.get("k"), None);
-        let aside = fs::read_to_string(path.with_extension("json.corrupt")).unwrap();
-        assert_eq!(aside, "second {");
-    }
-
-    #[test]
-    fn a_version_zero_file_is_still_read() {
-        let dir = TempDir::new("versions");
-        let path = file_in(&dir);
-        write_raw(
-            &path,
-            format!(r#"{{"version":0,"projects":{{"k":{{"sessionId":"{ID_A}","updatedAt":1}}}}}}"#)
-                .as_bytes(),
-        );
-        assert_eq!(ResumeStore::open(path).get("k").as_deref(), Some(ID_A));
-    }
-
-    #[test]
-    fn a_newer_format_with_a_different_shape_is_left_in_place_not_moved_aside() {
-        let dir = TempDir::new("newer-shape");
-        let path = file_in(&dir);
-        let original = r#"{"version":2,"projects":[{"path":"C:\\p","sessionIds":["a","b"]}]}"#;
-        write_raw(&path, original.as_bytes());
-        let mut store = ResumeStore::open(path.clone());
-        assert!(store.set("k", ID_A).is_err(), "읽기 전용이어야 한다");
-        assert!(path.exists(), "새 형식 파일이 제자리에 있어야 한다");
-        assert_eq!(fs::read_to_string(&path).unwrap(), original);
-        assert!(!path.with_extension("json.corrupt").exists());
-    }
-
-    #[test]
-    fn unknown_extra_fields_in_a_current_version_file_are_tolerated() {
-        let dir = TempDir::new("extra");
-        let path = file_in(&dir);
-        write_raw(
-            &path,
-            format!(
-                r#"{{"version":1,"future":true,"projects":{{"k":{{"sessionId":"{ID_A}","updatedAt":1,"note":"x"}}}}}}"#
-            )
-            .as_bytes(),
-        );
-        assert_eq!(ResumeStore::open(path).get("k").as_deref(), Some(ID_A));
-    }
-
-    // ───────── 쓰기 실패 ─────────
-
-    #[test]
-    fn when_the_data_folder_cannot_be_created_set_fails_and_the_memory_is_not_changed() {
-        let dir = TempDir::new("no-folder");
-        // `data` 자리에 폴더가 아닌 파일이 있다
-        fs::write(dir.join("data"), b"i am a file").unwrap();
-        let mut store = ResumeStore::open(file_in(&dir));
-        assert!(store.set("k", ID_A).is_err());
-        assert_eq!(store.get("k"), None);
-        // 막힌 것이 풀리면 같은 저장소 객체로 다시 저장된다
-        fs::remove_file(dir.join("data")).unwrap();
-        store.set("k", ID_A).unwrap();
-        assert_eq!(store.get("k").as_deref(), Some(ID_A));
-    }
-
-    #[test]
-    fn a_blocked_temp_file_name_fails_the_write_without_touching_the_old_file() {
-        let dir = TempDir::new("tmp-blocked");
-        let path = file_in(&dir);
-        let mut store = ResumeStore::open(path.clone());
-        store.set("k", ID_A).unwrap();
-        let before = fs::read_to_string(&path).unwrap();
-        // 임시 파일 이름 자리에 폴더가 있다 → 쓰기 실패
-        fs::create_dir(path.with_extension("json.tmp")).unwrap();
-        assert!(store.set("k", ID_B).is_err());
-        assert_eq!(store.get("k").as_deref(), Some(ID_A), "메모리도 옛 값");
-        assert_eq!(fs::read_to_string(&path).unwrap(), before, "파일도 옛 값");
-    }
-
-    #[test]
-    fn a_target_path_that_is_a_folder_fails_the_write_and_leaves_no_temp_file() {
-        let dir = TempDir::new("target-dir");
-        let path = file_in(&dir);
-        // 저장 파일 자리가 폴더 — 읽을 수 없는 파일로 보고 읽기 전용이 된다 (빈 것으로 덮어쓰지 않는다)
-        fs::create_dir_all(&path).unwrap();
-        let mut store = ResumeStore::open(path.clone());
-        assert_eq!(store.get("k"), None);
-        let err = store.set("k", ID_A).unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            io::ErrorKind::PermissionDenied | io::ErrorKind::Other | io::ErrorKind::IsADirectory
-        ));
-        assert!(path.is_dir(), "폴더가 그대로");
-        assert!(!path.with_extension("json.tmp").exists());
-    }
-
-    #[test]
-    fn a_read_only_file_makes_the_write_fail_cleanly() {
-        let dir = TempDir::new("readonly");
-        let path = file_in(&dir);
-        let mut store = ResumeStore::open(path.clone());
-        store.set("k", ID_A).unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_readonly(true);
-        fs::set_permissions(&path, permissions.clone()).unwrap();
-        let result = store.set("k", ID_B);
-        // 읽기 전용 해제 (임시 폴더 정리를 위해)
-        #[allow(clippy::permissions_set_readonly_false)]
-        permissions.set_readonly(false);
-        fs::set_permissions(&path, permissions).unwrap();
-        // Windows 에서는 읽기 전용 파일 위에 이름 바꾸기가 거절된다. 유닉스는 폴더 권한이 정하므로 성공할 수 있다.
-        if cfg!(windows) {
-            assert!(result.is_err());
-            assert_eq!(store.get("k").as_deref(), Some(ID_A));
-        }
-        assert!(!path.with_extension("json.tmp").exists());
-    }
-
-    #[test]
-    fn writing_a_different_key_leaves_the_other_keys_and_the_file_stays_valid_json() {
-        let dir = TempDir::new("others");
-        let path = file_in(&dir);
-        let mut store = ResumeStore::open(path.clone());
-        for i in 0..50 {
-            store.set(&format!("project-{i}"), ID_A).unwrap();
-        }
-        store.set("project-7", ID_B).unwrap();
-        let reopened = ResumeStore::open(path.clone());
-        assert_eq!(reopened.get("project-7").as_deref(), Some(ID_B));
-        assert_eq!(reopened.get("project-8").as_deref(), Some(ID_A));
-        assert!(
-            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).is_ok()
-        );
-    }
-
-    #[test]
-    fn two_stores_on_the_same_file_do_not_corrupt_it_but_the_last_writer_wins() {
-        // 앱은 저장소를 하나만 쓰지만(관리자가 잠금으로 감싼다), 두 개가 열려도 파일이 깨지지는 않아야 한다.
-        let dir = TempDir::new("two-stores");
-        let path = file_in(&dir);
-        let mut a = ResumeStore::open(path.clone());
-        let mut b = ResumeStore::open(path.clone());
-        a.set("from-a", ID_A).unwrap();
-        b.set("from-b", ID_B).unwrap();
-        let reopened = ResumeStore::open(path);
-        assert_eq!(reopened.get("from-b").as_deref(), Some(ID_B));
-        // 늦게 쓴 쪽이 옛 메모리 기준으로 덮으므로 앞 항목은 사라질 수 있다 — 깨지지만 않으면 된다
-    }
-}
-
-/// P3-05 — 세션 ID 는 UUID 만 · 폴더 키 · 새 버전 파일.
-#[cfg(test)]
-mod fix_tests {
-    use super::super::test_util::TempDir;
-    use super::*;
-
-    const ID_A: &str = "00000000-0000-4000-8000-000000000001";
-
-    fn file_in(dir: &TempDir) -> PathBuf {
-        dir.join("data").join("claude-sessions.json")
-    }
-
-    #[test]
-    fn a_dash_led_or_option_like_id_in_the_saved_file_is_not_returned() {
-        let dir = TempDir::new("evil-in-file");
-        let path = file_in(&dir);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            &path,
-            r#"{"version":1,"projects":{"k":{"sessionId":"--dangerously-skip-permissions","updatedAt":1},"ok":{"sessionId":"00000000-0000-4000-8000-000000000001","updatedAt":1}}}"#,
-        )
-        .unwrap();
-        let store = ResumeStore::open(path);
-        assert_eq!(store.get("k"), None, "읽을 때도 모양을 확인한다");
-        assert_eq!(store.get("ok").as_deref(), Some(ID_A));
     }
 
     #[cfg(windows)]
@@ -778,49 +785,5 @@ mod fix_tests {
             project_key(Path::new("\\\\srv\\share")),
             project_key(Path::new("C:\\srv\\share"))
         );
-    }
-
-    #[test]
-    fn a_newer_version_file_is_left_alone_whatever_its_shape() {
-        for (n, body) in [
-            r#"{"version":2,"projects":[]}"#,
-            r#"{"version":2}"#,
-            r#"{"version":99,"data":"x"}"#,
-            r#"{"version":2,"projects":{"k":5}}"#,
-        ]
-        .iter()
-        .enumerate()
-        {
-            let dir = TempDir::new(&format!("newer-{n}"));
-            let path = file_in(&dir);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, body).unwrap();
-            let mut store = ResumeStore::open(path.clone());
-            assert!(store.set("k", ID_A).is_err(), "{body}");
-            assert_eq!(fs::read_to_string(&path).unwrap(), *body);
-            assert!(!path.with_extension("json.corrupt").exists(), "{body}");
-        }
-    }
-
-    #[test]
-    fn a_broken_file_with_no_readable_version_is_still_moved_aside() {
-        for (n, body) in [
-            "{ not json",
-            "[]",
-            r#"{"projects":{}}"#,
-            r#"{"version":"2","projects":{}}"#,
-            r#"{"version":1,"projects":[]}"#,
-        ]
-        .iter()
-        .enumerate()
-        {
-            let dir = TempDir::new(&format!("broken-{n}"));
-            let path = file_in(&dir);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, body).unwrap();
-            let mut store = ResumeStore::open(path.clone());
-            store.set("k", ID_A).unwrap();
-            assert!(path.with_extension("json.corrupt").exists(), "{body}");
-        }
     }
 }

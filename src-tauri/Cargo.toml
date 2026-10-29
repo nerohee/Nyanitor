@@ -39,6 +39,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
+    # 앱이 쓴 츄르의 "오늘" 을 이 PC 의 자정부터 세려고 시간대를 읽는다 — src/history/usage.rs 에서만 쓴다.
+    "Win32_System_Time",
 ] }
 
 [target.'cfg(unix)'.dependencies]

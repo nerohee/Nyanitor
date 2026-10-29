@@ -333,6 +333,19 @@ export function createFakeProjects() {
       if (project.folder === "missing") throw new AppError("project_folder_missing", `the project folder does not exist now: project ${project.id}`);
       return project.path;
     },
+    /** 진짜 DB 읽기를 흉내: DB 를 못 읽으면(`?db=unavailable`) `db_unavailable`. 채팅 기록 · 츄르 요약이 쓴다 (`fakeHistory.ts`) */
+    checkReadable(): void {
+      checkDb(false);
+    },
+    /** 진짜 `projects_store::get` 를 흉내: DB 를 읽을 수 있고 등록된 프로젝트여야 한다 (아니면 `db_unavailable` · `project_not_found`). 채팅 기록이 쓴다 */
+    requireRegistered(id: unknown): void {
+      checkDb(false);
+      find(id);
+    },
+    /** 등록된 프로젝트인가 (던지지 않는다) */
+    isRegistered(id: number): boolean {
+      return state().some((candidate) => candidate.id === id);
+    },
     /** 시작한 프로젝트를 "최근에 연" 으로 적는다 — 진짜처럼 못 적어도 던지지 않고 오류 종류를 돌려준다 (세션은 이미 떴다). 적었으면 null */
     touchQuiet(id: unknown): string | null {
       try {

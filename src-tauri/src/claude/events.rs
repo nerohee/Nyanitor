@@ -163,7 +163,8 @@ pub enum SessionEvent {
     },
     /// 막지 않고 알리기만 하는 것. `code`: `cli_version_mismatch` · `session_store_failed` · `write_failed` ·
     /// `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use` ·
-    /// `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` · `project_touch_failed`
+    /// `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` · `project_touch_failed` ·
+    /// `history_write_failed`
     Warning {
         code: String,
         detail: Option<String>,
@@ -197,6 +198,15 @@ pub enum SessionEvent {
     },
     PermissionRequest(PermissionRequestInfo),
     QuestionRequest(QuestionRequestInfo),
+    /// 사용자가 요청(권한 · 질문)에 답했고 CLI 로 전해졌다 — 화면과 채팅 기록이 같이 받는다 (기록은 이 이벤트로 카드의 답을 안다).
+    RequestAnswered {
+        request_id: String,
+        kind: AnswerKind,
+        /// `deny` 의 이유 글 · `tell` 의 말 (없으면 `None`)
+        text: Option<String>,
+        /// `answer` 의 질문 문장 → 고른 것 · 쓴 글 (다듬은 값 — CLI 에 간 것)
+        answers: Option<BTreeMap<String, AnswerValue>>,
+    },
     /// 기다리던 요청이 취소됐다 (중단 등) — 카드를 닫는다. 뒤늦게 답할 필요 없다.
     RequestCancelled {
         request_id: String,
@@ -257,11 +267,22 @@ pub struct StartRequest {
 }
 
 /// 질문 하나의 답: 고른 라벨 하나 · 여러 개 · 직접 쓴 글.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AnswerValue {
     One(String),
     Many(Vec<String>),
+}
+
+/// 사용자가 한 답의 종류 (`Response` 의 `kind` 와 같은 이름)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnswerKind {
+    Allow,
+    AlwaysAllow,
+    Deny,
+    Tell,
+    Answer,
 }
 
 /// 요청 하나에 대한 사용자의 답.
@@ -334,6 +355,43 @@ mod tests {
         assert_eq!(value["sessionId"], "s");
         assert_eq!(value["cliVersion"], "2.1.296");
         assert_eq!(value["apiKeySource"], "none");
+    }
+
+    #[test]
+    fn request_answered_carries_the_kind_and_what_the_user_wrote_or_chose() {
+        let event = SessionEvent::RequestAnswered {
+            request_id: "r1".into(),
+            kind: AnswerKind::Deny,
+            text: Some("not that".into()),
+            answers: None,
+        };
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            json!({ "type": "request_answered", "requestId": "r1", "kind": "deny", "text": "not that", "answers": null })
+        );
+        let mut answers = BTreeMap::new();
+        answers.insert("Q1".to_string(), AnswerValue::One("Blue".into()));
+        answers.insert(
+            "Q2".to_string(),
+            AnswerValue::Many(vec!["A".into(), "B".into()]),
+        );
+        let event = SessionEvent::RequestAnswered {
+            request_id: "q".into(),
+            kind: AnswerKind::Answer,
+            text: None,
+            answers: Some(answers),
+        };
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["kind"], "answer");
+        assert_eq!(value["answers"], json!({ "Q1": "Blue", "Q2": ["A", "B"] }));
+        // 답 종류 이름은 `Response` 의 `kind` 와 같다
+        for (kind, name) in [
+            (AnswerKind::Allow, "allow"),
+            (AnswerKind::AlwaysAllow, "always_allow"),
+            (AnswerKind::Tell, "tell"),
+        ] {
+            assert_eq!(serde_json::to_value(kind).unwrap(), json!(name));
+        }
     }
 
     #[test]

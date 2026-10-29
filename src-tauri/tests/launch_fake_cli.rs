@@ -31,9 +31,9 @@ fn plain_env() -> Env {
     env_with(ForbiddenSet::new())
 }
 
-/// 이 시험의 앱 DB — `Harness` 보다 나중에 만들어 먼저 버려진다 (열린 DB 파일이 폴더 지우기를 막지 않게)
+/// 이 시험의 앱 DB — 세션 관리자가 쓰는 것과 같은 연결이다 (`Harness` 가 프로젝트 1번을 이미 등록해 두었다)
 fn open_db(h: &Harness) -> AppDb {
-    AppDb::open(&h.root.join("data").join(DB_FILE))
+    h.db.clone()
 }
 
 /// 프로젝트 폴더(`h.project`)를 등록하고 번호를 돌려준다
@@ -296,7 +296,7 @@ fn a_project_that_is_not_registered_is_refused_and_nothing_runs() {
     assert!(cmd.log_entries().is_empty(), "the fake was never launched");
     assert!(!h.manager.state().running);
     // 빈 DB 도 같다
-    let empty = Harness::new("launch-empty-db");
+    let empty = Harness::without_project("launch-empty-db");
     let empty_db = open_db(&empty);
     let err = launch::start_session(
         &empty.manager,
@@ -374,10 +374,10 @@ fn a_project_whose_folder_became_unselectable_is_refused_and_nothing_runs() {
 #[test]
 fn an_unusable_database_refuses_instead_of_guessing_a_folder() {
     let h = Harness::new("launch-nodb");
-    // DB 자리에 폴더를 둬서 못 열게 한다
-    let blocked = h.root.join("data").join(DB_FILE);
+    // DB 자리에 폴더를 둬서 못 열게 한다 (세션 관리자가 쓰는 DB 와는 따로 연 것)
+    let blocked = h.root.join("blocked-data").join(DB_FILE);
     fs::create_dir_all(&blocked).unwrap();
-    let db = open_db(&h);
+    let db = AppDb::open(&blocked);
     let cmd = h.fake("start", &[]);
     let err = launch::start_session(
         &h.manager,
@@ -590,7 +590,7 @@ fn a_database_that_cannot_be_written_still_starts_the_session_and_says_so() {
         let conn = rusqlite::Connection::open(data.join(DB_FILE)).unwrap();
         conn.pragma_update(None, "user_version", 9999).unwrap();
     }
-    let db = open_db(&h);
+    let db = AppDb::open(&data.join(DB_FILE));
     let cmd = h.fake("start", &[]);
     let info = launch::start_session(
         &h.manager,

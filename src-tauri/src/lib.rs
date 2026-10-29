@@ -4,6 +4,7 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod harness;
+pub mod history;
 pub mod projects;
 pub mod skills;
 pub mod strings;
@@ -54,22 +55,22 @@ pub fn run() {
                 app.package_info().version
             );
             tray::setup(app.handle())?;
-            // 세션 관리자 (Claude 연결). 마지막 세션 ID 는 앱 데이터 폴더의 작은 JSON 파일에 둔다.
-            let store = claude::store::ResumeStore::open(
-                app.path().app_data_dir()?.join("claude-sessions.json"),
-            );
+            // 앱 DB (프로젝트 목록 · 세션 ID · 채팅 기록 · 츄르): 앱 데이터 폴더의 SQLite 하나. 못 열어도 앱은 뜨고, DB 를 쓰는 명령만 오류를 돌려준다 (P6-01).
+            let app_data = app.path().app_data_dir()?;
+            let app_db = db::AppDb::open(&app_data.join(db::DB_FILE));
+            // 옛 `claude-sessions.json` 의 세션 ID 를 한 번 가져온다 (등록된 프로젝트의 것만, 끝나면 파일 이름을 바꾼다). 실패해도 앱은 뜬다.
+            claude::store::import_legacy(&app_db, &app_data.join(claude::store::LEGACY_FILE));
+            // 세션 관리자 (Claude 연결): 이어 하기 세션 ID · 채팅 기록 · 츄르를 같은 DB 에 쓴다 (P6-03).
             app.manage(claude::session::SessionManager::new(
                 claude::commands::TauriSink::new(app.handle().clone()),
-                store,
+                app_db.clone(),
                 claude::session::ManagerConfig::default(),
             ));
+            app.manage(app_db);
             // 하네스 일(받기 · 업데이트 · 설치 · 되돌리기)은 한 번에 하나 (P4-02).
             app.manage(harness::HarnessState::default());
             // 사용량 한도 읽기: 받은 값을 잠깐 기억하고 한 번에 하나만 읽는다 (P5-01).
             app.manage(usage::UsageState::default());
-            // 앱 DB (프로젝트 목록 등): 앱 데이터 폴더의 SQLite 하나. 못 열어도 앱은 뜨고 프로젝트 명령만 오류를 돌려준다 (P6-01).
-            let app_data = app.path().app_data_dir()?;
-            app.manage(db::AppDb::open(&app_data.join(db::DB_FILE)));
             app.manage(projects::ProjectsState::new(app_data));
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
@@ -110,6 +111,8 @@ pub fn run() {
             projects::commands::project_requirements_read,
             projects::commands::project_requirements_version,
             projects::commands::project_requirements_write,
+            history::commands::project_chat_history,
+            history::commands::app_usage_summary,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -42,6 +42,8 @@ export function describeEvent(event: ClaudeEvent): string | null {
       return tf("lab.event.permission", { tool: event.tool, target: event.command ?? event.path ?? "" });
     case "question_request":
       return tf("lab.event.question", { n: event.questions.length });
+    case "request_answered":
+      return tf("lab.event.answered", { kind: event.kind });
     case "request_cancelled":
       return t("lab.event.cancelled");
     case "turn_ended":

@@ -13,8 +13,10 @@ use nyanitor_lib::claude::events::{SessionEvent, StartInfo};
 use nyanitor_lib::claude::exec::ClaudeCommand;
 use nyanitor_lib::claude::launch::StartPlan;
 use nyanitor_lib::claude::session::{EventSink, ManagerConfig, SessionManager};
-use nyanitor_lib::claude::store::ResumeStore;
+use nyanitor_lib::claude::store::{self, project_key};
+use nyanitor_lib::db::{AppDb, DB_FILE};
 use nyanitor_lib::error::AppError;
+use nyanitor_lib::projects::store as projects_store;
 use serde_json::Value;
 
 pub const WAIT: Duration = Duration::from_secs(30);
@@ -121,15 +123,47 @@ impl FakeCmd {
     }
 }
 
+/// `Harness` 가 프로젝트 1번을 등록한 때 (유닉스 초)
+pub const REGISTERED_AT: i64 = 100;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DbState {
+    /// 열려 있고 프로젝트 1번이 등록돼 있다
+    Project,
+    /// 열려 있고 비어 있다
+    Empty,
+    /// 열 수 없다
+    Unusable,
+    /// 이 앱보다 새 번호의 DB — 읽기만 된다 (프로젝트 1번은 등록돼 있다)
+    ReadOnly,
+}
+
+/// 시험 폴더를 마지막에 지운다 — `Harness` 의 맨 끝 칸이라 관리자 · DB 가 먼저 버려진 뒤에 돈다 (열린 DB 파일이 있으면 Windows 는 지우지 못한다).
+struct RootGuard(PathBuf);
+
+impl Drop for RootGuard {
+    fn drop(&mut self) {
+        // 끝난 세션의 스레드가 아직 DB 손잡이를 쥐고 있을 수 있다 — 잠깐 기다리며 다시 시도한다
+        for _ in 0..60 {
+            if fs::remove_dir_all(&self.0).is_ok() || !self.0.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
 pub struct Harness {
     pub manager: SessionManager,
     rx: Receiver<SessionEvent>,
     seen: Vec<SessionEvent>,
     cursor: usize,
     pub root: PathBuf,
-    /// 프로젝트 폴더 (세션의 작업 폴더)
+    /// 프로젝트 폴더 (세션의 작업 폴더) — 앱 DB 에 프로젝트 1번으로 등록돼 있다
     pub project: PathBuf,
-    pub store_path: PathBuf,
+    /// 관리자가 쓰는 앱 DB (`<root>/data/nyanitor.db`)
+    pub db: AppDb,
+    _guard: RootGuard,
 }
 
 pub fn fast_config() -> ManagerConfig {
@@ -138,6 +172,7 @@ pub fn fast_config() -> ManagerConfig {
         shutdown_grace: Duration::from_millis(500),
         kill_wait: Duration::from_secs(5),
         reader_grace: Duration::from_secs(2),
+        ..ManagerConfig::default()
     }
 }
 
@@ -147,38 +182,88 @@ impl Harness {
     }
 
     pub fn with_config(name: &str, config: ManagerConfig) -> Self {
-        Self::build(name, config, None)
+        Self::build(name, config, None, DbState::Project)
     }
 
     /// 이 프로젝트의 마지막 세션 ID 가 이미 저장돼 있는 상태로 (앱을 다시 켠 뒤처럼).
     pub fn with_saved_session(name: &str, session_id: &str) -> Self {
-        Self::build(name, fast_config(), Some(session_id))
+        Self::build(name, fast_config(), Some(session_id), DbState::Project)
     }
 
-    fn build(name: &str, config: ManagerConfig, saved: Option<&str>) -> Self {
+    /// 앱 DB 는 열려 있지만 등록된 프로젝트가 하나도 없다
+    pub fn without_project(name: &str) -> Self {
+        Self::build(name, fast_config(), None, DbState::Empty)
+    }
+
+    /// 앱 DB 를 열 수 없는 상태로 — 데이터 폴더 자리에 파일이 있다. 세션은 그래도 뜨고 알림만 해야 한다.
+    pub fn with_unusable_db(name: &str) -> Self {
+        Self::build(name, fast_config(), None, DbState::Unusable)
+    }
+
+    /// 이 앱보다 새 번호의 앱 DB — 읽을 수만 있다. 세션은 그래도 뜨고 알림만 해야 한다.
+    pub fn with_read_only_db(name: &str) -> Self {
+        Self::build(name, fast_config(), None, DbState::ReadOnly)
+    }
+
+    fn build(name: &str, config: ManagerConfig, saved: Option<&str>, state: DbState) -> Self {
         let root = unique_dir(name);
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
-        let store_path = root.join("data").join("claude-sessions.json");
-        if let Some(id) = saved {
-            ResumeStore::open(store_path.clone())
-                .set(&nyanitor_lib::claude::store::project_key(&project), id)
+        if state == DbState::Unusable {
+            fs::write(root.join("data"), b"i am a file").unwrap();
+        }
+        let mut db = AppDb::open(&root.join("data").join(DB_FILE));
+        if state == DbState::ReadOnly {
+            // 프로젝트를 등록한 뒤 번호를 올려 다시 연다
+            db.write(|conn| {
+                projects_store::insert(
+                    conn,
+                    &project.display().to_string(),
+                    &project_key(&project),
+                    "시험 프로젝트",
+                    None,
+                    REGISTERED_AT,
+                )
+            })
+            .expect("register the project");
+            drop(db);
+            let path = root.join("data").join(DB_FILE);
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .pragma_update(None, "user_version", 9999)
                 .unwrap();
+            db = AppDb::open(&path);
+        }
+        if state == DbState::Project {
+            // 프로젝트 폴더를 1번 프로젝트로 등록한다 (세션은 등록된 프로젝트로만 시작한다 — `plan()` 의 번호)
+            db.write(|conn| {
+                projects_store::insert(
+                    conn,
+                    &project.display().to_string(),
+                    &project_key(&project),
+                    "시험 프로젝트",
+                    None,
+                    REGISTERED_AT,
+                )
+            })
+            .expect("register the project");
+            if let Some(id) = saved {
+                db.write(|conn| store::remember(conn, 1, id, 1))
+                    .expect("save the session id");
+            }
         }
         let (tx, rx) = mpsc::channel();
-        let manager = SessionManager::new(
-            Arc::new(ChannelSink(Mutex::new(tx))),
-            ResumeStore::open(store_path.clone()),
-            config,
-        );
+        let manager =
+            SessionManager::new(Arc::new(ChannelSink(Mutex::new(tx))), db.clone(), config);
         Self {
             manager,
             rx,
             seen: Vec::new(),
             cursor: 0,
-            root,
+            root: root.clone(),
             project,
-            store_path,
+            db,
+            _guard: RootGuard(root),
         }
     }
 
@@ -265,8 +350,8 @@ impl Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
+        // 세션을 끝내고 채팅 기록의 남은 쓰기를 마친다. 폴더 지우기는 맨 끝 칸 (`RootGuard`) 이 한다.
         self.manager.shutdown();
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

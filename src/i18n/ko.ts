@@ -1136,6 +1136,7 @@ const ko = {
   "lab.event.toolError": "오류",
   "lab.event.permission": "권한 요청 — {tool} {target}",
   "lab.event.question": "질문 {n}개",
+  "lab.event.answered": "답함 ({kind})",
   "lab.event.cancelled": "요청 취소됨 (카드를 닫아요)",
   "lab.event.turnEnded": "턴 끝 — {outcome} · 이번 턴 ${cost} · 누적 ${total} · 출력 {out}토큰",
   "lab.event.rateLimit": "한도 알림 — {status} · 5시간 창 {five}",

@@ -11,6 +11,7 @@ import {
   toAppError,
   type AgentsList,
   type AppInfo,
+  type ChatPage,
   type ClaudeEvent,
   type ClaudeResponse,
   type ClaudeSessionState,
@@ -32,6 +33,7 @@ import {
   type StartRequest,
   type StopInfo,
   type UsageResult,
+  type UsageSummary,
 } from "./ipc-types";
 
 export * from "./ipc-types";
@@ -145,6 +147,12 @@ export const ipc = {
   projectRemove: (id: number) => call<void>("project_remove", { id }),
   /** 마지막으로 연 때를 지금으로 */
   projectTouch: (id: number) => call<void>("project_touch", { id }),
+  // 채팅 기록 · 세션 츄르 (P6-03). 넘기는 값은 프로젝트 번호와 쪽 나누기 값뿐이다 — 경로 글자를 넘기는 길은 없다 (D-47).
+  /** 프로젝트의 채팅 기록 한 쪽 — 최근 것부터, 쪽 안은 오래된 것이 앞. `before` 는 이미 가진 가장 오래된 항목의 `id`(없으면 `null` = 가장 최근부터), `limit` 은 1 이상(최대 `CHAT_PAGE_MAX`).
+   *  답 없이 지나간 권한 · 질문 카드는 `request.status: "expired"`, 지금 세션이 기다리는 카드만 `"pending"`. 등록된 프로젝트가 아니면 `project_not_found` */
+  projectChatHistory: (id: number, before: number | null, limit: number) => call<ChatPage>("project_chat_history", { id, before, limit }),
+  /** 앱이 쓴 츄르 — 오늘(이 PC 의 자정부터) 합 · 프로젝트별 합 · 지금 돌고 있는 세션의 이번 실행 합. 구독이면 비용은 "참고용 추정"(`referenceOnly`). 넘기는 값이 없다 */
+  appUsageSummary: () => call<UsageSummary>("app_usage_summary"),
   /** 그 프로젝트 폴더의 `requirements.md` 읽기 — BOM 은 떼서 준다 (`hasBom`), 줄바꿈은 그대로 */
   projectRequirementsRead: (id: number) => call<RequirementsRead>("project_requirements_read", { id }),
   /** 지금 파일의 `version` (싸다 — 창 포커스 · 몇 초마다 불러 바깥 변경을 안다) */

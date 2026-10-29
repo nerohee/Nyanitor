@@ -105,11 +105,19 @@ pub fn update(
     get(conn, id)?.ok_or(AppError::ProjectNotFound(id))
 }
 
-/// 등록만 지운다 (폴더 · 파일은 건드리지 않는다).
+/// 등록을 지운다 — 그 프로젝트의 세션 ID · 채팅 기록 · 츄르도 같이 (앱 데이터라서). 폴더 · 파일은 건드리지 않는다.
+/// 표의 `ON DELETE CASCADE` 가 같은 일을 하지만 연결이 외래 키를 켜지 않았어도 남지 않게 먼저 직접 지운다. 한 트랜잭션이라 일부만 지워지지 않는다.
 pub fn remove(conn: &Connection, id: i64) -> Result<(), AppError> {
-    match conn.execute("DELETE FROM projects WHERE id = ?1", [id])? {
+    let tx = conn.unchecked_transaction()?;
+    for table in ["sessions", "chat_items", "usage_turns"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE project_id = ?1"), [id])?;
+    }
+    match tx.execute("DELETE FROM projects WHERE id = ?1", [id])? {
         0 => Err(AppError::ProjectNotFound(id)),
-        _ => Ok(()),
+        _ => {
+            tx.commit()?;
+            Ok(())
+        }
     }
 }
 
@@ -235,6 +243,48 @@ mod tests {
         // 같은 폴더를 다시 등록할 수 있다
         remove(&conn, 1).unwrap();
         assert!(insert(&conn, "a", "a", "a", None, 1).is_ok());
+    }
+
+    #[test]
+    fn remove_also_drops_the_projects_sessions_history_and_chure_even_with_foreign_keys_off() {
+        // 이 시험의 연결은 외래 키를 켜지 않았다 — `ON DELETE CASCADE` 에만 기대지 않고 직접 지운다
+        let conn = conn();
+        insert(&conn, "a", "a", "a", None, 1).unwrap();
+        insert(&conn, "b", "b", "b", None, 1).unwrap();
+        for project in [1, 2] {
+            conn.execute(
+                "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (?1, '00000000-0000-4000-8000-000000000001', 1, 1)",
+                [project],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chat_items (project_id, run_id, at, kind, body) VALUES (?1, 1, 1, 'text', '{}')",
+                [project],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO usage_turns (project_id, run_id, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd, outcome)
+                 VALUES (?1, 1, 1, 1, 1, 0, 0, 0.1, 'success')",
+                [project],
+            )
+            .unwrap();
+        }
+        remove(&conn, 1).unwrap();
+        for table in ["sessions", "chat_items", "usage_turns"] {
+            let count = |project: i64| -> i64 {
+                conn.query_row(
+                    &format!("SELECT count(*) FROM {table} WHERE project_id = ?1"),
+                    [project],
+                    |r| r.get(0),
+                )
+                .unwrap()
+            };
+            assert_eq!(count(1), 0, "{table}");
+            assert_eq!(count(2), 1, "{table} of the other project");
+        }
+        // 없는 번호는 아무것도 지우지 않고 오류
+        assert_eq!(remove(&conn, 9).unwrap_err().kind(), "project_not_found");
+        assert_eq!(list(&conn).unwrap().len(), 1);
     }
 
     #[test]

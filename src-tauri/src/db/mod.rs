@@ -294,6 +294,62 @@ mod tests {
     }
 
     #[test]
+    fn a_number_one_database_from_the_earlier_version_is_upgraded_and_keeps_its_projects() {
+        let dir = TempDir::new("db-v1");
+        let path = dir.join(DB_FILE);
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            migrations::apply(&mut conn, 0, &migrations::MIGRATIONS[..1]).unwrap();
+            conn.execute(
+                "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES ('C:\\p', 'c:\\p', 'old', 7, 8)",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(user_version(&path), 1);
+        let db = AppDb::open(&path);
+        assert_eq!(db.status(), DbStatus::Ready);
+        assert_eq!(count(&db), 1);
+        // 옮기지도 않았다 (깨진 것으로 보지 않는다)
+        assert!(corrupt_files(&dir).is_empty());
+        // 새 표를 바로 쓸 수 있다
+        db.write(|conn| {
+            conn.execute(
+                "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (1, '00000000-0000-4000-8000-000000000001', 1, 1)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        drop(db);
+        assert_eq!(user_version(&path), SCHEMA_VERSION);
+        // 다시 열어도 그대로
+        let db = AppDb::open(&path);
+        assert_eq!(count(&db), 1);
+    }
+
+    #[test]
+    fn deleting_a_project_through_the_apps_connection_cascades() {
+        // 앱의 연결은 외래 키를 켠다 — 프로젝트를 빼면 세션 표의 줄도 따라 지워진다
+        let dir = TempDir::new("db-cascade");
+        let db = AppDb::open(&dir.join(DB_FILE));
+        insert_row(&db, "k");
+        db.write(|conn| {
+            conn.execute(
+                "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (1, '00000000-0000-4000-8000-000000000001', 1, 1)",
+                [],
+            )?;
+            conn.execute("DELETE FROM projects", [])?;
+            Ok(())
+        })
+        .unwrap();
+        let left: i64 = db
+            .read(|conn| Ok(conn.query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[test]
     fn an_empty_file_is_a_new_database() {
         // 0바이트 파일은 SQLite 에게 새 DB 다 — 앱이 만들다 끊긴 경우
         let dir = TempDir::new("db-empty");

@@ -10,6 +10,11 @@ import harnessGitRs from "../../src-tauri/src/harness/git.rs?raw";
 import harnessLocateRs from "../../src-tauri/src/harness/locate.rs?raw";
 import harnessScriptRs from "../../src-tauri/src/harness/script.rs?raw";
 import harnessStatusRs from "../../src-tauri/src/harness/status.rs?raw";
+import historyChatRs from "../../src-tauri/src/history/chat.rs?raw";
+import historyModRs from "../../src-tauri/src/history/mod.rs?raw";
+import historyRecordRs from "../../src-tauri/src/history/record.rs?raw";
+import historyUsageRs from "../../src-tauri/src/history/usage.rs?raw";
+import historyWriterRs from "../../src-tauri/src/history/writer.rs?raw";
 import projectsFolderRs from "../../src-tauri/src/projects/folder.rs?raw";
 import projectsRs from "../../src-tauri/src/projects/mod.rs?raw";
 import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs?raw";
@@ -29,6 +34,11 @@ import {
   type AgentsState,
   type AlwaysScope,
   type AppErrorKind,
+  type ChatEntry,
+  type ChatListEventType,
+  type ChatPage,
+  type ChatRequestState,
+  type ChatRequestStatus,
   type ClaudeEventType,
   type ClaudeResponse,
   type ClaudeSessionState,
@@ -65,12 +75,14 @@ import {
   type ProjectPickedFolder,
   type ProjectPickedOk,
   type ProjectSkill,
+  type ProjectUsage,
   type RequirementsProblem,
   type RequirementsRead,
   type RequirementsText,
   type RequirementsVersion,
   type RequirementsWrite,
   type ScriptResult,
+  type SessionUsage,
   type SkillInfo,
   type SkillOrigin,
   type SkillUnreadable,
@@ -86,6 +98,8 @@ import {
   type UpdateState,
   type UsageResult,
   type UsageScopedWindow,
+  type UsageSum,
+  type UsageSummary,
   type UsageUnavailableReason,
   type UsageWindow,
 } from "./ipc";
@@ -121,6 +135,7 @@ const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
   tool_result: true,
   permission_request: true,
   question_request: true,
+  request_answered: true,
   request_cancelled: true,
   turn_ended: true,
   rate_limit: true,
@@ -295,6 +310,33 @@ const TS_SESSION_FIELDS = {
   SkillsList: { state: 1, skills: 1 } satisfies Record<keyof SkillsList, 1>,
 };
 
+// 채팅 기록 · 세션 츄르 (P6-03) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_CHAT_LIST_EVENT_TYPES: Record<ChatListEventType, true> = {
+  session_started: true,
+  user_message: true,
+  text: true,
+  tool_use: true,
+  tool_result: true,
+  permission_request: true,
+  question_request: true,
+  turn_ended: true,
+  rate_limit: true,
+  resume_not_found: true,
+  session_ended: true,
+};
+/** 기록에 저장하지 않는 이벤트 (`record.rs` 의 표) — 답 · 취소는 저장하지만 목록에 따로 나오지 않고 카드의 상태로 합쳐진다 */
+const NOT_LISTED_EVENTS = ["warning", "turn_started", "raw_log", "request_answered", "request_cancelled"];
+const TS_CHAT_REQUEST_STATUSES: Record<ChatRequestStatus, true> = { answered: true, cancelled: true, pending: true, expired: true };
+const TS_HISTORY_FIELDS = {
+  ChatEntry: { id: 1, at: 1, sessionId: 1, truncated: 1, event: 1, request: 1 } satisfies Record<keyof ChatEntry, 1>,
+  ChatPage: { entries: 1, hasMore: 1 } satisfies Record<keyof ChatPage, 1>,
+  RequestState: { status: 1, answer: 1 } satisfies Record<keyof ChatRequestState, 1>,
+  UsageSum: { turns: 1, inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 1, cacheReadInputTokens: 1, totalTokens: 1, costUsd: 1, subscriptionTurns: 1, apiKeyTurns: 1, referenceOnly: 1 } satisfies Record<keyof UsageSum, 1>,
+  ProjectUsage: { projectId: 1, today: 1, total: 1 } satisfies Record<keyof ProjectUsage, 1>,
+  SessionUsage: { projectId: 1, sessionId: 1, usage: 1 } satisfies Record<keyof SessionUsage, 1>,
+  UsageSummary: { since: 1, today: 1, projects: 1, session: 1 } satisfies Record<keyof UsageSummary, 1>,
+};
+
 const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
 /** `pub struct <name> {` 의 바로 아래(들여쓰기 4칸) `pub` 필드를 serde camelCase 이름으로 (`#[serde(rename = "type")]` 인 `kind` 는 `type`) */
@@ -318,6 +360,13 @@ function rustFields(source: string, structName: string): string[] {
 }
 
 const sorted = (values: Iterable<string>) => [...values].sort();
+
+/** `history/mod.rs` 의 `Limits::default()` 에 적힌 값 (글 그대로) */
+function readFileLimit(field: string): string {
+  const match = new RegExp(`${field}: ([0-9_]+),`).exec(historyModRs.slice(historyModRs.indexOf("impl Default for Limits")));
+  if (!match) throw new Error(`limit ${field} not found`);
+  return match[1] as string;
+}
 
 /** serde `rename_all = "snake_case"` 와 같다: 첫 글자가 아닌 대문자 앞마다 `_` (`NotAFile` → `not_a_file`) */
 function snake(name: string): string {
@@ -547,7 +596,8 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(commandsRs).not.toContain("PathBuf");
     // 화면 쪽 호출도 같다: 폴더 경로를 넘기는 인자가 없다
     const ipcTs = (await import("./ipc.ts?raw")).default;
-    const projectCalls = [...ipcTs.matchAll(/(project[A-Za-z]*): \(([^)]*)\) =>\s*call<[^>]*>\("(projects?_[a-z_]+)"(, \{[^}]*\})?/g)];
+    // (`project_chat_history` 는 history 모듈의 명령이다 — 아래 "채팅 기록 · 츄르 명령" 시험이 따로 본다)
+    const projectCalls = [...ipcTs.matchAll(/(project[A-Za-z]*): \(([^)]*)\) =>\s*call<[^>]*>\("(projects?_[a-z_]+)"(, \{[^}]*\})?/g)].filter((m) => m[3] !== "project_chat_history");
     expect(projectCalls.map((m) => m[3]).sort()).toEqual(Object.keys(expected).sort());
     for (const [, , params, command, args] of projectCalls) {
       expect(`${params as string}${args ?? ""}`, command).not.toMatch(/path|dir|folder/i);
@@ -590,6 +640,78 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     const started = eventsRs.slice(eventsRs.indexOf("    SessionStarted {"));
     const startedBody = started.slice(0, started.indexOf("\n    },"));
     for (const field of ["project_id", "project_dir", "model", "effort"]) expect(startedBody, field).toContain(`${field}:`);
+  });
+
+  it("채팅 기록 · 츄르의 필드와 종류: Rust 와 ipc-types 가 같다", () => {
+    const sources: Record<string, [string, string]> = {
+      ChatEntry: [historyChatRs, "ChatEntry"],
+      ChatPage: [historyChatRs, "ChatPage"],
+      RequestState: [historyChatRs, "RequestState"],
+      UsageSum: [historyUsageRs, "UsageSum"],
+      ProjectUsage: [historyUsageRs, "ProjectUsage"],
+      SessionUsage: [historyUsageRs, "SessionUsage"],
+      UsageSummary: [historyUsageRs, "UsageSummary"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_HISTORY_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_HISTORY_FIELDS[name as keyof typeof TS_HISTORY_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+    expect(sorted(Object.keys(TS_CHAT_REQUEST_STATUSES))).toEqual(sorted(rustVariants(historyChatRs, "RequestStatus").map(snake)));
+    // 답 종류 이름은 사용자의 답(`Response`)의 `kind` 와 같다
+    expect(sorted(Object.keys(TS_RESPONSE_KINDS))).toEqual(sorted(rustVariants(eventsRs, "AnswerKind").map(snake)));
+    // 목록에 나오는 이벤트 종류 = 모든 이벤트 − 저장하지 않는 것 − 카드에 합쳐지는 것
+    const listed = rustVariants(eventsRs, "SessionEvent")
+      .map(snake)
+      .filter((type) => !NOT_LISTED_EVENTS.includes(type));
+    expect(sorted(Object.keys(TS_CHAT_LIST_EVENT_TYPES))).toEqual(sorted(listed));
+    // 저장하는 종류 이름은 이벤트의 `type` 과 같다 (`record.rs` 의 `kind_of` 가 이벤트마다 같은 이름을 준다)
+    const kindOf = historyRecordRs.slice(historyRecordRs.indexOf("fn kind_of("));
+    const kinds = [...kindOf.slice(0, kindOf.indexOf("\n}\n")).matchAll(/=> "([a-z_]+)"/g)].map((m) => m[1] as string);
+    expect(sorted(kinds)).toEqual(sorted(rustVariants(eventsRs, "SessionEvent").map(snake)));
+    // 기록에 쓰는 한도 값이 있다 (보고에 적은 값과 같이 바꾼다)
+    expect(readFileLimit("max_items_per_project")).toBe("10_000");
+    expect(readFileLimit("max_text_chars")).toBe("8_000");
+    expect(readFileLimit("max_queued")).toBe("5_000");
+  });
+
+  it("채팅 기록 · 츄르 명령은 프로젝트 번호와 쪽 나누기 값만 받는다 — 경로 글자를 받는 길이 없다 (D-47)", async () => {
+    const commandsRs = (await import("../../src-tauri/src/history/commands.rs?raw")).default;
+    const signature = (name: string) => {
+      const match = new RegExp(String.raw`#\[tauri::command\]\s+pub async fn ${name}\(([^)]*)\)`).exec(commandsRs);
+      if (!match) throw new Error(`${name} not found`);
+      return (match[1] as string)
+        .replace(/State<[^>]*>/g, "State")
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "");
+    };
+    expect(signature("project_chat_history")).toEqual(["db: State", "manager: State", "id: i64", "before: Option<i64>", "limit: u32"]);
+    expect(signature("app_usage_summary")).toEqual(["db: State", "manager: State"]);
+    expect([...commandsRs.matchAll(/#\[tauri::command\]/g)].length).toBe(2);
+    expect(commandsRs).not.toContain("PathBuf");
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('projectChatHistory: (id: number, before: number | null, limit: number) => call<ChatPage>("project_chat_history", { id, before, limit }),');
+    expect(ipcTs).toContain('appUsageSummary: () => call<UsageSummary>("app_usage_summary"),');
+  });
+
+  it("기록은 앱이 받은 이벤트에서만 만든다 — CLI 기록 파일(~/.claude/projects)을 읽지 않고, 원본 출력 · 도구 결과 원문을 저장하지 않는다 (D-24)", () => {
+    for (const [name, source] of [
+      ["chat.rs", historyChatRs],
+      ["record.rs", historyRecordRs],
+      ["usage.rs", historyUsageRs],
+      ["writer.rs", historyWriterRs],
+    ] as const) {
+      const production = source.slice(0, source.indexOf("#[cfg(test)]"));
+      expect(production, `history/${name}`).not.toMatch(/\.claude|claude_dir|read_dir|fs::|std::fs|File::open|projects_dir/);
+    }
+    // 저장하지 않는 이벤트는 `wants` 가 거른다
+    const wants = historyRecordRs.slice(historyRecordRs.indexOf("pub fn wants("));
+    const wantsBody = wants.slice(0, wants.indexOf("\n}\n"));
+    expect(wantsBody).toContain("SessionEvent::RawLog(_)");
+    expect(wantsBody).toContain("SessionEvent::TurnStarted { .. }");
+    expect(wantsBody).toContain("SessionEvent::Warning { .. }");
+    expect(wantsBody).toContain("SessionEvent::ToolResult { is_error, .. } => *is_error");
   });
 
   it("세션은 등록된 프로젝트 번호로만 시작한다 — 화면이 경로 · 모델 · 수준 · 실행 인자를 보내는 길이 없다 (D-47)", async () => {
@@ -657,9 +779,11 @@ describe("Rust ↔ 화면 목록이 같다", () => {
             ? "usage"
             : command.startsWith("skills_")
               ? "skills"
-              : command.startsWith("project")
-                ? "projects"
-                : "claude";
+              : command === "project_chat_history" || command === "app_usage_summary"
+                ? "history"
+                : command.startsWith("project")
+                  ? "projects"
+                  : "claude";
       expect(libRs, `${command} 이 lib.rs 에 없음`).toContain(`${module}::commands::${command}`);
     }
     // 반대로, Rust 에 등록된 Claude · 하네스 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
@@ -670,6 +794,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       ...libRs.matchAll(/usage::commands::(usage_[a-z_]+)/g),
       ...libRs.matchAll(/skills::commands::(skills_[a-z_]+)/g),
       ...libRs.matchAll(/projects::commands::(projects?_[a-z_]+)/g),
+      ...libRs.matchAll(/history::commands::([a-z_]+)/g),
     ].map((m) => m[1] as string);
     expect(sorted(registered)).toEqual(sorted(called.filter((c) => c !== "app_info")));
   });

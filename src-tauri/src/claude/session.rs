@@ -4,8 +4,12 @@
 //! 기다리기 (프로세스가 끝났다는 신호는 EOF 가 아니라 `wait()` 로 받는다 — 손자 프로세스가 파이프를 쥐고 있어도 끝을 안다).
 //! 받은 줄의 뜻 풀이는 `protocol.rs`, 화면으로 가는 이벤트 모양은 `events.rs`.
 //! 이 모듈은 비공식 protocol 의 세부(필드 이름 등)를 모른다 — 줄을 `protocol` 에 넘기고 결과를 반영할 뿐이다.
+//!
+//! 이벤트는 모두 `Shared::publish` 로 나간다 — 화면(`EventSink`)으로 보내고, 다시 그릴 것이면 `history::Recorder` 의 큐에 세운다 (배경에서 앱 DB 에 묶어 쓴다).
+//! 이어 하기 세션 ID 는 앱 DB 의 `sessions` 표에 쓴다 (`store`). DB 를 못 써도 세션은 그대로 돌고 알림(`Warning`)만 난다.
+//! 잠그는 순서: `emit_gate` → `pending` → `flags` (끝내기 · 답하기가 같은 순서로 잡는다).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -22,7 +26,8 @@ use tauri_plugin_log::log;
 use super::KNOWN_CLI_VERSION;
 use super::discover;
 use super::events::{
-    AnswerValue, EndKind, RawLogEntry, Response, SessionEvent, SessionState, StartInfo, StopInfo,
+    AnswerKind, AnswerValue, EndKind, RawLogEntry, Response, SessionEvent, SessionState, StartInfo,
+    StopInfo,
 };
 use super::exec::{self, ClaudeCommand};
 use super::launch::{EFFORT_LEVELS, StartPlan};
@@ -30,8 +35,10 @@ use super::process_tree::ProcessTree;
 use super::protocol::{
     self, Interpretation, Interpreter, PendingKind, PendingRequest, truncate_chars,
 };
-use super::store::{ResumeStore, project_key};
+use super::store;
+use crate::db::AppDb;
 use crate::error::AppError;
+use crate::history::{self, Limits, LiveRequests, LiveRun, RecordCtx, Recorder};
 
 /// 한 줄의 최대 길이 (줄바꿈 제외) — 정상 출력(수십 KB)보다 훨씬 크다. 넘으면 그 줄은 버리고 원본 로그에 알린다 (메모리 보호).
 const MAX_LINE_BYTES: usize = 16 << 20;
@@ -42,6 +49,8 @@ const RAW_LOG_LINES: usize = 1000;
 const RAW_LOG_LINE_CHARS: usize = 8000;
 /// 사용자 글(메시지 · 말하기 · 질문 답)의 최대 크기.
 const MAX_USER_TEXT_BYTES: usize = 1 << 20;
+/// 앱을 끌 때 채팅 기록의 남은 쓰기를 기다리는 시간.
+const HISTORY_SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 
 /// 화면 · 시험이 이벤트를 받는 자리.
 pub trait EventSink: Send + Sync + 'static {
@@ -58,6 +67,8 @@ pub struct ManagerConfig {
     pub kill_wait: Duration,
     /// 프로세스가 끝난 뒤 남은 출력 읽기를 기다리는 시간
     pub reader_grace: Duration,
+    /// 채팅 기록 한도 (`history::Limits`)
+    pub history: Limits,
 }
 
 impl Default for ManagerConfig {
@@ -67,6 +78,7 @@ impl Default for ManagerConfig {
             shutdown_grace: Duration::from_secs(2),
             kill_wait: Duration::from_secs(3),
             reader_grace: Duration::from_secs(2),
+            history: Limits::default(),
         }
     }
 }
@@ -133,15 +145,20 @@ struct Flags {
     deferred: Option<String>,
     resume_not_found_sent: bool,
     stderr_tail: VecDeque<String>,
+    /// 이 턴의 `system/init` 이 알린 `apiKeySource` (`none` = 구독) — 턴 끝의 츄르 기록에 붙는다
+    api_key_source: Option<String>,
+    /// 마지막으로 기록한 한도 알림 (같은 값이 거듭 오면 한 번만 기록한다)
+    last_rate: Option<(Option<String>, Option<String>, Option<i64>)>,
 }
 
 struct Session {
     id: u64,
+    /// 앱이 이 세션 프로세스를 띄운 때(밀리초) — 채팅 기록 · 츄르가 "이번 실행" 을 가리키는 열쇠 (앱 실행을 넘어서도 겹치지 않는다)
+    run_id: i64,
     pid: u32,
     /// 등록된 프로젝트 번호 (D-47)
     project_id: i64,
     project_dir: PathBuf,
-    project_key: String,
     /// `--resume` 으로 시작했다면 그 세션 ID
     resume_id: Option<String>,
     /// 쓰기 스레드로 가는 줄. `None` = stdin 을 닫았다.
@@ -175,7 +192,7 @@ impl Session {
     fn emit(&self, shared: &Shared, event: SessionEvent) {
         let closed = lock(&self.emit_gate);
         if !*closed {
-            shared.sink.emit(event);
+            shared.publish(self, event);
         }
     }
 
@@ -222,13 +239,68 @@ struct Slot {
 
 struct Shared {
     sink: Arc<dyn EventSink>,
-    store: Mutex<ResumeStore>,
+    /// 앱 DB — 이어 하기 세션 ID 를 여기에 쓰고 읽는다 (못 쓰면 알림만 하고 세션은 계속된다)
+    db: AppDb,
+    /// 채팅 기록 · 츄르를 DB 에 쓰는 배경 쓰기 (이벤트를 보내는 스레드는 큐에 넣기만 한다)
+    recorder: Recorder,
+    /// 마지막으로 준 `Session::run_id` (앞 값보다 늘 크게)
+    last_run_id: Mutex<i64>,
     raw: RawLog,
     slot: Mutex<Slot>,
     config: ManagerConfig,
     next_id: AtomicU64,
     /// 아직 안 끝난 쓰기 스레드 수 (프로세스가 끝나면 0 으로 돌아와야 한다 — 시험 · 진단용)
     live_writers: AtomicUsize,
+}
+
+impl Shared {
+    /// 이벤트를 화면으로 내보내고, 다시 그릴 것이면 기록 줄에 세운다. **호출하는 쪽이 `emit_gate` 를 쥐고 있어야 한다** — 이벤트와 기록의 순서가 같고,
+    /// 끝난 세션이 이벤트를 더 내지 못한다. 기록은 큐에 넣기만 해서 이벤트를 늦추지 않는다 (DB 에는 쓰기 스레드가 묶어서 쓴다).
+    fn publish(&self, session: &Session, event: SessionEvent) {
+        self.record(session, &event);
+        self.sink.emit(event);
+        // 배경 쓰기가 실패했으면 (DB 를 못 씀) 한 번 알린다 — 세션은 그대로 계속된다.
+        if let Some(detail) = self.recorder.take_failure() {
+            self.sink.emit(SessionEvent::Warning {
+                code: "history_write_failed".into(),
+                detail: Some(detail),
+            });
+        }
+    }
+
+    fn record(&self, session: &Session, event: &SessionEvent) {
+        if !history::record::wants(event) {
+            return;
+        }
+        let ctx = {
+            let mut flags = lock(&session.flags);
+            if let SessionEvent::RateLimit {
+                status,
+                rate_limit_type,
+                resets_at,
+                ..
+            } = event
+            {
+                let key = (status.clone(), rate_limit_type.clone(), *resets_at);
+                if flags.last_rate.as_ref() == Some(&key) {
+                    return;
+                }
+                flags.last_rate = Some(key);
+            }
+            RecordCtx {
+                project_id: session.project_id,
+                run_id: session.run_id,
+                // 첫 `system/init` 전에는 이어 하는 세션 ID 로, 그것도 없으면 비워 두었다가 세션 ID 를 알 때 채운다
+                session_id: flags
+                    .session_id
+                    .clone()
+                    .or_else(|| session.resume_id.clone()),
+                at: history::usage::now_secs(),
+                api_key_source: flags.api_key_source.clone(),
+            }
+        };
+        self.recorder.submit(ctx, event.clone());
+    }
 }
 
 /// 세션 관리자. 복제해도 같은 관리자를 가리킨다 (Tauri `State` · 스레드에 나눠 쥔다).
@@ -238,11 +310,14 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    pub fn new(sink: Arc<dyn EventSink>, store: ResumeStore, config: ManagerConfig) -> Self {
+    pub fn new(sink: Arc<dyn EventSink>, db: AppDb, config: ManagerConfig) -> Self {
+        let recorder = Recorder::start(db.clone(), config.history.clone());
         Self {
             shared: Arc::new(Shared {
                 sink,
-                store: Mutex::new(store),
+                db,
+                recorder,
+                last_run_id: Mutex::new(0),
                 raw: RawLog::new(),
                 slot: Mutex::new(Slot::default()),
                 config,
@@ -252,10 +327,52 @@ impl SessionManager {
         }
     }
 
-    /// 이 프로젝트의 마지막 세션 ID (이어 하기용). 없으면 `None`.
-    pub fn last_session(&self, project_dir: &str) -> Result<Option<String>, AppError> {
-        let dir = validate_project_dir(project_dir)?;
-        Ok(lock(&self.shared.store).get(&project_key(&dir)))
+    /// 이 프로젝트(등록된 프로젝트 번호)의 마지막 세션 ID (이어 하기용) — 앱 DB 에서 읽는다. 없으면 `None`, DB 를 못 읽으면 그 오류.
+    pub fn last_session(&self, project_id: i64) -> Result<Option<String>, AppError> {
+        self.shared
+            .db
+            .read(|conn| store::last_for_project(conn, project_id))
+    }
+
+    /// 지금까지 넣은 채팅 기록 · 츄르가 DB 에 쓰일 때까지 기다린다 (최대 `timeout`) — 기록을 읽기 전에 부른다. 다 쓰였으면 `true`.
+    pub fn flush_history(&self, timeout: Duration) -> bool {
+        self.shared.recorder.flush(timeout)
+    }
+
+    /// 지금 돌고 있는 세션이 답을 기다리는 요청들 (채팅 기록의 카드가 `pending` 인지 `expired` 인지 가린다). 세션이 없으면 `None`.
+    pub fn live_requests(&self) -> Option<LiveRequests> {
+        let session = self.current()?;
+        let request_ids = lock(&session.pending)
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
+        Some(LiveRequests {
+            project_id: session.project_id,
+            run_id: session.run_id,
+            request_ids,
+        })
+    }
+
+    /// 지금 돌고 있는 세션의 이번 실행 (츄르 요약의 "지금 세션"). 세션이 없으면 `None`.
+    pub fn live_run(&self) -> Option<LiveRun> {
+        let session = self.current()?;
+        let session_id = lock(&session.flags).session_id.clone();
+        Some(LiveRun {
+            project_id: session.project_id,
+            run_id: session.run_id,
+            session_id,
+        })
+    }
+
+    /// 새 `run_id` — 지금 시각(밀리초). 앞에 준 값과 겹치지 않게 늘 더 크다.
+    fn next_run_id(&self) -> i64 {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+            .unwrap_or(0);
+        let mut last = lock(&self.shared.last_run_id);
+        *last = now_ms.max(last.saturating_add(1));
+        *last
     }
 
     pub fn raw_log(&self) -> Vec<RawLogEntry> {
@@ -317,11 +434,9 @@ impl SessionManager {
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Result<StartInfo, AppError> {
-        let key = project_key(project_dir);
         let resume_id = if plan.resume {
             Some(
-                lock(&self.shared.store)
-                    .get(&key)
+                self.last_session(plan.project_id)?
                     .ok_or(AppError::NoSavedSession)?,
             )
         } else {
@@ -368,10 +483,10 @@ impl SessionManager {
         let (tx, rx) = mpsc::channel::<String>();
         let session = Arc::new(Session {
             id: self.shared.next_id.fetch_add(1, Ordering::Relaxed),
+            run_id: self.next_run_id(),
             pid,
             project_id: plan.project_id,
             project_dir: project_dir.to_path_buf(),
-            project_key: key,
             resume_id: resume_id.clone(),
             writer: Mutex::new(Some(tx)),
             pending: Mutex::new(Vec::new()),
@@ -429,13 +544,16 @@ impl SessionManager {
             session.tree.kill();
             session.close_stdin();
             let mut closed = lock(&session.emit_gate);
-            self.shared.sink.emit(SessionEvent::SessionEnded {
-                ended: EndKind::Died,
-                exit_code: None,
-                forced: true,
-                mid_turn: false,
-                stderr_tail: Vec::new(),
-            });
+            self.shared.publish(
+                &session,
+                SessionEvent::SessionEnded {
+                    ended: EndKind::Died,
+                    exit_code: None,
+                    forced: true,
+                    mid_turn: false,
+                    stderr_tail: Vec::new(),
+                },
+            );
             *closed = true;
             return Err(err);
         }
@@ -577,9 +695,12 @@ impl SessionManager {
         Ok(())
     }
 
-    /// 기다리는 요청에 답한다. 한 요청에는 한 번만 답할 수 있다 (두 번째는 `request_not_found`).
+    /// 기다리는 요청에 답한다. 한 요청에는 한 번만 답할 수 있다 (두 번째는 `request_not_found`). 전해지면 `RequestAnswered` 를 낸다 (화면 · 채팅 기록이 같이 받는다).
     pub fn respond(&self, request_id: &str, response: Response) -> Result<(), AppError> {
         let session = self.current().ok_or(AppError::NoSession)?;
+        // 잠그는 순서: 이벤트 자리(`emit_gate`) → 기다리는 요청 → 그 밖 (끝내기 `announce_end` 와 같은 순서). 답 이벤트를 같은 잠금 안에서 내서
+        // 답을 CLI 로 보낸 뒤 읽기 스레드의 다음 이벤트가 먼저 나가는 일이 없게 한다.
+        let closed = lock(&session.emit_gate);
         let mut pending = lock(&session.pending);
         let index = pending
             .iter()
@@ -587,42 +708,61 @@ impl SessionManager {
             .ok_or_else(|| AppError::RequestNotFound(request_id.to_string()))?;
         let request = &pending[index].1;
         let mut defer_text = None;
+        // 기록에 남길 답 (CLI 로 가는 것과 같은 값 — 다듬은 뒤)
+        let mut answered_text = None;
+        let mut answered_values = None;
 
         // 보낼 줄을 먼저 만들어 확인한다 — 잘못된 답이면 요청은 그대로 남는다.
-        let line = match (&request.kind, response) {
-            (PendingKind::Permission { input, .. }, Response::Allow) => {
-                protocol::allow_response_line(request_id, input, None)
-            }
+        let (line, kind) = match (&request.kind, response) {
+            (PendingKind::Permission { input, .. }, Response::Allow) => (
+                protocol::allow_response_line(request_id, input, None),
+                AnswerKind::Allow,
+            ),
             (PendingKind::Permission { input, always }, Response::AlwaysAllow) => {
                 let Some(rule) = always else {
                     return Err(AppError::InvalidInput(
                         "this request has no always-allow rule".into(),
                     ));
                 };
-                protocol::allow_response_line(request_id, input, Some(rule))
+                (
+                    protocol::allow_response_line(request_id, input, Some(rule)),
+                    AnswerKind::AlwaysAllow,
+                )
             }
             (_, Response::Deny { message }) => {
-                let message = message
+                let given = message
                     .as_deref()
                     .map(str::trim)
                     .filter(|m| !m.is_empty())
                     .map(|m| checked_text(m, "message"))
-                    .transpose()?
-                    .unwrap_or("The user denied this request.");
-                protocol::deny_response_line(request_id, message, false)
+                    .transpose()?;
+                answered_text = given.map(str::to_string);
+                let message = given.unwrap_or("The user denied this request.");
+                (
+                    protocol::deny_response_line(request_id, message, false),
+                    AnswerKind::Deny,
+                )
             }
             (PendingKind::Permission { .. }, Response::Tell { text }) => {
                 let text = checked_text(&text, "text")?;
                 defer_text = Some(text.to_string());
-                protocol::deny_response_line(
-                    request_id,
-                    "The user rejected this and will say what to do instead.",
-                    true,
+                answered_text = Some(text.to_string());
+                (
+                    protocol::deny_response_line(
+                        request_id,
+                        "The user rejected this and will say what to do instead.",
+                        true,
+                    ),
+                    AnswerKind::Tell,
                 )
             }
             (PendingKind::Question { questions, shapes }, Response::Answer { answers }) => {
                 let answers = validate_answers(shapes, answers)?;
-                protocol::answer_response_line(request_id, questions, &answers)
+                answered_values = Some(answer_values(&answers));
+                (
+                    protocol::answer_response_line(request_id, questions, &answers),
+                    AnswerKind::Answer,
+                )
             }
             _ => {
                 return Err(AppError::InvalidInput(
@@ -643,6 +783,17 @@ impl SessionManager {
             return Err(err);
         }
         pending.remove(index);
+        if !*closed {
+            self.shared.publish(
+                &session,
+                SessionEvent::RequestAnswered {
+                    request_id: request_id.to_string(),
+                    kind,
+                    text: answered_text,
+                    answers: answered_values,
+                },
+            );
+        }
         Ok(())
     }
 
@@ -651,11 +802,13 @@ impl SessionManager {
         self.stop_within(self.shared.config.stop_grace)
     }
 
-    /// 앱을 끌 때 — 같은 순서에 기다림만 짧게. 오류는 기록만 한다.
+    /// 앱을 끌 때 — 같은 순서에 기다림만 짧게. 오류는 기록만 한다. 채팅 기록에 남은 쓰기도 마저 쓴다.
     pub fn shutdown(&self) {
         if let Err(err) = self.stop_within(self.shared.config.shutdown_grace) {
             log::warn!("session shutdown: {err}");
         }
+        // 세션이 끝나며 낸 이벤트(취소 · 끝 알림)까지 채팅 기록에 쓰고 쓰기 스레드를 끝낸다.
+        self.shared.recorder.shutdown(HISTORY_SHUTDOWN_WAIT);
     }
 
     fn stop_within(&self, grace: Duration) -> Result<StopInfo, AppError> {
@@ -815,6 +968,26 @@ fn checked_text<'a>(text: &'a str, what: &str) -> Result<&'a str, AppError> {
         return Err(AppError::InvalidInput(format!("{what} is too long")));
     }
     Ok(text)
+}
+
+/// CLI 로 가는 다듬은 답을 이벤트(기록)용 모양으로 — 글 하나 · 글 목록
+fn answer_values(answers: &Map<String, Value>) -> BTreeMap<String, AnswerValue> {
+    answers
+        .iter()
+        .filter_map(|(question, value)| {
+            let value = match value {
+                Value::String(text) => AnswerValue::One(text.clone()),
+                Value::Array(items) => AnswerValue::Many(
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect(),
+                ),
+                _ => return None,
+            };
+            Some((question.clone(), value))
+        })
+        .collect()
 }
 
 /// 질문마다 답이 있어야 하고, 모르는 질문 문장 · 빈 답 · 하나만 고르는 질문에 여러 개는 거절한다.
@@ -1013,6 +1186,12 @@ fn apply(session: &Session, shared: &Shared, interpretation: Interpretation) {
     }
     {
         let mut flags = lock(&session.flags);
+        // 이 턴이 구독인지 키인지 — 턴 끝의 츄르 기록에 붙는다
+        for event in &events {
+            if let SessionEvent::TurnStarted { api_key_source, .. } = event {
+                flags.api_key_source.clone_from(api_key_source);
+            }
+        }
         if turn_started {
             flags.busy = true;
         }
@@ -1046,7 +1225,7 @@ fn is_request_card_for(event: &SessionEvent, ids: &[String]) -> bool {
     }
 }
 
-/// `system/init` 의 세션 ID 를 프로젝트 폴더에 묶어 저장한다 (이어 하기). 못 써도 세션은 계속된다.
+/// `system/init` 의 세션 ID 를 프로젝트에 묶어 앱 DB 에 저장한다 (이어 하기) — 채팅 기록에도 이 실행의 세션 ID 로 채운다. 못 써도 세션은 계속된다.
 fn remember_session_id(session: &Session, shared: &Shared, id: &str) {
     {
         let mut flags = lock(&session.flags);
@@ -1055,7 +1234,11 @@ fn remember_session_id(session: &Session, shared: &Shared, id: &str) {
         }
         flags.session_id = Some(id.to_string());
     }
-    if let Err(err) = lock(&shared.store).set(&session.project_key, id) {
+    shared.recorder.bind(session.project_id, session.run_id, id);
+    let saved = shared
+        .db
+        .write(|conn| store::remember(conn, session.project_id, id, history::usage::now_secs()));
+    if let Err(err) = saved {
         log::warn!("could not save the session id: {err}");
         session.warn(shared, "session_store_failed", Some(err.to_string()));
     }
@@ -1182,19 +1365,20 @@ fn announce_end(session: &Session, shared: &Shared, code: Option<i32>, died: boo
         // 기다리던 카드는 끝 알림 앞에서 닫는다.
         let leftover = std::mem::take(&mut *lock(&session.pending));
         for (request_id, _) in leftover {
-            shared
-                .sink
-                .emit(SessionEvent::RequestCancelled { request_id });
+            shared.publish(session, SessionEvent::RequestCancelled { request_id });
         }
         // "끝남" 표시를 알림보다 먼저 한다 — 알림을 받은 화면이 바로 상태를 물어도 이미 꺼진 것으로 보이게.
         *lock(&session.exit) = Some(code);
-        shared.sink.emit(SessionEvent::SessionEnded {
-            ended,
-            exit_code: code,
-            forced,
-            mid_turn,
-            stderr_tail,
-        });
+        shared.publish(
+            session,
+            SessionEvent::SessionEnded {
+                ended,
+                exit_code: code,
+                forced,
+                mid_turn,
+                stderr_tail,
+            },
+        );
         *closed = true;
     }
     session.exit_cv.notify_all();

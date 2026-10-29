@@ -9,7 +9,7 @@
 //! - `events` — 화면으로 가는 이벤트 · 명령 입출력 모양
 //! - `launch` — 세션 시작 계획: 프로젝트 번호 → 폴더, 하네스 `planner` 설정 → 모델 · 수준 (D-47)
 //! - `exec` · `process_tree` — 환경 정리 · 창 숨기기 · 프로세스 트리 끄기
-//! - `store` — 프로젝트 폴더별 마지막 세션 ID
+//! - `store` — 프로젝트별 세션 ID (앱 DB 의 `sessions` 표) · 옛 `claude-sessions.json` 가져오기
 //! - `commands` — Tauri 명령 (얇게: 입력 확인 · 전달만)
 
 pub mod commands;

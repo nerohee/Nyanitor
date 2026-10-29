@@ -5,6 +5,7 @@
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
 import { fakeHarness } from "./fakeHarness";
+import { FAKE_TURN_COST, FAKE_TURN_USAGE, fakeHistory } from "./fakeHistory";
 import { fakeHouse } from "./fakeHouse";
 import { fakeProjects } from "./fakeProjects";
 import { fakeSkills } from "./fakeSkills";
@@ -66,7 +67,8 @@ function plannerChoice(mode: FakePlannerMode): { model: string | null; effort: s
   return { model: "opus", effort: "high", warnings: [] };
 }
 
-const EMPTY_USAGE = { inputTokens: 3, outputTokens: 42, cacheCreationInputTokens: 0, cacheReadInputTokens: 1200 };
+/** 턴 하나의 토큰 · 비용 — 츄르 요약(`fakeHistory.ts`)이 같은 값으로 "지금 세션" 을 센다 */
+const EMPTY_USAGE = { ...FAKE_TURN_USAGE };
 
 function turnSummary(outcome: TurnSummary["outcome"], total: number): TurnSummary {
   return {
@@ -80,7 +82,7 @@ function turnSummary(outcome: TurnSummary["outcome"], total: number): TurnSummar
     durationMs: 1200,
     numTurns: 2,
     usage: EMPTY_USAGE,
-    costUsd: 0.0021,
+    costUsd: FAKE_TURN_COST,
     totalCostUsd: total,
   };
 }
@@ -89,7 +91,7 @@ export function createFakeClaude() {
   const listeners = new Set<(event: ClaudeEvent) => void>();
   const lastSessions = new Map<string, string>();
   const rawLog: RawLogEntry[] = [];
-  let session: { projectId: number; projectDir: string; sessionId: string; busy: boolean; turns: number } | null = null;
+  let session: { projectId: number; projectDir: string; sessionId: string; busy: boolean; turns: number; finishedTurns: number } | null = null;
   /** 시험이 정한 planner 값. 없으면 부를 때마다 주소 쿼리를 읽는다 */
   let plannerOverride: FakePlannerMode | null = null;
   const plannerMode = (): FakePlannerMode => plannerOverride ?? parseFakePlannerQuery(typeof window === "undefined" ? "" : window.location.search);
@@ -209,7 +211,8 @@ export function createFakeClaude() {
     if (!current) return;
     if (message) emit({ type: "text", text: message });
     current.busy = false;
-    emit({ type: "turn_ended", ...turnSummary(outcome, 0.0021 * current.turns) });
+    current.finishedTurns += 1;
+    emit({ type: "turn_ended", ...turnSummary(outcome, FAKE_TURN_COST * current.turns) });
   }
 
   const handlers: Record<string, Handler> = {
@@ -240,7 +243,7 @@ export function createFakeClaude() {
       const saved = lastSessions.get(fakeProjectKey(projectDir)) ?? null;
       if (request?.resume && !saved) throw new AppError("no_saved_session", "no saved session for this project");
       const planner = plannerChoice(plannerMode());
-      session = { projectId, projectDir, sessionId: saved ?? nextId("fake-session"), busy: false, turns: 0 };
+      session = { projectId, projectDir, sessionId: saved ?? nextId("fake-session"), busy: false, turns: 0, finishedTurns: 0 };
       rawLog.length = 0;
       const info: StartInfo = {
         projectId,
@@ -283,6 +286,14 @@ export function createFakeClaude() {
       }
       pending.delete(requestId);
       log("send", JSON.stringify({ type: "control_response", response: { request_id: requestId, kind: response.kind } }));
+      // 진짜처럼 답이 전해지면 바로 알린다 — 화면과 채팅 기록이 같이 받는다 (글은 다듬은 값)
+      emit({
+        type: "request_answered",
+        requestId,
+        kind: response.kind,
+        text: response.kind === "tell" ? response.text.trim() : response.kind === "deny" ? response.message?.trim() || null : null,
+        answers: response.kind === "answer" ? Object.fromEntries(Object.entries(response.answers).map(([question, value]) => [question, Array.isArray(value) ? value.map((item) => item.trim()) : value.trim()])) : null,
+      });
       later(() => {
         if (response.kind === "tell") {
           finishTurn("interrupted");
@@ -342,6 +353,10 @@ export function createFakeClaude() {
         listeners.delete(handler);
       };
     },
+    /** 지금 돌고 있는 가짜 세션 (없으면 null) — 츄르 요약의 "지금 세션" (`fakeHistory.ts`). 끝난 턴만 센다 */
+    liveRun(): { projectId: number; sessionId: string | null; turns: number } | null {
+      return session ? { projectId: session.projectId, sessionId: session.turns > 0 ? session.sessionId : null, turns: session.finishedTurns } : null;
+    },
     /** 시험용: 모든 상태를 처음으로 (`planner` 를 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다) */
     reset(next?: { planner?: FakePlannerMode }) {
       plannerOverride = next?.planner ?? null;
@@ -364,6 +379,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     ...fakeClaude.handlers,
     ...fakeHarness.handlers,
     ...fakeHouse.handlers,
+    ...fakeHistory.handlersFor(() => fakeClaude.liveRun()),
     ...fakeProjects.handlers,
     ...fakeSkills.handlers,
   };

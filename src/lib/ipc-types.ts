@@ -210,7 +210,8 @@ export type ClaudeEvent =
       effort: string | null;
     }
   /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use`
-   *  · `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` (하네스 `planner` 설정을 못 읽거나 값이 이상해 그 값만 CLI 기본으로 띄움) · `project_touch_failed` */
+   *  · `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` (하네스 `planner` 설정을 못 읽거나 값이 이상해 그 값만 CLI 기본으로 띄움) · `project_touch_failed`
+   *  · `history_write_failed` (채팅 기록 · 츄르를 앱 DB 에 못 씀 — 세션은 계속된다. `detail` 은 오류 종류. 쓰기가 계속 실패하는 동안은 한 번만) */
   | { type: "warning"; code: string; detail: string | null }
   | { type: "user_message"; text: string; deferred: boolean }
   | { type: "turn_started"; sessionId: string; model: string | null; cliVersion: string | null; permissionMode: string | null; apiKeySource: string | null }
@@ -219,6 +220,8 @@ export type ClaudeEvent =
   | { type: "tool_result"; toolUseId: string; isError: boolean; summary: string }
   | ({ type: "permission_request" } & PermissionRequestInfo)
   | ({ type: "question_request" } & QuestionRequestInfo)
+  /** 사용자의 답이 CLI 로 전해졌다 — 실시간 화면과 채팅 기록이 같이 받는다. `text` 는 `deny` 의 이유 · `tell` 의 말, `answers` 는 `answer` 의 질문 문장 → 고른 것 · 쓴 글(다듬은 값) */
+  | { type: "request_answered"; requestId: string; kind: ClaudeResponse["kind"]; text: string | null; answers: Record<string, AnswerValue> | null }
   | { type: "request_cancelled"; requestId: string }
   | ({ type: "turn_ended" } & TurnSummary)
   | {
@@ -259,6 +262,115 @@ export interface ClaudeSessionState {
   /** 답을 기다리는 요청들 (`permission_request` · `question_request` 이벤트 모양) */
   pending: ClaudeEvent[];
 }
+
+// ───────────────────────── 채팅 기록 · 세션 츄르 (P6-03) — `src-tauri/src/history/` 와 같이 맞춘다 ─────────────────────────
+// 기록은 앱이 받은 이벤트에서만 만든다 — 저장한 것은 화면으로 간 이벤트 그대로라서(긴 글만 잘림) 실시간 이벤트와 같은 모양으로 읽는다.
+// 화면이 보내는 것은 프로젝트 번호와 쪽 나누기 값뿐이다 (경로 글자 없음 — D-47).
+
+/** 채팅 기록 목록에 나오는 이벤트 종류. 답(`request_answered`) · 취소(`request_cancelled`)는 목록에 따로 나오지 않고 그 카드의 `request` 로 합쳐진다.
+ *  저장하지 않는 것: `turn_started` · `warning` · `raw_log` · 성공한 `tool_result` · `allowed` 인 `rate_limit` */
+export type ChatListEventType =
+  | "session_started"
+  | "user_message"
+  | "text"
+  | "tool_use"
+  | "tool_result"
+  | "permission_request"
+  | "question_request"
+  | "turn_ended"
+  | "rate_limit"
+  | "resume_not_found"
+  | "session_ended";
+
+/** 기록의 권한 카드에는 도구 입력(`input` — 쓸 파일 내용 · 바꾸는 글)이 없다. 비밀값이 들어 있을 수 있어 저장하지 않는다 (2026-10-29 고객) */
+export type StoredPermissionRequest = Omit<Extract<ClaudeEvent, { type: "permission_request" }>, "input">;
+
+export type ChatListEvent =
+  | Exclude<Extract<ClaudeEvent, { type: ChatListEventType }>, { type: "permission_request" }>
+  | StoredPermissionRequest;
+
+/** 요청 카드의 지금 상태: `answered` 답함(`answer` 에 답) · `cancelled` 취소됨(중단 · 세션 끝) · `pending` 지금 살아 있는 세션이 기다리는 중(답할 수 있다) · `expired` 답 없이 지나감(앱을 다시 켠 뒤라 답할 수 없다) */
+export type ChatRequestStatus = "answered" | "cancelled" | "pending" | "expired";
+
+/** 권한 · 질문 카드(`permission_request` · `question_request`)에 붙는 상태 */
+export interface ChatRequestState {
+  status: ChatRequestStatus;
+  /** `answered` 일 때 사용자의 답 — `request_answered` 이벤트 모양 그대로 */
+  answer: Extract<ClaudeEvent, { type: "request_answered" }> | null;
+}
+
+/** 기록의 항목 하나 */
+export interface ChatEntry {
+  /** 순서 번호 — 클수록 나중. 다음 쪽을 읽을 때 `before` 로 쓴다 */
+  id: number;
+  /** 유닉스 시각(초) */
+  at: number;
+  /** CLI 세션 ID (모르면 null) */
+  sessionId: string | null;
+  /** 긴 글이 잘렸다 (글 끝에 `…`) */
+  truncated: boolean;
+  event: ChatListEvent;
+  /** 권한 · 질문 카드에만, 나머지는 null */
+  request: ChatRequestState | null;
+}
+
+/** `project_chat_history` 의 결과 — 오래된 것이 앞 (이미 가진 것 위에 이어 붙인다) */
+export interface ChatPage {
+  entries: ChatEntry[];
+  /** 이 쪽보다 오래된 항목이 더 있다 */
+  hasMore: boolean;
+}
+
+/** 턴들의 합 (앱이 돌린 세션의 `result` 만 — CLI 기록 파일은 읽지 않는다, D-24) */
+export interface UsageSum {
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  /** 토큰 4종의 합 (화면의 "츄르 약 n") */
+  totalTokens: number;
+  /** 턴 비용의 합 (USD) */
+  costUsd: number;
+  /** 구독으로 돌린 턴 수 (`turn_started` 의 `apiKeySource` 가 `none`) */
+  subscriptionTurns: number;
+  /** 키로 과금된 턴 수 */
+  apiKeyTurns: number;
+  /** 비용을 "참고용 추정" 으로 보여야 한다 — 키로 과금된 것이 아닌 턴(구독 · 모름)이 하나라도 있다 */
+  referenceOnly: boolean;
+}
+
+export interface ProjectUsage {
+  projectId: number;
+  /** 오늘(이 PC 의 자정부터) 이 프로젝트에서 쓴 합 */
+  today: UsageSum;
+  /** 지금까지 쓴 합 */
+  total: UsageSum;
+}
+
+/** 지금 돌고 있는 세션 */
+export interface SessionUsage {
+  projectId: number;
+  /** CLI 세션 ID (첫 턴이 시작되기 전에는 null) */
+  sessionId: string | null;
+  /** 이번 실행의 합 (이어 하기로 띄웠다면 앞 실행의 것은 빼고) */
+  usage: UsageSum;
+}
+
+/** `app_usage_summary` 의 결과 */
+export interface UsageSummary {
+  /** "오늘" 의 시작 — 유닉스 시각(초), 이 PC 의 자정 */
+  since: number;
+  /** 오늘 앱이 쓴 합 (모든 프로젝트) */
+  today: UsageSum;
+  /** 쓴 적이 있는 프로젝트마다 (번호 순) */
+  projects: ProjectUsage[];
+  /** 지금 돌고 있는 세션 (없으면 null) */
+  session: SessionUsage | null;
+}
+
+/** `project_chat_history` 가 한 번에 주는 항목 수의 상한 (더 크게 부르면 Rust 가 줄여 준다) */
+export const CHAT_PAGE_MAX = 200;
 
 // ───────────────────────── 하네스 설치 · 업데이트 (P4-02) — `src-tauri/src/harness/` 와 같이 맞춘다 ─────────────────────────
 // 화면이 Rust 에 넘기는 값은 백업 번호 하나뿐이다 (실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다).

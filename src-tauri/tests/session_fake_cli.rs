@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 use common::*;
 use nyanitor_lib::claude::events::{AnswerValue, EndKind, Response, SessionEvent, TurnOutcome};
 use nyanitor_lib::claude::exec::ClaudeCommand;
-use nyanitor_lib::claude::store::{ResumeStore, project_key};
+use nyanitor_lib::claude::store;
+use nyanitor_lib::db::{AppDb, DB_FILE};
 use serde_json::{Value, json};
 
 const SESSION_ID: &str = "00000000-0000-4000-8000-000000000001";
@@ -868,31 +869,27 @@ fn the_session_id_is_saved_per_project_and_used_for_resume() {
     let mut h = Harness::new("resume");
     let first = h.fake("resume.first", &[]);
     h.start(&first).unwrap();
-    assert_eq!(
-        h.manager
-            .last_session(&h.project.display().to_string())
-            .unwrap(),
-        None
-    );
+    assert_eq!(h.manager.last_session(1).unwrap(), None);
     h.manager.send_message("remember PINEAPPLE").unwrap();
     h.wait_for("turn end", turn_outcome);
     assert_eq!(
-        h.manager
-            .last_session(&h.project.display().to_string())
-            .unwrap()
-            .as_deref(),
+        h.manager.last_session(1).unwrap().as_deref(),
         Some(SESSION_ID)
     );
     h.manager.stop().unwrap();
     h.wait_ended();
     assert!(!first.argv().contains(&"--resume".to_string()));
 
-    // 앱을 다시 켠 것처럼: 새 관리자가 같은 파일을 읽는다
-    let reopened = ResumeStore::open(h.store_path.clone());
+    // 앱을 다시 켠 것처럼: DB 를 새로 열어 읽는다
+    let reopened = AppDb::open(&h.root.join("data").join(DB_FILE));
     assert_eq!(
-        reopened.get(&project_key(&h.project)).as_deref(),
+        reopened
+            .read(|conn| store::last_for_project(conn, 1))
+            .unwrap()
+            .as_deref(),
         Some(SESSION_ID)
     );
+    drop(reopened);
 
     let second = h.fake("resume.second", &[]);
     let info = h.start_resume(&second).unwrap();

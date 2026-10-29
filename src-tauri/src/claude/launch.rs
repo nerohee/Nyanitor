@@ -176,11 +176,8 @@ pub fn last_session(
     db: &AppDb,
     project_id: i64,
 ) -> Result<Option<String>, AppError> {
-    let dir = projects::existing_dir(db, project_id)?;
-    let text = dir
-        .to_str()
-        .ok_or_else(|| AppError::InvalidInput("project folder is not valid UTF-8".into()))?;
-    manager.last_session(text)
+    projects::existing_dir(db, project_id)?;
+    manager.last_session(project_id)
 }
 
 #[cfg(test)]

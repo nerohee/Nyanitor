@@ -139,7 +139,7 @@ fn completion_criteria_with_the_real_cli() {
     assert!((second.cost_usd - (second.total_cost_usd - first.total_cost_usd)).abs() < 1e-9);
     let session_id = h
         .manager
-        .last_session(&h.project.display().to_string())
+        .last_session(1)
         .unwrap()
         .expect("the session id was saved");
     println!("saved session id: {session_id}");

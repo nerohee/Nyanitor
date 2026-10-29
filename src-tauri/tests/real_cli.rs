@@ -38,11 +38,11 @@ fn assert_outside_repo(dir: &std::path::Path) {
 
 fn start_real(h: &Harness, resume: bool) -> nyanitor_lib::claude::events::StartInfo {
     assert_outside_repo(&h.project);
-    let mut request = h.request();
-    request.model = Some(MODEL.into());
-    request.resume = resume;
+    let mut plan = h.plan();
+    plan.model = Some(MODEL.into());
+    plan.resume = resume;
     h.manager
-        .start(request, real_command())
+        .start(plan, real_command())
         .expect("start the real claude")
 }
 

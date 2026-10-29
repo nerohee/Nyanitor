@@ -17,8 +17,17 @@ import {
   type ClaudeStatus,
   type GitResult,
   type HarnessStatus,
+  type ProjectAddRequest,
+  type ProjectEntry,
+  type ProjectList,
+  type ProjectPatch,
+  type ProjectPickedFolder,
   type RawLogEntry,
+  type RequirementsRead,
+  type RequirementsVersion,
+  type RequirementsWrite,
   type ScriptResult,
+  type SkillsList,
   type StartInfo,
   type StartRequest,
   type StopInfo,
@@ -82,6 +91,7 @@ export const ipc = {
   claudeDiscover: () => call<ClaudeStatus>("claude_discover"),
   /** `claude auth login` 을 새 터미널 창으로 띄운다 (로그인은 Anthropic 의 흐름 — 앱은 로그인 화면을 만들지 않는다) */
   claudeOpenLogin: () => call<void>("claude_open_login"),
+  /** 세션 시작 — **등록된 프로젝트 번호로만** (D-47). 폴더는 Rust 가 번호로 찾고, 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다. 돌려주는 `model` · `effort` 가 실제로 쓴 값 */
   claudeSessionStart: (request: StartRequest) => call<StartInfo>("claude_session_start", { request }),
   claudeSessionSend: (text: string) => call<void>("claude_session_send", { text }),
   claudeSessionRespond: (requestId: string, response: ClaudeResponse) =>
@@ -89,8 +99,8 @@ export const ipc = {
   claudeSessionInterrupt: () => call<void>("claude_session_interrupt"),
   claudeSessionStop: () => call<StopInfo>("claude_session_stop"),
   claudeSessionState: () => call<ClaudeSessionState>("claude_session_state"),
-  /** 이 프로젝트의 마지막 세션 ID (이어 하기 가능한지) */
-  claudeLastSession: (projectDir: string) => call<string | null>("claude_last_session", { projectDir }),
+  /** 이 프로젝트(등록된 프로젝트 번호)의 마지막 세션 ID (이어 하기 가능한지) */
+  claudeLastSession: (projectId: number) => call<string | null>("claude_last_session", { projectId }),
   claudeRawLog: () => call<RawLogEntry[]>("claude_raw_log"),
   onClaudeEvent,
 
@@ -117,6 +127,29 @@ export const ipc = {
   // 고양이 집 (P5-01). 넘기는 값이 없다 — 경로 · 파일 이름 · 실행 파일 · 인자를 넘기는 길은 없다.
   /** 설치된 에이전트 목록 — 오케스트레이터 + `<설정 폴더>/agents/*.md` 앞머리. 깨진 파일 · 설정 · 하네스 없음은 오류가 아니라 결과의 상태다 */
   agentsList: () => call<AgentsList>("agents_list"),
+  /** 설치된 스킬 목록 (P6-02) — `<설정 폴더>/skills/<이름>/SKILL.md` 앞머리. 채팅 입력줄이 고른다. 깨진 파일 · 하네스 없음은 오류가 아니라 결과의 상태다. 넘기는 값이 없다 */
+  skillsList: () => call<SkillsList>("skills_list"),
   /** 구독 사용량 한도 (5시간 · 7일 · 초기화 시각) — 짧은 별도 세션으로 읽고 잠깐 기억한다. 못 받아도 오류가 아니라 `unavailable` 과 이유 */
   usageRead: () => call<UsageResult>("usage_read"),
+
+  // 프로젝트 등록 · 요구사항 (P6-01). **경로 글자를 보내는 명령은 없다** (D-47) — 폴더는 Rust 가 대화상자로 받아 들고 있고, 나머지는 등록된 프로젝트 번호(`id`)로만 부른다.
+  /** 등록된 프로젝트 — 최근에 연 순서. 폴더 상태(`ok` · `missing` · `unknown`)와 살펴본 결과 포함. DB 가 읽기 전용이면 `db: "read_only"` */
+  projectsList: () => call<ProjectList>("projects_list"),
+  /** 폴더 고르기 대화상자를 메인 창 위에 띄운다 (Rust). 취소면 `null`. 쓸 수 있는 폴더는 Rust 가 들고 있다가 `projectAdd` 때 그것만 등록한다 */
+  projectPickFolder: () => call<ProjectPickedFolder | null>("project_pick_folder"),
+  /** 고른 폴더를 등록한다 (고른 것이 없으면 `no_folder_picked`, 이미 등록됐으면 그 프로젝트를 돌려준다). 경로는 보내지 않는다 */
+  projectAdd: (request: ProjectAddRequest = {}) => call<ProjectEntry>("project_add", { request }),
+  /** 이름 · 스킬 고치기 (`skill: null` = 스킬 없음). 이름은 비면 거절 · 최대 `PROJECT_NAME_MAX_CHARS` 글자 */
+  projectUpdate: (id: number, patch: ProjectPatch) => call<ProjectEntry>("project_update", { id, patch }),
+  /** 목록에서 빼기 — 등록만 지운다 (폴더 · 파일은 그대로) */
+  projectRemove: (id: number) => call<void>("project_remove", { id }),
+  /** 마지막으로 연 때를 지금으로 */
+  projectTouch: (id: number) => call<void>("project_touch", { id }),
+  /** 그 프로젝트 폴더의 `requirements.md` 읽기 — BOM 은 떼서 준다 (`hasBom`), 줄바꿈은 그대로 */
+  projectRequirementsRead: (id: number) => call<RequirementsRead>("project_requirements_read", { id }),
+  /** 지금 파일의 `version` (싸다 — 창 포커스 · 몇 초마다 불러 바깥 변경을 안다) */
+  projectRequirementsVersion: (id: number) => call<RequirementsVersion>("project_requirements_version", { id }),
+  /** 쓰기 — 지금 파일이 `baseVersion` 과 다르면 쓰지 않고 `conflict`. 없던 파일을 새로 쓸 때는 `baseVersion: null` */
+  projectRequirementsWrite: (id: number, text: string, baseVersion: string | null) =>
+    call<RequirementsWrite>("project_requirements_write", { id, text, baseVersion }),
 };

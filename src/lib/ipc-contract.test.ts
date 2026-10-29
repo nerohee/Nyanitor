@@ -10,6 +10,10 @@ import harnessGitRs from "../../src-tauri/src/harness/git.rs?raw";
 import harnessLocateRs from "../../src-tauri/src/harness/locate.rs?raw";
 import harnessScriptRs from "../../src-tauri/src/harness/script.rs?raw";
 import harnessStatusRs from "../../src-tauri/src/harness/status.rs?raw";
+import projectsFolderRs from "../../src-tauri/src/projects/folder.rs?raw";
+import projectsRs from "../../src-tauri/src/projects/mod.rs?raw";
+import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs?raw";
+import skillsRs from "../../src-tauri/src/skills/mod.rs?raw";
 import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
@@ -27,6 +31,7 @@ import {
   type AppErrorKind,
   type ClaudeEventType,
   type ClaudeResponse,
+  type ClaudeSessionState,
   type GitBashInfo,
   type GitInfo,
   type GitOutcome,
@@ -48,7 +53,32 @@ import {
   type HarnessRepoStatus,
   type HarnessStatus,
   type HarnessUnreadable,
+  type ProjectAddRequest,
+  type ProjectDbMode,
+  type ProjectEntry,
+  type ProjectFolderFinding,
+  type ProjectFolderState,
+  type ProjectForbiddenReason,
+  type ProjectList,
+  type ProjectPatch,
+  type ProjectPickedForbidden,
+  type ProjectPickedFolder,
+  type ProjectPickedOk,
+  type ProjectSkill,
+  type RequirementsProblem,
+  type RequirementsRead,
+  type RequirementsText,
+  type RequirementsVersion,
+  type RequirementsWrite,
   type ScriptResult,
+  type SkillInfo,
+  type SkillOrigin,
+  type SkillUnreadable,
+  type SkillUnreadableReason,
+  type SkillsList,
+  type SkillsState,
+  type StartInfo,
+  type StartRequest,
   type UpdatePreview,
   type ScriptOutcome,
   type TurnOutcome,
@@ -71,6 +101,14 @@ const TS_ERROR_KINDS: Record<AppErrorKind, true> = {
   request_not_found: true,
   turn_in_progress: true,
   harness_busy: true,
+  db_unavailable: true,
+  db_read_only: true,
+  project_not_found: true,
+  no_folder_picked: true,
+  folder_dialog_open: true,
+  file_write_failed: true,
+  project_folder_missing: true,
+  project_folder_forbidden: true,
 };
 
 const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
@@ -202,6 +240,61 @@ const TS_HOUSE_FIELDS = {
   UsageReading: { fiveHour: 1, sevenDay: 1, scoped: 1, extraUsageEnabled: 1, readAt: 1 } satisfies Record<Exclude<keyof UsageOk, "state">, 1>,
 };
 
+// 프로젝트 등록 · requirements.md (P6-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_PROJECT_SKILLS: Record<ProjectSkill, true> = { "/desktop-app": true, "/web-full": true, "/web-lite": true };
+const TS_FOLDER_STATES: Record<ProjectFolderState, true> = { ok: true, missing: true, unknown: true };
+const TS_FOLDER_FINDINGS: Record<ProjectFolderFinding, true> = { fresh: true, hasRequirements: true, hasHarness: true };
+const TS_FORBIDDEN_REASONS: Record<ProjectForbiddenReason, true> = { drive_root: true, home: true, claude_dir: true, harness_home: true, app_data: true };
+const TS_DB_MODES: Record<ProjectDbMode, true> = { ok: true, read_only: true };
+const TS_REQUIREMENTS_PROBLEMS: Record<RequirementsProblem, true> = {
+  not_utf8: true,
+  too_large: true,
+  outside_folder: true,
+  link: true,
+  folder_missing: true,
+  not_a_file: true,
+  read_failed: true,
+};
+const TS_PICKED_STATES: Record<ProjectPickedFolder["state"], true> = { ok: true, forbidden: true };
+const TS_READ_STATES: Record<RequirementsRead["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_VERSION_STATES: Record<RequirementsVersion["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_WRITE_STATES: Record<RequirementsWrite["state"], true> = { ok: true, conflict: true, refused: true };
+
+// 태그(`state`)는 serde 가 붙이므로 구조체 필드가 아니다
+const TS_PROJECT_FIELDS = {
+  ProjectEntry: { id: 1, path: 1, name: 1, skill: 1, createdAt: 1, lastOpenedAt: 1, folder: 1, finding: 1 } satisfies Record<keyof ProjectEntry, 1>,
+  ProjectList: { db: 1, projects: 1 } satisfies Record<keyof ProjectList, 1>,
+  PickedOk: { path: 1, name: 1, finding: 1, existingId: 1 } satisfies Record<keyof ProjectPickedOk, 1>,
+  PickedForbidden: { path: 1, reason: 1 } satisfies Record<keyof ProjectPickedForbidden, 1>,
+  AddRequest: { name: 1, skill: 1 } satisfies Record<keyof ProjectAddRequest, 1>,
+  ProjectPatch: { name: 1, skill: 1 } satisfies Record<keyof ProjectPatch, 1>,
+  TextRead: { text: 1, version: 1, hasBom: 1 } satisfies Record<keyof RequirementsText, 1>,
+  ProblemInfo: { reason: 1 } satisfies Record<Exclude<keyof Extract<RequirementsRead, { state: "unreadable" }>, "state">, 1>,
+  VersionInfo: { version: 1 } satisfies Record<Exclude<keyof Extract<RequirementsVersion, { state: "ok" }>, "state">, 1>,
+  ConflictInfo: { version: 1 } satisfies Record<Exclude<keyof Extract<RequirementsWrite, { state: "conflict" }>, "state">, 1>,
+};
+
+// 세션 시작 · 스킬 목록 (P6-02) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_SKILL_ORIGINS: Record<SkillOrigin, true> = { harness: true, mine: true };
+const TS_SKILL_UNREADABLE: Record<SkillUnreadableReason, true> = {
+  too_large: true,
+  read_failed: true,
+  not_utf8: true,
+  no_frontmatter: true,
+  unclosed_frontmatter: true,
+  name_mismatch: true,
+  invalid_name: true,
+};
+const TS_SKILLS_STATES: Record<SkillsState, true> = { ok: true, no_harness: true, location_unusable: true };
+const TS_SESSION_FIELDS = {
+  StartRequest: { projectId: 1, resume: 1, useApiKey: 1 } satisfies Record<keyof StartRequest, 1>,
+  StartInfo: { projectId: 1, projectDir: 1, pid: 1, resumed: 1, resumeSessionId: 1, cliVersion: 1, model: 1, effort: 1 } satisfies Record<keyof StartInfo, 1>,
+  SessionState: { running: 1, projectId: 1, projectDir: 1, pid: 1, sessionId: 1, busy: 1, pending: 1 } satisfies Record<keyof ClaudeSessionState, 1>,
+  SkillInfo: { name: 1, command: 1, description: 1, argumentHint: 1, origin: 1, userInvocable: 1 } satisfies Record<keyof SkillInfo, 1>,
+  SkillUnreadable: { folder: 1, origin: 1, reason: 1 } satisfies Record<keyof SkillUnreadable, 1>,
+  SkillsList: { state: 1, skills: 1 } satisfies Record<keyof SkillsList, 1>,
+};
+
 const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
 /** `pub struct <name> {` 의 바로 아래(들여쓰기 4칸) `pub` 필드를 serde camelCase 이름으로 (`#[serde(rename = "type")]` 인 `kind` 는 `type`) */
@@ -226,8 +319,9 @@ function rustFields(source: string, structName: string): string[] {
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
+/** serde `rename_all = "snake_case"` 와 같다: 첫 글자가 아닌 대문자 앞마다 `_` (`NotAFile` → `not_a_file`) */
 function snake(name: string): string {
-  return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  return name.replace(/(?!^)([A-Z])/g, "_$1").toLowerCase();
 }
 
 /** `pub enum <name> {` 의 바로 아래(들여쓰기 4칸) 변형 이름들 */
@@ -366,6 +460,182 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(usageRs).toContain('#[serde(tag = "state", rename_all = "snake_case")]\npub enum UsageResult');
   });
 
+  it("프로젝트 종류: Rust enum 과 ipc-types 의 글 종류", () => {
+    // 스킬 이름은 `as_str` 의 글자 그대로
+    const asStr = projectsRs.slice(projectsRs.indexOf("pub fn as_str(self)"));
+    const rustSkills = [...asStr.slice(0, asStr.indexOf("\n    }\n")).matchAll(/=> "(\/[a-z-]+)"/g)].map((m) => m[1] as string);
+    expect(rustSkills.length).toBe(3);
+    expect(sorted(Object.keys(TS_PROJECT_SKILLS))).toEqual(sorted(rustSkills));
+    expect(sorted(Object.keys(TS_FOLDER_STATES))).toEqual(sorted(rustVariants(projectsFolderRs, "FolderState").map(snake)));
+    // 살펴본 결과는 serde camelCase (`HasRequirements` → `hasRequirements`)
+    expect(sorted(Object.keys(TS_FOLDER_FINDINGS))).toEqual(sorted(rustVariants(projectsFolderRs, "FolderFinding").map((name) => name.charAt(0).toLowerCase() + name.slice(1))));
+    expect(sorted(Object.keys(TS_FORBIDDEN_REASONS))).toEqual(sorted(rustVariants(projectsFolderRs, "ForbiddenReason").map(snake)));
+    expect(sorted(Object.keys(TS_DB_MODES))).toEqual(sorted(rustVariants(projectsRs, "DbMode").map(snake)));
+    expect(sorted(Object.keys(TS_REQUIREMENTS_PROBLEMS))).toEqual(sorted(rustVariants(projectsRequirementsRs, "Problem").map(snake)));
+    // 태그가 붙는 enum: 변형 이름이 곧 `state` 값
+    expect(sorted(Object.keys(TS_PICKED_STATES))).toEqual(sorted(rustVariants(projectsRs, "PickedFolder").map(snake)));
+    expect(sorted(Object.keys(TS_READ_STATES))).toEqual(sorted(rustVariants(projectsRequirementsRs, "ReadResult").map(snake)));
+    expect(sorted(Object.keys(TS_VERSION_STATES))).toEqual(sorted(rustVariants(projectsRequirementsRs, "VersionResult").map(snake)));
+    expect(sorted(Object.keys(TS_WRITE_STATES))).toEqual(sorted(rustVariants(projectsRequirementsRs, "WriteResult").map(snake)));
+    for (const [source, name] of [
+      [projectsRs, "PickedFolder"],
+      [projectsRequirementsRs, "ReadResult"],
+      [projectsRequirementsRs, "VersionResult"],
+      [projectsRequirementsRs, "WriteResult"],
+    ] as const) {
+      expect(source, name).toContain(`#[serde(tag = "state", rename_all = "snake_case")]\npub enum ${name}`);
+    }
+  });
+
+  it("프로젝트 결과 · 입력의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다", () => {
+    const sources: Record<string, [string, string]> = {
+      ProjectEntry: [projectsRs, "ProjectEntry"],
+      ProjectList: [projectsRs, "ProjectList"],
+      PickedOk: [projectsRs, "PickedOk"],
+      PickedForbidden: [projectsRs, "PickedForbidden"],
+      AddRequest: [projectsRs, "AddRequest"],
+      ProjectPatch: [projectsRs, "ProjectPatch"],
+      TextRead: [projectsRequirementsRs, "TextRead"],
+      ProblemInfo: [projectsRequirementsRs, "ProblemInfo"],
+      VersionInfo: [projectsRequirementsRs, "VersionInfo"],
+      ConflictInfo: [projectsRequirementsRs, "ConflictInfo"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_PROJECT_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_PROJECT_FIELDS[name as keyof typeof TS_PROJECT_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+    // 화면이 보내는 두 입력은 모르는 필드를 받지 않는다 (경로 같은 것을 슬쩍 끼워 보내도 거절)
+    for (const name of ["AddRequest", "ProjectPatch"]) {
+      expect(projectsRs, name).toContain(`#[serde(rename_all = "camelCase", deny_unknown_fields)]\npub struct ${name} {`);
+    }
+  });
+
+  it("프로젝트 명령은 화면에서 경로 글자를 받지 않는다 — 프로젝트 번호 · 이름 · 스킬 · 글 · 버전만 (D-47)", async () => {
+    const commandsRs = (await import("../../src-tauri/src/projects/commands.rs?raw")).default;
+    const signatures = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn ([a-z_]+)\(([^)]*)\)/g)];
+    const expected: Record<string, string[]> = {
+      projects_list: ["db", "state"],
+      project_pick_folder: ["app", "db", "state"],
+      project_add: ["db", "state", "request"],
+      project_update: ["db", "state", "id", "patch"],
+      project_remove: ["db", "state", "id"],
+      project_touch: ["db", "id"],
+      project_requirements_read: ["db", "id"],
+      project_requirements_version: ["db", "state", "id"],
+      project_requirements_write: ["db", "state", "id", "text", "base_version"],
+    };
+    expect(signatures.map((m) => m[1]).sort()).toEqual(Object.keys(expected).sort());
+    // 화면이 보내는 값(앱이 채우는 app · db · state 를 뺀 것)의 이름 · 모양
+    const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>" };
+    for (const [, name, params] of signatures) {
+      const list = (params as string)
+        .replace(/State<[^>]*>/g, "State") // `State<'_, AppDb>` 안의 쉼표는 매개변수 구분이 아니다
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "");
+      expect(
+        list.map((p) => p.split(":")[0]?.trim()),
+        `${name} 의 매개변수`,
+      ).toEqual(expected[name as string]);
+      for (const param of list) {
+        const [paramName, paramType] = param.split(":").map((part) => part.trim()) as [string, string];
+        if (["app", "db", "state"].includes(paramName)) continue;
+        expect(paramType, `${name} 의 ${paramName}`).toBe(fromScreen[paramName]);
+      }
+    }
+    expect(commandsRs).not.toContain("PathBuf");
+    // 화면 쪽 호출도 같다: 폴더 경로를 넘기는 인자가 없다
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    const projectCalls = [...ipcTs.matchAll(/(project[A-Za-z]*): \(([^)]*)\) =>\s*call<[^>]*>\("(projects?_[a-z_]+)"(, \{[^}]*\})?/g)];
+    expect(projectCalls.map((m) => m[3]).sort()).toEqual(Object.keys(expected).sort());
+    for (const [, , params, command, args] of projectCalls) {
+      expect(`${params as string}${args ?? ""}`, command).not.toMatch(/path|dir|folder/i);
+    }
+  });
+
+  it("프로젝트 파일 명령은 requirements.md 하나만 다룬다 (파일 이름이 코드에 고정돼 있고, 폴더 만들기 · 지우기 · 다른 파일 쓰기가 없다)", () => {
+    expect(projectsRequirementsRs).toContain('pub const FILE_NAME: &str = "requirements.md";');
+    for (const [name, source] of [
+      ["mod.rs", projectsRs],
+      ["folder.rs", projectsFolderRs],
+    ] as const) {
+      const production = source.slice(0, source.indexOf("#[cfg(test)]"));
+      expect(production, `projects/${name}`).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions)/);
+    }
+    const requirementsProduction = projectsRequirementsRs.slice(0, projectsRequirementsRs.indexOf("#[cfg(test)]"));
+    expect(requirementsProduction).not.toMatch(/fs::(create_dir|remove_dir|copy)/);
+  });
+
+  it("세션 시작 · 스킬 목록의 필드와 종류: Rust 와 ipc-types 가 같다", () => {
+    const sources: Record<string, [string, string]> = {
+      StartRequest: [eventsRs, "StartRequest"],
+      StartInfo: [eventsRs, "StartInfo"],
+      SessionState: [eventsRs, "SessionState"],
+      SkillInfo: [skillsRs, "SkillInfo"],
+      SkillUnreadable: [skillsRs, "SkillUnreadable"],
+      SkillsList: [skillsRs, "SkillsList"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_SESSION_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_SESSION_FIELDS[name as keyof typeof TS_SESSION_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+    expect(sorted(Object.keys(TS_SKILL_ORIGINS))).toEqual(sorted(rustVariants(skillsRs, "SkillOrigin").map(snake)));
+    expect(sorted(Object.keys(TS_SKILL_UNREADABLE))).toEqual(sorted(rustVariants(skillsRs, "UnreadableReason").map(snake)));
+    expect(sorted(Object.keys(TS_SKILLS_STATES))).toEqual(sorted(rustVariants(skillsRs, "SkillsState").map(snake)));
+    expect(sorted(["ok", "unreadable"])).toEqual(sorted(rustVariants(skillsRs, "SkillEntry").map(snake)));
+    expect(skillsRs).toContain('#[serde(tag = "state", rename_all = "snake_case")]\npub enum SkillEntry');
+    // 시작 알림은 프로젝트 번호 · 모델 · 수준을 싣는다 (Rust 의 `SessionStarted` 와 ClaudeEvent 의 같은 이름)
+    const started = eventsRs.slice(eventsRs.indexOf("    SessionStarted {"));
+    const startedBody = started.slice(0, started.indexOf("\n    },"));
+    for (const field of ["project_id", "project_dir", "model", "effort"]) expect(startedBody, field).toContain(`${field}:`);
+  });
+
+  it("세션은 등록된 프로젝트 번호로만 시작한다 — 화면이 경로 · 모델 · 수준 · 실행 인자를 보내는 길이 없다 (D-47)", async () => {
+    // 1) Rust: 입력은 번호 · 이어 하기 · API 키 허용뿐이고 모르는 필드는 거절한다
+    expect(rustFields(eventsRs, "StartRequest")).toEqual(["projectId", "resume", "useApiKey"]);
+    expect(eventsRs).toContain('#[serde(rename_all = "camelCase", deny_unknown_fields)]\npub struct StartRequest {');
+    const requestBody = eventsRs.slice(eventsRs.indexOf("pub struct StartRequest {"));
+    expect(requestBody.slice(0, requestBody.indexOf("\n}"))).toContain("pub project_id: i64,");
+    // 2) Rust 명령: 시작은 앱이 채우는 것(manager · db · projects)과 `request` 하나, 마지막 세션은 `project_id: i64` 하나
+    const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
+    const signature = (name: string) => {
+      const match = new RegExp(String.raw`#\[tauri::command\]\s+pub async fn ${name}\(([^)]*)\)`).exec(commandsRs);
+      if (!match) throw new Error(`${name} not found`);
+      return (match[1] as string)
+        .replace(/State<[^>]*>/g, "State")
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "");
+    };
+    expect(signature("claude_session_start")).toEqual(["manager: State", "db: State", "projects: State", "request: StartRequest"]);
+    expect(signature("claude_last_session")).toEqual(["manager: State", "db: State", "project_id: i64"]);
+    expect(commandsRs).not.toContain("PathBuf");
+    // 3) 모델 · 수준은 Rust 가 하네스 설정에서 읽는다 (시작 계획 `StartPlan` 은 화면에서 받을 수 없다 — Deserialize 가 없다)
+    const launchRs = (await import("../../src-tauri/src/claude/launch.rs?raw")).default;
+    const planHead = launchRs.slice(launchRs.indexOf("pub struct StartPlan {") - 120, launchRs.indexOf("pub struct StartPlan {"));
+    expect(planHead).not.toContain("Deserialize");
+    expect(launchRs).toContain("planner_here()");
+    // 4) 화면 쪽: 호출은 `{ request }` 와 `{ projectId }` 뿐, 타입에 경로 · 모델 · 수준 칸이 없다
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('claudeSessionStart: (request: StartRequest) => call<StartInfo>("claude_session_start", { request }),');
+    expect(ipcTs).toContain('claudeLastSession: (projectId: number) => call<string | null>("claude_last_session", { projectId }),');
+    expect(sorted(Object.keys(TS_SESSION_FIELDS.StartRequest))).toEqual(["projectId", "resume", "useApiKey"]);
+  });
+
+  it("스킬 목록 명령은 화면에서 아무 값도 받지 않는다 (경로 · 폴더 이름을 받는 길이 없다)", async () => {
+    const skillsCommands = (await import("../../src-tauri/src/skills/commands.rs?raw")).default;
+    const signatures = [...skillsCommands.matchAll(/#\[tauri::command\]\s+pub async fn (skills_[a-z_]+)\(([^)]*)\)/g)];
+    expect(signatures.map((m) => m[1])).toEqual(["skills_list"]);
+    expect((signatures[0]?.[2] as string).trim()).toBe("");
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('skillsList: () => call<SkillsList>("skills_list"),');
+    // 읽기만 한다 — 스킬 파일을 쓰거나 지우는 코드가 없다
+    const production = skillsRs.slice(0, skillsRs.indexOf("#[cfg(test)]"));
+    expect(production).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions)/);
+  });
+
   it("화면이 듣는 이벤트 이름은 commands.rs 와 같다", async () => {
     const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
     const { CLAUDE_SESSION_EVENT } = await import("./ipc");
@@ -379,7 +649,17 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(called.length).toBeGreaterThan(8);
     for (const command of called) {
       if (command === "app_info") continue;
-      const module = command.startsWith("harness_") ? "harness" : command.startsWith("agents_") ? "agents" : command.startsWith("usage_") ? "usage" : "claude";
+      const module = command.startsWith("harness_")
+        ? "harness"
+        : command.startsWith("agents_")
+          ? "agents"
+          : command.startsWith("usage_")
+            ? "usage"
+            : command.startsWith("skills_")
+              ? "skills"
+              : command.startsWith("project")
+                ? "projects"
+                : "claude";
       expect(libRs, `${command} 이 lib.rs 에 없음`).toContain(`${module}::commands::${command}`);
     }
     // 반대로, Rust 에 등록된 Claude · 하네스 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
@@ -388,6 +668,8 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       ...libRs.matchAll(/harness::commands::(harness_[a-z_]+)/g),
       ...libRs.matchAll(/agents::commands::(agents_[a-z_]+)/g),
       ...libRs.matchAll(/usage::commands::(usage_[a-z_]+)/g),
+      ...libRs.matchAll(/skills::commands::(skills_[a-z_]+)/g),
+      ...libRs.matchAll(/projects::commands::(projects?_[a-z_]+)/g),
     ].map((m) => m[1] as string);
     expect(sorted(registered)).toEqual(sorted(called.filter((c) => c !== "app_info")));
   });
@@ -484,6 +766,17 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       permissions: string[];
     };
     expect(capability.permissions).toEqual(["core:default"]);
+  });
+
+  it("폴더 고르기(dialog)는 Rust 에서만 쓴다 — 화면 권한에 dialog · fs 가 없고, fs 플러그인은 등록하지 않는다 (D-47)", async () => {
+    const capabilityText = (await import("../../src-tauri/capabilities/default.json?raw")).default;
+    expect(capabilityText).not.toMatch(/dialog|fs:/);
+    const libRs = (await import("../../src-tauri/src/lib.rs?raw")).default;
+    expect(libRs).toContain(".plugin(tauri_plugin_dialog::init())");
+    expect(libRs).not.toContain("tauri_plugin_fs");
+    // 화면 쪽 코드에서 dialog · fs 플러그인 API 를 가져오지 않는다
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).not.toMatch(/plugin-dialog|plugin-fs/);
   });
 
   it("오류 · 이벤트가 아닌 모양(null · 숫자 · 종류만 있고 문구가 없는 객체)도 internal AppError 가 된다", () => {

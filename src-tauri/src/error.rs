@@ -34,6 +34,30 @@ pub enum AppError {
     /// 다른 하네스 작업(받기 · 업데이트 · 설치 · 되돌리기)이 진행 중이다 (한 번에 하나).
     #[error("another harness task is in progress")]
     HarnessBusy,
+    /// 앱 DB 를 쓸 수 없다 (열지 못했거나 읽고 쓰다 실패했다). 앱은 뜨지만 프로젝트 명령은 이 오류를 돌려준다.
+    #[error("app database is unavailable: {0}")]
+    DbUnavailable(String),
+    /// 앱 DB 가 이 앱보다 새 버전이라 읽기만 한다 (쓰기는 거절).
+    #[error("app database is newer than this app; it is read-only")]
+    DbReadOnly,
+    /// 등록된 프로젝트가 아니다 (이미 뺐거나 없는 번호).
+    #[error("project not found: {0}")]
+    ProjectNotFound(i64),
+    /// 고른 폴더가 없는데 등록하려 했다 (폴더를 먼저 골라야 한다).
+    #[error("no folder has been picked")]
+    NoFolderPicked,
+    /// 폴더 고르기 대화상자가 이미 떠 있다.
+    #[error("a folder dialog is already open")]
+    FolderDialogOpen,
+    /// 등록된 프로젝트인데 폴더가 지금 없다 (옮겼거나 지웠거나 드라이브가 빠졌다). 세션을 시작하지 않는다.
+    #[error("the project folder does not exist now: project {0}")]
+    ProjectFolderMissing(i64),
+    /// 등록된 프로젝트인데 폴더가 이제 고를 수 없는 폴더다 (설정이 바뀐 뒤). 세션을 시작하지 않는다.
+    #[error("the project folder cannot be used as a project now: project {0}")]
+    ProjectFolderForbidden(i64),
+    /// 파일을 쓰지 못했다 (디스크 · 권한 · 다른 프로그램이 쥐고 있음). 옛 파일은 그대로 남는다.
+    #[error("could not write the file: {0}")]
+    FileWriteFailed(String),
 }
 
 impl AppError {
@@ -48,7 +72,22 @@ impl AppError {
             AppError::RequestNotFound(_) => "request_not_found",
             AppError::TurnInProgress => "turn_in_progress",
             AppError::HarnessBusy => "harness_busy",
+            AppError::DbUnavailable(_) => "db_unavailable",
+            AppError::DbReadOnly => "db_read_only",
+            AppError::ProjectNotFound(_) => "project_not_found",
+            AppError::NoFolderPicked => "no_folder_picked",
+            AppError::FolderDialogOpen => "folder_dialog_open",
+            AppError::ProjectFolderMissing(_) => "project_folder_missing",
+            AppError::ProjectFolderForbidden(_) => "project_folder_forbidden",
+            AppError::FileWriteFailed(_) => "file_write_failed",
         }
+    }
+}
+
+/// SQLite 오류는 "DB 를 쓸 수 없다" 로 알린다 (`?` 로 바로 올릴 수 있게). 메시지에는 SQLite 의 오류 글만 들어간다 (경로 없음).
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        AppError::DbUnavailable(err.to_string())
     }
 }
 
@@ -106,5 +145,25 @@ mod tests {
         );
         assert_eq!(AppError::TurnInProgress.kind(), "turn_in_progress");
         assert_eq!(AppError::HarnessBusy.kind(), "harness_busy");
+        assert_eq!(
+            AppError::DbUnavailable(String::new()).kind(),
+            "db_unavailable"
+        );
+        assert_eq!(AppError::DbReadOnly.kind(), "db_read_only");
+        assert_eq!(AppError::ProjectNotFound(1).kind(), "project_not_found");
+        assert_eq!(AppError::NoFolderPicked.kind(), "no_folder_picked");
+        assert_eq!(AppError::FolderDialogOpen.kind(), "folder_dialog_open");
+        assert_eq!(
+            AppError::ProjectFolderMissing(1).kind(),
+            "project_folder_missing"
+        );
+        assert_eq!(
+            AppError::ProjectFolderForbidden(1).kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            AppError::FileWriteFailed(String::new()).kind(),
+            "file_write_failed"
+        );
     }
 }

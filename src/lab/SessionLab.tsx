@@ -1,9 +1,9 @@
 // Claude 연결 시험 화면 (P3-02) — 개발 빌드 전용, 주소 `?lab=session`. 디자인 없음. 진짜 채팅 · 작업 공간 화면은 P6.
-// 찾기 결과 · 프로젝트 폴더 입력(글자로 — 폴더 고르기 창은 P6) · 시작 / 보내기 / 중단 / 끝내기 / 이어 하기 ·
+// 찾기 결과 · 등록된 프로젝트 고르기(P6-02 — 경로를 글자로 보내는 길은 없다, D-47) · 시작 / 보내기 / 중단 / 끝내기 / 이어 하기 ·
 // 이벤트 목록 · 권한 카드 · 질문 카드 · 원본 로그. 화면은 `ipc.ts` 의 함수만 쓴다.
 import { useCallback, useEffect, useReducer, useState, type FormEvent, type ReactNode } from "react";
 import { t, tf } from "../i18n/ko";
-import { AppError, ipc, toAppError, type ClaudeResponse, type ClaudeStatus } from "../lib/ipc";
+import { AppError, ipc, toAppError, type ClaudeResponse, type ClaudeStatus, type ProjectEntry } from "../lib/ipc";
 import { PermissionCardLab, QuestionCardLab } from "./LabCards";
 import { initialLabState, labReducer } from "./state";
 import "./lab.css";
@@ -83,8 +83,11 @@ export default function SessionLab() {
   const [state, dispatch] = useReducer(labReducer, initialLabState);
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(true);
-  const [projectDir, setProjectDir] = useState("");
-  const [model, setModel] = useState("");
+  /** 등록된 프로젝트 (아직 못 불렀으면 null) */
+  const [projects, setProjects] = useState<ProjectEntry[] | null>(null);
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [useApiKey, setUseApiKey] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -100,6 +103,13 @@ export default function SessionLab() {
       setError(toAppError(raw));
       return false;
     }
+  }, []);
+
+  /** 등록된 프로젝트 목록을 다시 부른다. `select` 가 있으면 그 프로젝트를 고른다 (방금 등록한 것) */
+  const loadProjects = useCallback(async (select?: number) => {
+    const list = await ipc.projectsList();
+    setProjects(list.projects);
+    setProjectId((current) => select ?? (current !== null && list.projects.some((project) => project.id === current) ? current : null));
   }, []);
 
   const recheck = async () => {
@@ -123,7 +133,7 @@ export default function SessionLab() {
         if (cancelled) return;
         dispatch({ type: "restore", state: current });
         dispatch({ type: "raw", entries: raw });
-        if (current.projectDir) setProjectDir(current.projectDir);
+        if (current.projectId !== null) setProjectId(current.projectId);
       } catch (raw) {
         if (!cancelled) setError(toAppError(raw));
       }
@@ -131,6 +141,26 @@ export default function SessionLab() {
     return () => {
       cancelled = true;
       stop?.();
+    };
+  }, []);
+
+  // 등록된 프로젝트 목록 (고르기용)
+  useEffect(() => {
+    let cancelled = false;
+    ipc.projectsList().then(
+      (list) => {
+        if (cancelled) return;
+        setProjects(list.projects);
+        setProjectId((current) => (current !== null && list.projects.some((project) => project.id === current) ? current : null));
+      },
+      (raw: unknown) => {
+        if (cancelled) return;
+        setProjects([]);
+        setError(toAppError(raw));
+      },
+    );
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -154,16 +184,16 @@ export default function SessionLab() {
     };
   }, []);
 
-  // 폴더 칸이 바뀌면 그 폴더의 마지막 세션이 있는지 본다 (이어 하기 단추). 폴더가 없는 경로면 없음으로 둔다.
+  // 고른 프로젝트가 바뀌면 그 프로젝트의 마지막 세션이 있는지 본다 (이어 하기 단추). 폴더가 없어진 프로젝트면 없음으로 둔다.
   useEffect(() => {
     let cancelled = false;
-    const dir = projectDir.trim();
+    const id = projectId;
     const timer = window.setTimeout(() => {
-      if (dir === "") {
+      if (id === null) {
         setSaved(null);
         return;
       }
-      ipc.claudeLastSession(dir).then(
+      ipc.claudeLastSession(id).then(
         (id) => !cancelled && setSaved(id),
         () => !cancelled && setSaved(null),
       );
@@ -172,17 +202,30 @@ export default function SessionLab() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [projectDir, state.running, state.sessionId]);
+  }, [projectId, state.running, state.sessionId]);
 
-  const start = (resume: boolean) =>
-    run(() =>
-      ipc.claudeSessionStart({
-        projectDir: projectDir.trim(),
-        model: model.trim() === "" ? null : model.trim(),
-        resume,
-        useApiKey,
-      }),
-    );
+  /** 등록된 프로젝트 번호로만 시작한다 — 경로 · 모델 · 수준은 보내지 않는다 (Rust 가 정한다) */
+  const start = (resume: boolean) => {
+    if (projectId === null) return Promise.resolve(false);
+    return run(() => ipc.claudeSessionStart({ projectId, resume, useApiKey }));
+  };
+
+  /** 폴더 고르기 창(Rust) → 고른 폴더 등록 → 목록에서 그 프로젝트를 고른다. 취소면 아무것도 안 한다 */
+  const addProject = async () => {
+    setPicking(true);
+    setNotice(null);
+    await run(async () => {
+      const picked = await ipc.projectPickFolder();
+      if (picked === null) return;
+      if (picked.state === "forbidden") {
+        setNotice(tf("lab.session.pickForbidden", { reason: picked.reason }));
+        return;
+      }
+      const added = await ipc.projectAdd();
+      await loadProjects(added.id);
+    });
+    setPicking(false);
+  };
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -227,25 +270,35 @@ export default function SessionLab() {
       <section aria-labelledby="lab-session">
         <h2 id="lab-session">{t("lab.session.title")}</h2>
         <label className="lab-field">
-          {t("lab.session.dir")}
-          <input
-            type="text"
-            value={projectDir}
-            placeholder={t("lab.session.dirPh")}
-            disabled={state.running}
-            onChange={(event) => setProjectDir(event.target.value)}
-          />
+          {t("lab.session.project")}
+          <select
+            value={projectId === null ? "" : String(projectId)}
+            disabled={state.running || projects === null || projects.length === 0}
+            onChange={(event) => setProjectId(event.target.value === "" ? null : Number(event.target.value))}
+          >
+            <option value="">{t("lab.session.projectPick")}</option>
+            {(projects ?? []).map((project) => (
+              <option key={project.id} value={String(project.id)}>
+                {project.folder === "missing" ? tf("lab.session.projectGone", { name: project.name }) : project.name}
+              </option>
+            ))}
+          </select>
         </label>
-        <label className="lab-field">
-          {t("lab.session.model")}
-          <input
-            type="text"
-            value={model}
-            placeholder={t("lab.session.modelPh")}
-            disabled={state.running}
-            onChange={(event) => setModel(event.target.value)}
-          />
-        </label>
+        {projects !== null && projects.length === 0 && (
+          <p role="status" className="lab-note">
+            {t("lab.session.noProjects")}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="lab-note">
+            {notice}
+          </p>
+        )}
+        <div className="lab-row">
+          <button type="button" disabled={state.running || picking} onClick={() => void addProject()}>
+            {t("lab.session.addProject")}
+          </button>
+        </div>
         <label className="lab-option">
           <input
             type="checkbox"
@@ -256,12 +309,12 @@ export default function SessionLab() {
           {t("lab.session.useKey")}
         </label>
         <div className="lab-row">
-          <button type="button" disabled={state.running || projectDir.trim() === ""} onClick={() => void start(false)}>
+          <button type="button" disabled={state.running || projectId === null} onClick={() => void start(false)}>
             {t("lab.session.start")}
           </button>
           <button
             type="button"
-            disabled={state.running || projectDir.trim() === "" || saved === null}
+            disabled={state.running || projectId === null || saved === null}
             onClick={() => void start(true)}
           >
             {t("lab.session.resume")}
@@ -277,6 +330,11 @@ export default function SessionLab() {
           <Fact label={t("lab.session.state")}>
             {state.running ? t("lab.session.running") : t("lab.session.stopped")}
             {state.running && <> · {state.busy ? t("lab.session.busy") : t("lab.session.idle")}</>}
+          </Fact>
+          <Fact label={t("lab.session.modelEffort")}>
+            {state.running && state.planner
+              ? `${state.planner.model ?? t("lab.session.cliDefault")} · ${state.planner.effort ?? t("lab.session.cliDefault")}`
+              : t("lab.none")}
           </Fact>
           <Fact label={t("lab.session.id")}>{state.sessionId ?? t("lab.none")}</Fact>
           <Fact label={t("lab.session.saved")}>{saved ?? t("lab.session.none")}</Fact>

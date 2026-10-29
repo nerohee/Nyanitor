@@ -23,7 +23,11 @@ export interface LabState {
   /** 턴이 도는 중 */
   busy: boolean;
   sessionId: string | null;
+  /** 돌아가는 세션의 프로젝트 번호 (D-47) */
+  projectId: number | null;
   projectDir: string | null;
+  /** 세션을 시작할 때 실제로 넘긴 모델 · 수준 (각각 `null` = CLI 기본). 이 화면이 시작을 못 봤으면(다시 열었을 때) 알 수 없어 `null` */
+  planner: { model: string | null; effort: string | null } | null;
   lines: LabLine[];
   cards: LabCard[];
   raw: RawLogEntry[];
@@ -46,7 +50,9 @@ export const initialLabState: LabState = {
   running: false,
   busy: false,
   sessionId: null,
+  projectId: null,
   projectDir: null,
+  planner: null,
   lines: [],
   cards: [],
   raw: [],
@@ -74,7 +80,20 @@ function applyEvent(state: LabState, event: ClaudeEvent): LabState {
     case "raw_log":
       return { ...state, raw: [...state.raw.filter((r) => r.seq !== event.seq), event].slice(-MAX_RAW) };
     case "session_started":
-      return withLine({ ...state, running: true, busy: false, projectDir: event.projectDir, cards: [], resumeNotFound: null, raw: [] }, event);
+      return withLine(
+        {
+          ...state,
+          running: true,
+          busy: false,
+          projectId: event.projectId,
+          projectDir: event.projectDir,
+          planner: { model: event.model, effort: event.effort },
+          cards: [],
+          resumeNotFound: null,
+          raw: [],
+        },
+        event,
+      );
     case "turn_started":
       return withLine({ ...state, busy: true, sessionId: event.sessionId }, event);
     case "user_message":
@@ -101,8 +120,8 @@ export function labReducer(state: LabState, action: LabAction): LabState {
     case "event":
       return applyEvent(state, action.event);
     case "restore": {
-      const { running, busy, sessionId, projectDir, pending } = action.state;
-      let next: LabState = { ...state, running, busy, sessionId, projectDir, cards: [] };
+      const { running, busy, sessionId, projectId, projectDir, pending } = action.state;
+      let next: LabState = { ...state, running, busy, sessionId, projectId, projectDir, cards: [] };
       for (const event of pending) {
         if (event.type === "permission_request") {
           next = { ...next, cards: pushCard(next.cards, { kind: "permission", info: event }) };

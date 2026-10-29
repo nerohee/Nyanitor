@@ -19,7 +19,7 @@ const permission: PermissionRequestInfo = {
 
 const event = (e: ClaudeEvent): LabAction => ({ type: "event", event: e });
 const run = (actions: LabAction[], from: LabState = initialLabState) => actions.reduce(labReducer, from);
-const started = event({ type: "session_started", projectDir: "C:\\p", pid: 1, resumed: false, resumeSessionId: null, cliVersion: null });
+const started = event({ type: "session_started", projectId: 1, projectDir: "C:\\p", pid: 1, resumed: false, resumeSessionId: null, cliVersion: null, model: null, effort: null });
 const raw = (seq: number): ClaudeEvent => ({ type: "raw_log", seq, dir: "recv", text: `l${seq}`, truncated: false, originalLen: 2, atMs: seq });
 
 describe("labReducer — 경계", () => {
@@ -92,6 +92,7 @@ describe("labReducer — 경계", () => {
             running: true,
             busy: true,
             sessionId: "s",
+            projectId: 1,
             projectDir: "C:\\p",
             pid: 1,
             pending: [{ type: "text", text: "이건 카드가 아님" }],
@@ -104,7 +105,7 @@ describe("labReducer — 경계", () => {
     expect(restored.busy).toBe(true);
     // 세션이 없다고 돌아오면 돌아가는 중이 아니다
     const none = run(
-      [{ type: "restore", state: { running: false, busy: false, sessionId: null, projectDir: null, pid: null, pending: [] } }],
+      [{ type: "restore", state: { running: false, busy: false, sessionId: null, projectId: null, projectDir: null, pid: null, pending: [] } }],
       restored,
     );
     expect(none.running).toBe(false);

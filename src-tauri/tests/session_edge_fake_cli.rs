@@ -128,8 +128,8 @@ fn a_second_start_while_the_first_is_still_starting_is_refused_and_launches_noth
         .fake("start", &[])
         .env("NYANITOR_FAKE_VERSION_DELAY_MS", "900");
     let second = h.fake("start", &[]);
-    let (manager, request, command) = (h.manager.clone(), h.request(), slow.command.clone());
-    let first = thread::spawn(move || manager.start(request, command));
+    let (manager, plan, command) = (h.manager.clone(), h.plan(), slow.command.clone());
+    let first = thread::spawn(move || manager.start(plan, command));
     thread::sleep(Duration::from_millis(250));
 
     let err = h.start(&second).unwrap_err();
@@ -154,8 +154,8 @@ fn stopping_while_a_start_is_in_progress_never_leaves_a_session_running_afterwar
     let slow = h
         .fake("start", &[])
         .env("NYANITOR_FAKE_VERSION_DELAY_MS", "900");
-    let (manager, request, command) = (h.manager.clone(), h.request(), slow.command.clone());
-    let starting = thread::spawn(move || manager.start(request, command));
+    let (manager, plan, command) = (h.manager.clone(), h.plan(), slow.command.clone());
+    let starting = thread::spawn(move || manager.start(plan, command));
     thread::sleep(Duration::from_millis(250));
 
     // 끝내기가 시작 중에 들어왔다 — 시작이 끝난 뒤에 끝내거나, 시작을 막아야 한다. 어느 쪽이든 끝내기가 돌아온 뒤 세션이 남아 있으면 안 된다.
@@ -180,8 +180,8 @@ fn many_simultaneous_starts_launch_exactly_one_process() {
     let mut threads = Vec::new();
     let cmds: Vec<_> = (0..6).map(|_| h.fake("start", &[])).collect();
     for cmd in &cmds {
-        let (manager, request, command) = (h.manager.clone(), h.request(), cmd.command.clone());
-        threads.push(thread::spawn(move || manager.start(request, command)));
+        let (manager, plan, command) = (h.manager.clone(), h.plan(), cmd.command.clone());
+        threads.push(thread::spawn(move || manager.start(plan, command)));
     }
     let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
     let ok: Vec<_> = results.iter().filter(|r| r.is_ok()).collect();
@@ -847,10 +847,10 @@ fn the_saved_session_is_found_when_the_same_folder_is_typed_in_another_case_with
         Some(SESSION_ID)
     );
     let cmd = h.fake("resume.second", &[]);
-    let mut request = h.request();
-    request.project_dir = respelled;
-    request.resume = true;
-    let info = h.manager.start(request, cmd.command.clone()).unwrap();
+    let mut plan = h.plan();
+    plan.project_dir = std::path::PathBuf::from(respelled);
+    plan.resume = true;
+    let info = h.manager.start(plan, cmd.command.clone()).unwrap();
     assert_eq!(info.resume_session_id.as_deref(), Some(SESSION_ID));
     h.manager.send_message("what did I say?").unwrap();
     h.wait_for("turn", turn_outcome);
@@ -864,12 +864,12 @@ fn the_saved_session_is_found_when_the_same_folder_is_typed_in_another_case_with
 fn a_folder_that_vanished_between_pick_and_start_is_a_plain_invalid_input_and_runs_nothing() {
     let h = Harness::new("vanished");
     let cmd = h.fake("start", &[]);
-    let mut request = h.request();
+    let mut plan = h.plan();
     let gone = h.root.join("gone-folder");
     fs::create_dir(&gone).unwrap();
-    request.project_dir = gone.display().to_string();
+    plan.project_dir = gone.clone();
     fs::remove_dir(&gone).unwrap();
-    let err = h.manager.start(request, cmd.command.clone()).unwrap_err();
+    let err = h.manager.start(plan, cmd.command.clone()).unwrap_err();
     assert_eq!(err.kind(), "invalid_input");
     assert!(cmd.log_entries().is_empty());
     assert!(!h.manager.state().running);
@@ -880,9 +880,9 @@ fn start_with_a_model_name_that_looks_like_an_option_runs_nothing() {
     let h = Harness::new("model-option");
     let cmd = h.fake("start", &[]);
     for bad in ["--dangerously-skip-permissions", "-p", "opus --foo", ""] {
-        let mut request = h.request();
-        request.model = Some(bad.to_string());
-        let err = h.manager.start(request, cmd.command.clone()).unwrap_err();
+        let mut plan = h.plan();
+        plan.model = Some(bad.to_string());
+        let err = h.manager.start(plan, cmd.command.clone()).unwrap_err();
         assert_eq!(err.kind(), "invalid_input", "{bad:?}");
     }
     assert!(

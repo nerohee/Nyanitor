@@ -5,10 +5,12 @@
 //! ```
 //!
 //! - `real_agents_list`: 실제 `~/.claude` (또는 `CLAUDE_CONFIG_DIR`)의 `agents/*.md` · `harness/config.local.json` 을 **읽기만** 한다 (구독 사용량 없음).
+//! - `real_skills_list` (P6-02): 실제 `<설정 폴더>/skills/*/SKILL.md` 앞머리를 **읽기만** 한다 (구독 사용량 없음).
 //! - `real_usage_read`: 실제 `claude` 로 `/usage` 를 한 번 읽는다 — 모델을 부르지 않지만(비용 0) 구독 한도를 읽는 호출이라 자주 돌리지 않는다.
 //!   출력에는 한도 숫자와 시각만 적는다 (계정 정보 없음).
 
 use nyanitor_lib::agents::{AgentEntry, AgentRole, AgentsState, list_here};
+use nyanitor_lib::skills::{self, SkillEntry, SkillOrigin, SkillsState};
 use nyanitor_lib::usage::{UsageResult, fetch};
 
 /// 개인 경로 없이 한 줄 요약
@@ -57,6 +59,38 @@ fn real_agents_list() {
         list.agents
             .iter()
             .all(|entry| matches!(entry, AgentEntry::Ok(_))),
+        "읽을 수 없는 항목이 있다"
+    );
+}
+
+#[test]
+#[ignore = "이 PC 의 실제 ~/.claude/skills 를 읽는다"]
+fn real_skills_list() {
+    let list = skills::list_here();
+    println!("state={:?} skills={}", list.state, list.skills.len());
+    for entry in &list.skills {
+        match entry {
+            SkillEntry::Ok(info) => println!(
+                "ok         {:<14} origin={:<8} userInvocable={:<5} hint={:?} description={}자",
+                info.command,
+                match info.origin {
+                    SkillOrigin::Harness => "harness",
+                    SkillOrigin::Mine => "mine",
+                },
+                info.user_invocable,
+                info.argument_hint.as_deref().unwrap_or("-"),
+                info.description.as_deref().map_or(0, |d| d.chars().count())
+            ),
+            SkillEntry::Unreadable(u) => {
+                println!("unreadable {:<14} reason={:?}", u.folder, u.reason);
+            }
+        }
+    }
+    assert_eq!(list.state, SkillsState::Ok, "하네스를 설치한 PC 에서 돈다");
+    assert!(
+        list.skills
+            .iter()
+            .all(|entry| matches!(entry, SkillEntry::Ok(_))),
         "읽을 수 없는 항목이 있다"
     );
 }

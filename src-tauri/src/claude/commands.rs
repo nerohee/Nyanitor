@@ -1,7 +1,7 @@
 //! Claude 연결의 Tauri 명령 — 얇게: 입력 확인 · 전달만, 로직은 `discover` · `session` 의 일반 함수.
 //!
 //! 실행하는 것은 `discover::locate_here` 가 찾은 `claude` 하나뿐이고 인자는 `session::build_args` 가 만든다.
-//! 화면에서 실행 파일 · 인자 · 환경 · 권한 규칙을 받는 명령은 없다.
+//! 화면에서 실행 파일 · 인자 · 환경 · 권한 규칙을 받는 명령은 없다. 세션은 **등록된 프로젝트 번호**로만 시작한다 (D-47) — 경로 · 모델 · 수준을 받는 칸이 없다.
 //! 세션 관리자는 짧게 잠그는 일이 있으므로(시작할 때 버전 확인 동안 등) 모두 `async` + 블로킹 풀에서 돈다 — 화면 스레드를 막지 않는다.
 
 use std::sync::Arc;
@@ -14,8 +14,11 @@ use super::events::{
     RawLogEntry, Response, SessionEvent, SessionState, StartInfo, StartRequest, StopInfo,
 };
 use super::exec::ClaudeCommand;
+use super::launch;
 use super::session::{EventSink, SessionManager};
+use crate::db::AppDb;
 use crate::error::AppError;
+use crate::projects::ProjectsState;
 
 /// 화면이 듣는 이벤트 이름 (`src/lib/ipc.ts` 와 같이 바꾼다).
 pub const SESSION_EVENT: &str = "claude:session";
@@ -67,12 +70,25 @@ pub async fn claude_open_login() -> Result<(), AppError> {
 #[tauri::command]
 pub async fn claude_session_start(
     manager: State<'_, SessionManager>,
+    db: State<'_, AppDb>,
+    projects: State<'_, ProjectsState>,
     request: StartRequest,
 ) -> Result<StartInfo, AppError> {
-    let manager = manager.inner().clone();
+    let (manager, db, projects) = (
+        manager.inner().clone(),
+        db.inner().clone(),
+        projects.inner().clone(),
+    );
     blocking(move || {
         let program = discover::locate_here(None).ok_or(AppError::ClaudeNotFound)?;
-        manager.start(request, ClaudeCommand::new(program))
+        launch::start_session(
+            &manager,
+            &db,
+            &projects.env(),
+            launch::planner_here(),
+            &request,
+            ClaudeCommand::new(program),
+        )
     })
     .await
     .map_err(AppError::logged)
@@ -122,10 +138,11 @@ pub async fn claude_session_state(
 #[tauri::command]
 pub async fn claude_last_session(
     manager: State<'_, SessionManager>,
-    project_dir: String,
+    db: State<'_, AppDb>,
+    project_id: i64,
 ) -> Result<Option<String>, AppError> {
-    let manager = manager.inner().clone();
-    blocking(move || manager.last_session(&project_dir)).await
+    let (manager, db) = (manager.inner().clone(), db.inner().clone());
+    blocking(move || launch::last_session(&manager, &db, project_id)).await
 }
 
 #[tauri::command]

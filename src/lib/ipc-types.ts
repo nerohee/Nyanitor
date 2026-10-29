@@ -11,7 +11,15 @@ export type AppErrorKind =
   | "no_saved_session"
   | "request_not_found"
   | "turn_in_progress"
-  | "harness_busy";
+  | "harness_busy"
+  | "db_unavailable"
+  | "db_read_only"
+  | "project_not_found"
+  | "no_folder_picked"
+  | "folder_dialog_open"
+  | "file_write_failed"
+  | "project_folder_missing"
+  | "project_folder_forbidden";
 
 const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "invalid_input",
@@ -23,6 +31,14 @@ const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "request_not_found",
   "turn_in_progress",
   "harness_busy",
+  "db_unavailable",
+  "db_read_only",
+  "project_not_found",
+  "no_folder_picked",
+  "folder_dialog_open",
+  "file_write_failed",
+  "project_folder_missing",
+  "project_folder_forbidden",
 ];
 
 export class AppError extends Error {
@@ -61,11 +77,13 @@ export interface ClaudeStatus {
   problem: string | null;
 }
 
-/** 시작 요청. 실행 파일 · 인자를 고르는 칸은 없다 (Rust 가 찾은 claude 만, 인자는 Rust 가 만든다). */
+/**
+ * 시작 요청 (P6-02). **등록된 프로젝트 번호뿐이다** (D-47) — 폴더 경로 · 모델 · 수준 · 실행 파일 · 인자를 고르는 칸은 없다.
+ * 폴더는 Rust 가 번호로 찾고(없어졌거나 고를 수 없는 폴더면 `project_folder_missing` · `project_folder_forbidden`),
+ * 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다.
+ */
 export interface StartRequest {
-  projectDir: string;
-  /** `--model` (없으면 CLI 기본) */
-  model?: string | null;
+  projectId: number;
   /** 이 프로젝트의 마지막 세션을 이어 한다 */
   resume?: boolean;
   /** `ANTHROPIC_API_KEY` 를 CLI 에 넘긴다 (기본 안 넘김 — D-19) */
@@ -73,11 +91,17 @@ export interface StartRequest {
 }
 
 export interface StartInfo {
+  projectId: number;
+  /** 보이기용 폴더 글자 */
   projectDir: string;
   pid: number;
   resumed: boolean;
   resumeSessionId: string | null;
   cliVersion: string | null;
+  /** 실제로 `--model` 로 넘긴 값 (하네스 `planner` 설정). 넘기지 않았으면 null = CLI 기본 */
+  model: string | null;
+  /** 실제로 `--effort` 로 넘긴 값. 넘기지 않았으면 null = CLI 기본 */
+  effort: string | null;
 }
 
 export interface StopInfo {
@@ -174,8 +198,19 @@ export interface RawLogEntry {
 
 /** 세션 관리자가 내보내는 이벤트 (`claude:session`). 필드는 `events.rs` 의 `SessionEvent`. */
 export type ClaudeEvent =
-  | { type: "session_started"; projectDir: string; pid: number; resumed: boolean; resumeSessionId: string | null; cliVersion: string | null }
-  /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use` */
+  | {
+      type: "session_started";
+      projectId: number;
+      projectDir: string;
+      pid: number;
+      resumed: boolean;
+      resumeSessionId: string | null;
+      cliVersion: string | null;
+      model: string | null;
+      effort: string | null;
+    }
+  /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use`
+   *  · `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` (하네스 `planner` 설정을 못 읽거나 값이 이상해 그 값만 CLI 기본으로 띄움) · `project_touch_failed` */
   | { type: "warning"; code: string; detail: string | null }
   | { type: "user_message"; text: string; deferred: boolean }
   | { type: "turn_started"; sessionId: string; model: string | null; cliVersion: string | null; permissionMode: string | null; apiKeySource: string | null }
@@ -215,6 +250,7 @@ export type ClaudeResponse =
 
 export interface ClaudeSessionState {
   running: boolean;
+  projectId: number | null;
   projectDir: string | null;
   pid: number | null;
   sessionId: string | null;
@@ -561,6 +597,56 @@ export interface AgentsList {
   missingRoles: AgentRole[];
 }
 
+// ───────────────────────── 스킬 목록 (P6-02) — `src-tauri/src/skills/` 와 같이 맞춘다 ─────────────────────────
+// 채팅 입력줄이 고를 스킬. 스킬은 채팅의 첫 메시지로 보낸다 (`command` 글 + 인자, 예: `/desktop-app requirements.md`).
+
+/** 누가 설치한 스킬인가: `harness` 하네스가 설치한 것 · `mine` 내가 만든 것 */
+export type SkillOrigin = "harness" | "mine";
+
+/** 읽은 스킬 하나 */
+export interface SkillInfo {
+  /** 폴더 이름 = 이름 */
+  name: string;
+  /** 채팅 첫 메시지에 쓰는 글 (`/<name>`) */
+  command: string;
+  description: string | null;
+  /** 인자 안내 (예: `[요구사항.md 경로]`) */
+  argumentHint: string | null;
+  origin: SkillOrigin;
+  /** 사용자가 부를 수 있는가 (`user-invocable: false` 면 false — 입력줄 목록에서는 뺀다) */
+  userInvocable: boolean;
+}
+
+/** 읽을 수 없는 이유 (`skills/mod.rs` 의 `UnreadableReason`) */
+export type SkillUnreadableReason =
+  | "too_large"
+  | "read_failed"
+  | "not_utf8"
+  | "no_frontmatter"
+  | "unclosed_frontmatter"
+  | "name_mismatch"
+  | "invalid_name";
+
+/** 읽을 수 없는 스킬 폴더 — 그 항목만, 나머지는 그대로 */
+export interface SkillUnreadable {
+  /** 폴더 이름 (경로 아님) */
+  folder: string;
+  origin: SkillOrigin;
+  reason: SkillUnreadableReason;
+}
+
+export type SkillEntry = ({ state: "ok" } & SkillInfo) | ({ state: "unreadable" } & SkillUnreadable);
+
+/** 목록 전체의 상태: `no_harness` 는 하네스가 설치되지 않음 (빈 목록), `location_unusable` 은 설정 폴더 위치를 정할 수 없음 */
+export type SkillsState = "ok" | "no_harness" | "location_unusable";
+
+/** `skills_list` 의 결과 — 오류가 아니라 상태다 (깨진 파일 · 하네스 없음도 결과로 온다) */
+export interface SkillsList {
+  state: SkillsState;
+  /** 폴더 이름 순 */
+  skills: SkillEntry[];
+}
+
 /** 한 한도 창 (5시간 · 7일) — 돌아가는 세션의 `rate_limit` 이벤트와 같은 뜻 · 단위 */
 export interface UsageWindow {
   /** 사용률 0~1 (100% 를 넘기면 1 보다 클 수 있다) */
@@ -596,6 +682,102 @@ export type UsageResult =
       readAt: number;
     }
   | { state: "unavailable"; reason: UsageUnavailableReason };
+
+// ───────────────────────── 프로젝트 (P6-01) — `src-tauri/src/projects/` 와 같이 맞춘다 ─────────────────────────
+// 화면은 **경로 글자를 보내지 않는다** (D-47): 폴더는 Rust 가 대화상자로 받아 들고 있고, 나머지 명령은 등록된 프로젝트 번호(`id`)로만 부른다.
+
+/** 프로젝트에 붙이는 하네스 스킬 (없음 = `null`). `src-tauri/src/projects/mod.rs` 의 `Skill` */
+export type ProjectSkill = "/desktop-app" | "/web-full" | "/web-lite";
+
+/** 폴더가 지금 있는가 — `ok` 있음 · `missing` 없음(옮겼거나 지움) · `unknown` 제때 알 수 없음(느린 네트워크 드라이브 · 권한) */
+export type ProjectFolderState = "ok" | "missing" | "unknown";
+
+/** 폴더를 살펴본 결과 (파일 내용은 읽지 않는다): `hasHarness` 하네스 문서가 있음 · `hasRequirements` 루트에 requirements.md 가 있음 · `fresh` 아무것도 없음 */
+export type ProjectFolderFinding = "fresh" | "hasRequirements" | "hasHarness";
+
+/** 목록의 한 항목 (`projects_list` · `project_add` · `project_update`) */
+export interface ProjectEntry {
+  id: number;
+  /** 사람에게 보이는 폴더 경로 */
+  path: string;
+  name: string;
+  skill: ProjectSkill | null;
+  /** 유닉스 시각(초) */
+  createdAt: number;
+  lastOpenedAt: number;
+  folder: ProjectFolderState;
+  /** 폴더가 `ok` 일 때만 */
+  finding: ProjectFolderFinding | null;
+}
+
+/** `ok` 읽고 쓴다 · `read_only` 이 앱보다 새 버전의 DB 라 읽기만 한다 (고치기 · 등록 · 빼기는 `db_read_only` 로 거절) */
+export type ProjectDbMode = "ok" | "read_only";
+
+/** `projects_list` 의 결과 — 최근에 연 순서 */
+export interface ProjectList {
+  db: ProjectDbMode;
+  projects: ProjectEntry[];
+}
+
+/** 프로젝트로 고를 수 없는 이유 — 드라이브 뿌리 · 홈 폴더 자체 · `~/.claude` · `~/.claude-harness` · 앱 데이터 폴더(와 그 안) */
+export type ProjectForbiddenReason = "drive_root" | "home" | "claude_dir" | "harness_home" | "app_data";
+
+export interface ProjectPickedOk {
+  path: string;
+  /** 기본 프로젝트 이름 (폴더 이름) */
+  name: string;
+  /** 제때 못 봤으면 null */
+  finding: ProjectFolderFinding | null;
+  /** 이미 등록된 폴더면 그 프로젝트 번호 */
+  existingId: number | null;
+}
+
+export interface ProjectPickedForbidden {
+  path: string;
+  reason: ProjectForbiddenReason;
+}
+
+/** `project_pick_folder` 의 결과 (취소는 `null`). `ok` 인 폴더는 Rust 가 들고 있다가 `project_add` 때 그것만 등록한다 */
+export type ProjectPickedFolder = ({ state: "ok" } & ProjectPickedOk) | ({ state: "forbidden" } & ProjectPickedForbidden);
+
+/** `project_add` 의 입력 — 폴더 경로는 없다. 이름을 안 주면 폴더 이름 */
+export interface ProjectAddRequest {
+  name?: string;
+  skill?: ProjectSkill | null;
+}
+
+/** `project_update` 의 입력 — 고칠 것만. `skill: null` 은 "스킬 없음으로", 아예 빼면 그대로 */
+export interface ProjectPatch {
+  name?: string;
+  skill?: ProjectSkill | null;
+}
+
+/** 프로젝트 이름 길이 제한 (글자 수) — Rust 의 `NAME_MAX_CHARS` */
+export const PROJECT_NAME_MAX_CHARS = 80;
+
+/** `requirements.md` 를 읽을 수 없는(쓸 수 없는) 이유 */
+export type RequirementsProblem = "not_utf8" | "too_large" | "outside_folder" | "link" | "folder_missing" | "not_a_file" | "read_failed";
+
+export interface RequirementsText {
+  /** BOM 을 뗀 글 (줄바꿈은 그대로) */
+  text: string;
+  /** 내용이 같으면 같은 값. 쓸 때 `baseVersion` 으로 돌려준다 */
+  version: string;
+  /** 파일 앞에 BOM 이 있었다 (쓸 때 Rust 가 되살린다) */
+  hasBom: boolean;
+}
+
+/** `project_requirements_read` */
+export type RequirementsRead = ({ state: "ok" } & RequirementsText) | { state: "absent" } | { state: "unreadable"; reason: RequirementsProblem };
+
+/** `project_requirements_version` — 창 포커스 · 몇 초마다 물어 바깥(터미널) 변경을 안다 */
+export type RequirementsVersion = { state: "ok"; version: string } | { state: "absent" } | { state: "unreadable"; reason: RequirementsProblem };
+
+/** `project_requirements_write` — 그 사이 파일이 바뀌었으면 쓰지 않고 `conflict` (파일이 없어졌으면 `version: null`). 못 쓰는 파일이면 `refused`. 디스크 · 권한 문제는 `file_write_failed` 오류 */
+export type RequirementsWrite =
+  | { state: "ok"; version: string }
+  | { state: "conflict"; version: string | null }
+  | { state: "refused"; reason: RequirementsProblem };
 
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */
 export const CLAUDE_SESSION_EVENT = "claude:session";

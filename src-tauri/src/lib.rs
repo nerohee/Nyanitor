@@ -1,8 +1,11 @@
 pub mod agents;
 pub mod claude;
 pub mod commands;
+pub mod db;
 pub mod error;
 pub mod harness;
+pub mod projects;
+pub mod skills;
 pub mod strings;
 pub mod tray;
 pub mod usage;
@@ -42,6 +45,8 @@ pub fn run() {
                 .build(),
         )
         .plugin(log_plugin().build())
+        // 폴더 고르기 대화상자 — Rust 에서만 부른다 (`projects::commands`). 화면 권한(`capabilities/`)에는 dialog 를 열지 않는다 (D-47).
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             log::info!(
                 "{} {} started",
@@ -62,6 +67,10 @@ pub fn run() {
             app.manage(harness::HarnessState::default());
             // 사용량 한도 읽기: 받은 값을 잠깐 기억하고 한 번에 하나만 읽는다 (P5-01).
             app.manage(usage::UsageState::default());
+            // 앱 DB (프로젝트 목록 등): 앱 데이터 폴더의 SQLite 하나. 못 열어도 앱은 뜨고 프로젝트 명령만 오류를 돌려준다 (P6-01).
+            let app_data = app.path().app_data_dir()?;
+            app.manage(db::AppDb::open(&app_data.join(db::DB_FILE)));
+            app.manage(projects::ProjectsState::new(app_data));
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
             tray::show_main_window(app.handle());
@@ -90,7 +99,17 @@ pub fn run() {
             harness::commands::harness_restore_plan,
             harness::commands::harness_restore,
             agents::commands::agents_list,
+            skills::commands::skills_list,
             usage::commands::usage_read,
+            projects::commands::projects_list,
+            projects::commands::project_pick_folder,
+            projects::commands::project_add,
+            projects::commands::project_update,
+            projects::commands::project_remove,
+            projects::commands::project_touch,
+            projects::commands::project_requirements_read,
+            projects::commands::project_requirements_version,
+            projects::commands::project_requirements_write,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

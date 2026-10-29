@@ -1031,6 +1031,18 @@ const ko = {
   "error.turn_in_progress": "지금 답하는 중이에요. 끝나면 보내 주세요.",
   "error.harness_busy": "다른 하네스 작업이 진행 중이에요. 끝나면 다시 눌러 주세요.",
 
+  // ── P6 프로젝트 등록 · requirements.md 오류 (AppErrorKind — `src-tauri/src/error.rs`) ──
+  "error.db_unavailable": "앱 데이터베이스를 쓸 수 없어요. 앱을 다시 켜 보세요. 계속되면 로그를 확인해 주세요.",
+  "error.db_read_only": "이 앱보다 새 버전이 만든 데이터라 읽기만 할 수 있어요. 앱을 업데이트해 주세요.",
+  "error.project_not_found": "그 프로젝트는 목록에 없어요. 이미 뺐을 수 있어요.",
+  "error.no_folder_picked": "먼저 폴더를 골라 주세요.",
+  "error.folder_dialog_open": "폴더 고르는 창이 이미 열려 있어요.",
+  "error.file_write_failed": "파일을 저장하지 못했어요. 원래 파일은 그대로예요. 다른 프로그램이 파일을 열고 있거나 디스크가 가득 찼는지 확인해 주세요.",
+
+  // ── P6-02 세션 시작 오류 (등록된 프로젝트로만 시작 — `src-tauri/src/claude/launch.rs`) ──
+  "error.project_folder_missing": "그 프로젝트의 폴더를 찾을 수 없어요. 옮기거나 지웠는지, 드라이브가 연결돼 있는지 확인해 주세요.",
+  "error.project_folder_forbidden": "이 폴더는 이제 프로젝트로 쓸 수 없는 위치예요 (홈 폴더 · 드라이브 맨 위 · Claude · 앱 설정 폴더 등). 목록에서 빼고 다른 폴더를 골라 주세요.",
+
   // ── P3 Claude 연결 시험 화면 (개발 빌드 전용, `?lab=session` — 진짜 채팅 화면은 P6) ──
   "lab.open": "Claude 연결 시험 화면 열기 (개발 빌드 전용)",
   "lab.back": "← 기본 화면",
@@ -1060,10 +1072,14 @@ const ko = {
   "lab.status.otherBillingYes": "구독이 아닌 곳으로 과금될 수 있는 설정이 있어요: {names} — 값은 읽지 않고, 설정은 그대로 claude 에 넘겨요",
   "lab.status.otherBillingNo": "그런 설정 없음",
   "lab.session.title": "세션",
-  "lab.session.dir": "프로젝트 폴더 (전체 경로)",
-  "lab.session.dirPh": "예: C:\\Users\\내이름\\Documents\\시험폴더",
-  "lab.session.model": "모델 (비우면 CLI 기본)",
-  "lab.session.modelPh": "예: haiku",
+  "lab.session.project": "프로젝트 (등록된 것 중에서)",
+  "lab.session.projectPick": "프로젝트를 골라 주세요",
+  "lab.session.projectGone": "{name} (폴더를 찾을 수 없음)",
+  "lab.session.noProjects": "먼저 프로젝트를 등록해 주세요.",
+  "lab.session.addProject": "폴더를 골라 프로젝트로 등록",
+  "lab.session.pickForbidden": "그 폴더는 프로젝트로 쓸 수 없어요 ({reason}).",
+  "lab.session.modelEffort": "모델 · 수준 (하네스 planner 설정)",
+  "lab.session.cliDefault": "CLI 기본",
   "lab.session.useKey": "API 키를 claude 에 넘기기 (API 요금이 나가요)",
   "lab.session.start": "시작",
   "lab.session.resume": "이어 하기",
@@ -1108,7 +1124,7 @@ const ko = {
   "lab.raw.title": "원본 로그",
   "lab.raw.empty": "아직 줄이 없어요.",
   "lab.raw.line": "{dir} #{seq}{cut}",
-  "lab.event.sessionStarted": "세션 시작 — 폴더 {dir} · 프로세스 {pid}{resumed}",
+  "lab.event.sessionStarted": "세션 시작 — 프로젝트 {id} · 폴더 {dir} · 프로세스 {pid} · 모델 {model} · 수준 {effort}{resumed}",
   "lab.event.resumedSuffix": " · 이어 하기",
   "lab.event.turnStarted": "턴 시작 · 세션 {id} · 모델 {model}",
   "lab.event.user": "나: {text}",

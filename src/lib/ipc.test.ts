@@ -52,7 +52,7 @@ describe("ipc (출시 빌드 · Tauri 밖)", () => {
     vi.stubEnv("DEV", false);
     await expect(ipc.appInfo()).rejects.toMatchObject({ kind: "internal" });
     await expect(ipc.claudeDiscover()).rejects.toMatchObject({ kind: "internal" });
-    await expect(ipc.claudeSessionStart({ projectDir: "C:\\p" })).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.claudeSessionStart({ projectId: 1 })).rejects.toMatchObject({ kind: "internal" });
     await expect(ipc.claudeSessionState()).rejects.toMatchObject({ kind: "internal" });
     await expect(ipc.onClaudeEvent(() => undefined)).rejects.toMatchObject({ kind: "internal" });
     // 개발 빌드(시험 환경 기본)에서는 같은 호출이 가짜로 돈다 (대조)

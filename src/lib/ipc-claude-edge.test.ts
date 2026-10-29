@@ -2,6 +2,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "./fakeClaude";
+import { fakeProjects } from "./fakeProjects";
 import { CLAUDE_SESSION_EVENT, ipc, type ClaudeEvent } from "./ipc";
 
 afterEach(() => {
@@ -11,6 +12,7 @@ afterEach(() => {
 
 beforeEach(() => {
   fakeClaude.reset();
+  fakeProjects.reset();
 });
 
 async function collect() {
@@ -70,7 +72,7 @@ describe("ipc — 이벤트 구독 (Tauri 안)", () => {
 describe("가짜 Claude 세션 — 구독 · 순서", () => {
   it("구독을 끊으면 이후 이벤트를 받지 않고, 두 번 끊어도 괜찮다", async () => {
     const { events, stop } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     expect(events.map((e) => e.type)).toEqual(["session_started"]);
     stop();
     stop();
@@ -81,7 +83,7 @@ describe("가짜 Claude 세션 — 구독 · 순서", () => {
   it("구독이 둘이면 둘 다 같은 이벤트를 받는다", async () => {
     const a = await collect();
     const b = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     expect(a.events).toEqual(b.events);
     expect(a.events.length).toBeGreaterThan(0);
   });
@@ -92,7 +94,7 @@ describe("가짜 Claude 세션 — 구독 · 순서", () => {
       throw new Error("listener bug");
     });
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" }).catch(() => undefined);
+    await ipc.claudeSessionStart({ projectId: 1 }).catch(() => undefined);
     expect(events.some((e) => e.type === "session_started")).toBe(true);
   });
 
@@ -100,14 +102,14 @@ describe("가짜 Claude 세션 — 구독 · 순서", () => {
     let stopFirst: () => void = () => undefined;
     stopFirst = await ipc.onClaudeEvent(() => stopFirst());
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     expect(events).toHaveLength(1);
   });
 });
 
 describe("가짜 Claude 세션 — 상태 기계 경계", () => {
   it("끝낸 뒤에는 보내기 · 답하기 · 중단이 no_session, 끝내기를 또 해도 오류 없이 wasRunning false", async () => {
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await expect(ipc.claudeSessionStop()).resolves.toEqual({ wasRunning: true, forced: false });
     await expect(ipc.claudeSessionStop()).resolves.toEqual({ wasRunning: false, forced: false });
     await expect(ipc.claudeSessionSend("hi")).rejects.toMatchObject({ kind: "no_session" });
@@ -118,7 +120,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("빈 말 · 공백만 있는 말은 invalid_input 이고 턴이 시작되지 않는다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     for (const text of ["", "   ", "\n\t"]) {
       await expect(ipc.claudeSessionSend(text)).rejects.toMatchObject({ kind: "invalid_input" });
     }
@@ -128,7 +130,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("아주 긴 말도 보낼 수 있고, 같은 턴 중에 또 보내면 turn_in_progress", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("가".repeat(200_000));
     await expect(ipc.claudeSessionSend("again")).rejects.toMatchObject({ kind: "turn_in_progress" });
     await waitFor(events, "permission_request");
@@ -137,7 +139,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("중단을 두 번 해도 오류가 없고 카드 취소는 한 번씩만 온다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     await ipc.claudeSessionInterrupt();
@@ -150,7 +152,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("카드 대기 중 끝내면 카드 취소 뒤에 세션 끝이 오고, 끝난 뒤에는 이벤트가 더 안 온다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     await ipc.claudeSessionStop();
@@ -164,7 +166,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("다르게 말하기 직후 곧바로 끝내도 끝난 세션에서 새 턴이 시작되지 않는다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     const request = events.find((e) => e.type === "permission_request");
@@ -179,7 +181,7 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
 
   it("권한 카드에 답이 안 맞으면 요청이 남고, 규칙이 없는 요청에 always_allow 는 거절된다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     const request = events.find((e) => e.type === "permission_request");
@@ -192,31 +194,31 @@ describe("가짜 Claude 세션 — 상태 기계 경계", () => {
     await expect(ipc.claudeSessionRespond("", { kind: "allow" })).rejects.toMatchObject({ kind: "request_not_found" });
   });
 
-  it("시작 폴더가 공백뿐이거나 이어 하기 기록이 없으면 세션이 열리지 않는다", async () => {
-    await expect(ipc.claudeSessionStart({ projectDir: "" })).rejects.toMatchObject({ kind: "invalid_input" });
-    await expect(ipc.claudeSessionStart({ projectDir: "C:\\p", resume: true })).rejects.toMatchObject({ kind: "no_saved_session" });
+  it("프로젝트 번호가 아니거나 이어 하기 기록이 없으면 세션이 열리지 않는다", async () => {
+    await expect(ipc.claudeSessionStart({ projectId: null as unknown as number })).rejects.toMatchObject({ kind: "invalid_input" });
+    await expect(ipc.claudeSessionStart({ projectId: 1, resume: true })).rejects.toMatchObject({ kind: "no_saved_session" });
     expect((await ipc.claudeSessionState()).running).toBe(false);
   });
 
-  // (P3-03 버그였던 것 — P3-05 에서 고침) 가짜 세션의 이어 하기 키도 Rust project_key 처럼 모은다.
-  it("같은 폴더를 다른 표기(대소문자 · 끝 \\)로 시작하면 이어 하기 기록이 이어진다", async () => {
-    // Rust 저장소(project_key)는 같은 폴더의 다른 표기를 한 키로 모은다 — 가짜 세션도 같아야 화면 시험이 실제와 어긋나지 않는다.
+  // 화면은 폴더 경로를 보내지 않는다 (D-47) — 이어 하기 기록은 프로젝트 번호로 찾고, 폴더 표기와 무관하다.
+  it("같은 프로젝트(번호)를 다시 시작하면 이어 하기 기록이 이어지고, 다른 프로젝트에는 없다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\Dev\\App" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     await ipc.claudeSessionStop();
-    expect(await ipc.claudeLastSession("c:\\dev\\app\\")).not.toBeNull();
+    expect(await ipc.claudeLastSession(1)).not.toBeNull();
+    expect(await ipc.claudeLastSession(2)).toBeNull();
   });
 
   it("원본 로그는 새 세션을 시작하면 비워진다", async () => {
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     expect((await ipc.claudeRawLog()).length).toBeGreaterThan(0);
     await ipc.claudeSessionStop();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     expect(await ipc.claudeRawLog()).toEqual([]);
   });
 });
@@ -247,7 +249,7 @@ describe("가짜 세션 — 이어 하기 키 · 구독자 오류 (P3-05)", () =
       throw new Error("listener bug");
     });
     const { events } = await collect();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await waitFor(events, "permission_request");
     expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(["session_started", "user_message", "turn_started", "permission_request"]));

@@ -7,6 +7,7 @@
 //! - `session` — 세션 관리자 (프로세스 · 스레드 · 요청 짝짓기 · 끝내기 · 이어 하기)
 //! - `protocol` — 비공식 control protocol (이 파일들 밖에는 필드 이름을 두지 않는다)
 //! - `events` — 화면으로 가는 이벤트 · 명령 입출력 모양
+//! - `launch` — 세션 시작 계획: 프로젝트 번호 → 폴더, 하네스 `planner` 설정 → 모델 · 수준 (D-47)
 //! - `exec` · `process_tree` — 환경 정리 · 창 숨기기 · 프로세스 트리 끄기
 //! - `store` — 프로젝트 폴더별 마지막 세션 ID
 //! - `commands` — Tauri 명령 (얇게: 입력 확인 · 전달만)
@@ -15,6 +16,7 @@ pub mod commands;
 pub mod discover;
 pub mod events;
 pub mod exec;
+pub mod launch;
 pub mod process_tree;
 pub mod protocol;
 pub mod session;

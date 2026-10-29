@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { fakeClaude } from "../lib/fakeClaude";
+import { fakeProjects } from "../lib/fakeProjects";
 import { AppError, ipc, type ClaudeEvent } from "../lib/ipc";
 import { buildAnswers, ruleNote } from "./LabCards";
 import SessionLab from "./SessionLab";
@@ -26,8 +27,17 @@ afterEach(() => {
 
 beforeEach(() => {
   fakeClaude.reset();
+  fakeProjects.reset();
   window.history.pushState({}, "", "/");
 });
+
+const PROJECT_LABEL = "프로젝트 (등록된 것 중에서)";
+
+/** 등록된 프로젝트 목록이 뜬 뒤 하나를 고른다 (경로를 글자로 넣는 칸은 없다) */
+async function pickProject(user: ReturnType<typeof setup>, name = "고양이 앨범") {
+  const option = await screen.findByRole("option", { name });
+  await user.type(screen.getByLabelText(PROJECT_LABEL), (option as HTMLOptionElement).value);
+}
 
 describe("buildAnswers", () => {
   const single = { question: "색?", header: null, multiSelect: false, options: [] };
@@ -70,7 +80,7 @@ describe("ruleNote", () => {
 
 describe("SessionLab (브라우저 가짜 모드)", () => {
   async function startSession(user: ReturnType<typeof setup>) {
-    await user.type(await screen.findByLabelText("프로젝트 폴더 (전체 경로)"), "C:\\demo");
+    await pickProject(user);
     await user.click(screen.getByRole("button", { name: "시작" }));
     await screen.findByText(/세션 시작/);
   }
@@ -83,7 +93,7 @@ describe("SessionLab (브라우저 가짜 모드)", () => {
     expect(screen.getByText("없어요")).toBeInTheDocument();
   });
 
-  it("폴더를 넣고 시작하면 돌아가는 중이 되고, 폴더 없이는 시작 단추가 꺼져 있다", async () => {
+  it("프로젝트를 고르고 시작하면 돌아가는 중이 되고, 고르기 전에는 시작 단추가 꺼져 있다", async () => {
     const user = setup();
     render(<SessionLab />);
     expect(await screen.findByRole("button", { name: "시작" })).toBeDisabled();
@@ -190,7 +200,7 @@ describe("SessionLab (브라우저 가짜 모드)", () => {
     const user = setup();
     vi.spyOn(ipc, "claudeSessionStart").mockRejectedValueOnce(new AppError("claude_not_found", "claudes executable not found"));
     render(<SessionLab />);
-    await user.type(await screen.findByLabelText("프로젝트 폴더 (전체 경로)"), "C:\\demo");
+    await pickProject(user);
     await user.click(screen.getByRole("button", { name: "시작" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("claude 를 찾지 못했어요");
   });
@@ -204,14 +214,97 @@ describe("SessionLab (브라우저 가짜 모드)", () => {
     });
     const start = vi.spyOn(ipc, "claudeSessionStart");
     render(<SessionLab />);
-    await user.type(await screen.findByLabelText("프로젝트 폴더 (전체 경로)"), "C:\\demo");
+    await pickProject(user);
     await screen.findByText("C:\\fake\\claude.exe");
     act(() => emit({ type: "resume_not_found", sessionId: "old-session" }));
 
     expect(await screen.findByText(/이어 할 세션이 claude 에 없어요/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "새 세션으로 시작" }));
-    expect(start).toHaveBeenCalledWith({ projectDir: "C:\\demo", model: null, resume: false, useApiKey: false });
+    // 보내는 것은 프로젝트 번호뿐이다 — 경로 · 모델 · 수준은 없다
+    expect(start).toHaveBeenCalledWith({ projectId: 1, resume: false, useApiKey: false });
     await waitFor(() => expect(screen.queryByText(/이어 할 세션이 claude 에 없어요/)).not.toBeInTheDocument());
+  });
+
+  it("시작하면 하네스 planner 설정으로 쓴 모델 · 수준을 보인다 (opus · high)", async () => {
+    const user = setup();
+    render(<SessionLab />);
+    expect(screen.getByText("모델 · 수준 (하네스 planner 설정)").nextElementSibling).toHaveTextContent("—");
+    await startSession(user);
+    expect(screen.getByText("모델 · 수준 (하네스 planner 설정)").nextElementSibling).toHaveTextContent("opus · high");
+    expect(screen.getByText(/세션 시작 — 프로젝트 1 · 폴더 C:\\dev\\cat-album .* · 모델 opus · 수준 high/)).toBeInTheDocument();
+  });
+
+  it("planner 설정을 못 읽으면 CLI 기본으로 시작하고 알림 줄이 남는다", async () => {
+    const user = setup();
+    fakeClaude.reset({ planner: "missing" });
+    render(<SessionLab />);
+    await startSession(user);
+    expect(screen.getByText("모델 · 수준 (하네스 planner 설정)").nextElementSibling).toHaveTextContent("CLI 기본 · CLI 기본");
+    expect(await screen.findByText(/경고 planner_config_missing/)).toBeInTheDocument();
+  });
+
+  it("시작할 때 보내는 것은 프로젝트 번호 · 이어 하기 · API 키 여부뿐이다 (경로 · 모델 · 수준은 없다)", async () => {
+    const user = setup();
+    const start = vi.spyOn(ipc, "claudeSessionStart");
+    render(<SessionLab />);
+    await pickProject(user, "레시피 상자");
+    await user.click(screen.getByRole("button", { name: "시작" }));
+    await screen.findByText(/세션 시작/);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledWith({ projectId: 2, resume: false, useApiKey: false });
+    expect(Object.keys(start.mock.calls[0]?.[0] ?? {}).sort()).toEqual(["projectId", "resume", "useApiKey"]);
+    // 경로를 글자로 넣는 입력 칸도 없다
+    expect(screen.queryByLabelText(/전체 경로/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^모델/)).not.toBeInTheDocument();
+  });
+
+  it("폴더가 없어진 프로젝트는 목록에 그렇게 보이고, 시작하면 폴더를 찾을 수 없다는 알림이 난다", async () => {
+    const user = setup();
+    render(<SessionLab />);
+    await pickProject(user, "쇼핑몰 관리자 (폴더를 찾을 수 없음)");
+    await user.click(screen.getByRole("button", { name: "시작" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("폴더를 찾을 수 없어요");
+    expect(screen.getByRole("button", { name: "끝내기" })).toBeDisabled(); // 세션이 뜨지 않았다
+  });
+
+  it("등록된 프로젝트가 없으면 먼저 등록하라는 한 줄이 보이고, 폴더를 골라 등록하면 그 프로젝트가 골라진다", async () => {
+    const user = setup();
+    fakeProjects.reset({ projects: "none" });
+    render(<SessionLab />);
+    expect(await screen.findByText("먼저 프로젝트를 등록해 주세요.")).toBeInTheDocument();
+    expect(screen.getByLabelText(PROJECT_LABEL)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "폴더를 골라 프로젝트로 등록" }));
+    await waitFor(() => expect(screen.queryByText("먼저 프로젝트를 등록해 주세요.")).not.toBeInTheDocument());
+    // 가짜 폴더 고르기는 `C:\dev\cat-diary` — 폴더 이름이 프로젝트 이름이 된다
+    expect(await screen.findByRole("option", { name: "cat-diary" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "시작" }));
+    await screen.findByText(/세션 시작 — 프로젝트 5/);
+  });
+
+  it("폴더 고르기를 취소하면 아무것도 바뀌지 않고, 고를 수 없는 폴더면 이유를 알리고 등록하지 않는다", async () => {
+    const user = setup();
+    fakeProjects.reset({ projects: "none", pick: "cancel" });
+    render(<SessionLab />);
+    await user.click(await screen.findByRole("button", { name: "폴더를 골라 프로젝트로 등록" }));
+    // 창이 닫히길(취소 결과가 처리되길) 기다린다 — 그동안 단추는 꺼져 있다
+    await waitFor(() => expect(screen.getByRole("button", { name: "폴더를 골라 프로젝트로 등록" })).toBeEnabled());
+    expect(screen.getByText("먼저 프로젝트를 등록해 주세요.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fakeProjects.reset({ projects: "none", pick: "home" });
+    await user.click(screen.getByRole("button", { name: "폴더를 골라 프로젝트로 등록" }));
+    expect(await screen.findByText(/그 폴더는 프로젝트로 쓸 수 없어요 \(home\)/)).toBeInTheDocument();
+    expect(screen.getByText("먼저 프로젝트를 등록해 주세요.")).toBeInTheDocument();
+  });
+
+  it("앱 데이터베이스를 못 쓰면 프로젝트를 못 불렀다는 알림을 보이고 시작할 수 없다", async () => {
+    fakeProjects.reset({ db: "unavailable" });
+    render(<SessionLab />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("앱 데이터베이스를 쓸 수 없어요");
+    expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
   });
 
   it("개발 빌드에서 ?lab=session 이면 App 이 시험 화면을 보인다", async () => {

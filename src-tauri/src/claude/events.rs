@@ -148,14 +148,22 @@ pub struct RawLogEntry {
 )]
 pub enum SessionEvent {
     SessionStarted {
+        /// 등록된 프로젝트 번호 (D-47 — 세션은 등록된 프로젝트로만 시작한다)
+        project_id: i64,
+        /// 보이기용 폴더 글자
         project_dir: String,
         pid: u32,
         resumed: bool,
         resume_session_id: Option<String>,
         cli_version: Option<String>,
+        /// 실제로 `--model` 로 넘긴 값 (넘기지 않았으면 CLI 기본)
+        model: Option<String>,
+        /// 실제로 `--effort` 로 넘긴 값 (넘기지 않았으면 CLI 기본)
+        effort: Option<String>,
     },
     /// 막지 않고 알리기만 하는 것. `code`: `cli_version_mismatch` · `session_store_failed` · `write_failed` ·
-    /// `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use`
+    /// `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use` ·
+    /// `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` · `project_touch_failed`
     Warning {
         code: String,
         detail: Option<String>,
@@ -222,21 +230,24 @@ pub enum SessionEvent {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartInfo {
+    pub project_id: i64,
     pub project_dir: String,
     pub pid: u32,
     pub resumed: bool,
     pub resume_session_id: Option<String>,
     pub cli_version: Option<String>,
+    /// 실제로 `--model` 로 넘긴 값 (하네스 `planner` 설정 — 넘기지 않았으면 `None` = CLI 기본)
+    pub model: Option<String>,
+    /// 실제로 `--effort` 로 넘긴 값
+    pub effort: Option<String>,
 }
 
-/// `claude_session_start` 의 입력. 실행 파일 · 인자를 고르는 칸은 없다.
+/// `claude_session_start` 의 입력. **등록된 프로젝트 번호뿐이다** (D-47) — 폴더 경로 · 모델 · 수준 · 실행 파일 · 인자를 고르는 칸은 없다.
+/// 폴더는 Rust 가 번호로 찾고, 모델 · 수준은 하네스 `planner` 설정에서 읽는다.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StartRequest {
-    pub project_dir: String,
-    /// `--model` 값 (없으면 CLI 기본). 이름 모양만 허용한다.
-    #[serde(default)]
-    pub model: Option<String>,
+    pub project_id: i64,
     /// 이 프로젝트의 마지막 세션을 `--resume` 으로 잇는다
     #[serde(default)]
     pub resume: bool,
@@ -279,6 +290,7 @@ pub enum Response {
 #[serde(rename_all = "camelCase")]
 pub struct SessionState {
     pub running: bool,
+    pub project_id: Option<i64>,
     pub project_dir: Option<String>,
     pub pid: Option<u32>,
     pub session_id: Option<String>,
@@ -376,23 +388,61 @@ mod tests {
     #[test]
     fn start_request_refuses_unknown_fields_like_an_executable_path() {
         let result = serde_json::from_value::<StartRequest>(
-            json!({ "projectDir": "C:\\p", "executable": "C:\\evil.exe" }),
+            json!({ "projectId": 1, "executable": "C:\\evil.exe" }),
         );
         assert!(result.is_err());
     }
 
     #[test]
+    fn start_request_has_no_folder_model_or_effort_field() {
+        // 옛 모양(경로 · 모델)과 수준은 화면이 보낼 수 없다 — 슬쩍 끼워 보내면 거절
+        for extra in [
+            json!({ "projectId": 1, "projectDir": "C:\\p" }),
+            json!({ "projectId": 1, "model": "haiku" }),
+            json!({ "projectId": 1, "effort": "low" }),
+            json!({ "projectId": 1, "args": ["--dangerously-skip-permissions"] }),
+            json!({ "projectDir": "C:\\p" }),
+        ] {
+            assert!(
+                serde_json::from_value::<StartRequest>(extra.clone()).is_err(),
+                "{extra}"
+            );
+        }
+    }
+
+    #[test]
     fn start_request_takes_only_the_known_fields_with_safe_defaults() {
-        let request: StartRequest =
-            serde_json::from_value(json!({ "projectDir": "C:\\p" })).unwrap();
+        let request: StartRequest = serde_json::from_value(json!({ "projectId": 7 })).unwrap();
         assert_eq!(
             request,
             StartRequest {
-                project_dir: "C:\\p".into(),
-                model: None,
+                project_id: 7,
                 resume: false,
                 use_api_key: false
             }
         );
+        // 번호가 아닌 값은 거절
+        for bad in [json!("7"), json!(null), json!(1.5)] {
+            assert!(serde_json::from_value::<StartRequest>(json!({ "projectId": bad })).is_err());
+        }
+    }
+
+    #[test]
+    fn session_started_carries_the_project_id_model_and_effort() {
+        let event = SessionEvent::SessionStarted {
+            project_id: 3,
+            project_dir: "C:\\p".into(),
+            pid: 9,
+            resumed: false,
+            resume_session_id: None,
+            cli_version: Some("2.1.296".into()),
+            model: Some("opus".into()),
+            effort: None,
+        };
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["type"], "session_started");
+        assert_eq!(value["projectId"], 3);
+        assert_eq!(value["model"], "opus");
+        assert_eq!(value["effort"], json!(null));
     }
 }

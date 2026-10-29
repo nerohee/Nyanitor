@@ -96,9 +96,9 @@ fn a_plain_turn_streams_events_and_stop_ends_it_cleanly() {
 fn the_cli_is_started_with_the_d44_options_in_the_project_folder() {
     let h = Harness::new("args");
     let cmd = h.fake("start", &[]);
-    let mut request = h.request();
-    request.model = Some("haiku".into());
-    h.manager.start(request, cmd.command.clone()).unwrap();
+    let mut plan = h.plan();
+    plan.model = Some("haiku".into());
+    h.manager.start(plan, cmd.command.clone()).unwrap();
     // 세션 인자 기록이 생길 때까지 기다린다
     let deadline = Instant::now() + WAIT;
     while cmd.argv().is_empty() && Instant::now() < deadline {
@@ -175,16 +175,16 @@ fn start_rejects_bad_folders_and_models_before_running_anything() {
     let h = Harness::new("badinput");
     let cmd = h.fake("start", &[]);
     for dir in ["", "relative", "C:\\definitely\\not\\here\\nyanitor-xyz"] {
-        let mut request = h.request();
-        request.project_dir = dir.into();
-        let err = h.manager.start(request, cmd.command.clone()).unwrap_err();
+        let mut plan = h.plan();
+        plan.project_dir = std::path::PathBuf::from(dir);
+        let err = h.manager.start(plan, cmd.command.clone()).unwrap_err();
         assert_eq!(err.kind(), "invalid_input", "{dir}");
     }
-    let mut request = h.request();
-    request.model = Some("--dangerously-skip-permissions".into());
+    let mut plan = h.plan();
+    plan.model = Some("--dangerously-skip-permissions".into());
     assert_eq!(
         h.manager
-            .start(request, cmd.command.clone())
+            .start(plan, cmd.command.clone())
             .unwrap_err()
             .kind(),
         "invalid_input"
@@ -197,7 +197,7 @@ fn a_missing_executable_is_reported_as_claude_not_found() {
     let h = Harness::new("nocli");
     let missing = nyanitor_lib::claude::exec::ClaudeCommand::new(h.root.join("no-such-claude.exe"));
     // 버전 확인에서 먼저 막힌다 (실행 파일이 없으면 internal 오류로 알린다)
-    let err = h.manager.start(h.request(), missing).unwrap_err();
+    let err = h.manager.start(h.plan(), missing).unwrap_err();
     assert!(
         matches!(err.kind(), "internal" | "claude_not_found"),
         "{}",
@@ -1011,7 +1011,7 @@ fn the_child_never_gets_the_parent_only_variables_or_the_api_key() {
         .with_base_env(base)
         .with_extra_env("NYANITOR_FAKE_REPLAY", "start")
         .with_extra_env("NYANITOR_FAKE_ENV_DUMP", dump.clone());
-    h.manager.start(h.request(), command.clone()).unwrap();
+    h.manager.start(h.plan(), command.clone()).unwrap();
     let names = env_names(&dump);
     for gone in [
         "CLAUDECODE",
@@ -1045,9 +1045,9 @@ fn asking_for_the_key_passes_it_through_and_warns() {
         .with_base_env(base)
         .with_extra_env("NYANITOR_FAKE_REPLAY", "start")
         .with_extra_env("NYANITOR_FAKE_ENV_DUMP", dump.clone());
-    let mut request = h.request();
-    request.use_api_key = true;
-    h.manager.start(request, command).unwrap();
+    let mut plan = h.plan();
+    plan.use_api_key = true;
+    h.manager.start(plan, command).unwrap();
     assert!(env_names(&dump).iter().any(|n| n == "ANTHROPIC_API_KEY"));
     // 이 PC 환경에는 키가 없으면 경고는 없다 (경고는 실제 환경에 키가 있을 때만)
     let _ = &mut h;
@@ -1433,8 +1433,8 @@ fn state_and_other_calls_do_not_wait_for_a_slow_version_check_during_start() {
     let slow = h
         .fake("start", &[])
         .env("NYANITOR_FAKE_VERSION_DELAY_MS", "1500");
-    let (manager, request, command) = (h.manager.clone(), h.request(), slow.command.clone());
-    let starting = std::thread::spawn(move || manager.start(request, command));
+    let (manager, plan, command) = (h.manager.clone(), h.plan(), slow.command.clone());
+    let starting = std::thread::spawn(move || manager.start(plan, command));
     std::thread::sleep(Duration::from_millis(300));
 
     // 시작이 `--version` 을 기다리는 동안에도 상태 조회 · 로그 · 끝내기가 바로 돌아온다
@@ -1533,7 +1533,7 @@ mod npm_shim {
 
         // 앱이 띄운 세션은 현재 폴더(프로젝트 폴더)를 보지 않는다
         let command = ClaudeCommand::new(&shim).with_base_env(env_without_the_guard());
-        h.manager.start(h.request(), command).unwrap();
+        h.manager.start(h.plan(), command).unwrap();
         h.wait_ended();
         assert!(!marker.exists(), "the planted script ran in the session");
     }

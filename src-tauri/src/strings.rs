@@ -4,3 +4,4 @@
 pub const TRAY_TOOLTIP: &str = "Nyanitor";
 pub const TRAY_OPEN: &str = "열기";
 pub const TRAY_QUIT: &str = "종료";
+pub const PICK_FOLDER_TITLE: &str = "프로젝트 폴더 고르기";

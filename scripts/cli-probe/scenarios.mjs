@@ -4,6 +4,7 @@
 // 허용하는 권한은 임시 폴더 안 파일 만들기 · mkdir · echo 같은 무해한 것만. (bypassPermissions 는 쓰지 않는다)
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   controlRequest,
@@ -794,6 +795,84 @@ export const scenarios = {
       ctx.info("-p json 의 비용", JSON.stringify({ total_cost_usd: lastObj?.total_cost_usd, num_turns: lastObj?.num_turns, result: String(lastObj?.result ?? "").slice(0, 200) }));
       ctx.info("-p json stderr", j.stderr.slice(0, 200));
       return { files: { "usage.print-json.json": { exitCode: j.status, parsed, stdoutHead: parsed ? null : j.stdout.slice(0, 2000) } } };
+    },
+  },
+
+  skill: {
+    describe: "10 사용자 스킬 — stream-json 첫 메시지로 `/<스킬> 인자` 를 보내면 스킬이 실행되는가 · 인자가 넘어가는가 · system/init 의 슬래시 명령에 보이는가 · --effort 를 같이 줘도 되는가 (P6-02)",
+    cost: "턴 2 (haiku, 아주 짧은 임시 스킬 — 하네스 스킬은 돌리지 않는다)",
+    async run(ctx) {
+      // 임시 프로젝트 폴더 안의 프로젝트 스킬 하나 (사용자 스킬 `~/.claude/skills/` 와 같은 SKILL.md 모양). 인자는 `$ARGUMENTS` 로 들어온다.
+      const dir = ctx.scratch("main");
+      const skillDir = path.join(dir, ".claude", "skills", "probe-echo");
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, "SKILL.md"),
+        [
+          "---",
+          "name: probe-echo",
+          "description: Probe skill for tests. Replies with one fixed line.",
+          'argument-hint: "[word]"',
+          "---",
+          "",
+          "Reply with exactly this one line and nothing else:",
+          "",
+          "PROBE-ECHO-OK $ARGUMENTS",
+          "",
+        ].join("\n"),
+        { encoding: "utf8" },
+      );
+      const listed = (s, name) => {
+        const init = initOf(s);
+        return {
+          slash: (init?.slash_commands || []).some((c) => String(c).replace(/^\//, "") === name),
+          skill: (init?.skills || []).some((c) => String(c).replace(/^\//, "") === name),
+        };
+      };
+
+      // 1) 효과 수준 없이 — 스킬 실행 · 인자 · 목록
+      const s = ctx.newSession({ cwd: dir, maxTurns: 2 });
+      watch(s, null);
+      const r1 = await turn(s, "/probe-echo banana");
+      const found1 = listed(s, "probe-echo");
+      ctx.check("system/init 이 옴", !!initOf(s));
+      ctx.check("system/init 의 slash_commands 에 probe-echo 가 보임", found1.slash, `slash_commands ${found1.slash} · skills ${found1.skill}`);
+      // 사용자 스킬(`~/.claude/skills/<이름>/`)도 같은 목록에 보이는가 — 실행은 하지 않고 이름이 목록에 있는지만 본다 (이름은 녹화 · 요약에 남기지 않는다)
+      const userSkillsDir = path.join(os.homedir(), ".claude", "skills");
+      let userSkillNames = [];
+      try {
+        userSkillNames = fs.readdirSync(userSkillsDir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name);
+      } catch {
+        /* 사용자 스킬 폴더가 없는 PC */
+      }
+      const userSeen = userSkillNames.filter((name) => listed(s, name).slash);
+      if (userSkillNames.length > 0) {
+        ctx.check("~/.claude/skills 의 사용자 스킬도 같은 slash_commands 목록에 보임", userSeen.length > 0, `사용자 스킬 ${userSkillNames.length}개 중 목록에서 ${userSeen.length}개`);
+      }
+      ctx.info("사용자 스킬 폴더 수 · slash_commands 에서 찾은 수", `${userSkillNames.length} · ${userSeen.length}`);
+      ctx.info("system/init 키 중 슬래시 · 스킬 관련", Object.keys(initOf(s) || {}).filter((k) => /slash|skill|command/i.test(k)).join(","));
+      ctx.check("스킬이 실행됨 (result success · 스킬 본문이 시킨 글이 나옴)", r1?.subtype === "success" && /PROBE-ECHO-OK/.test(r1?.result || ""), r1?.result);
+      ctx.check("인자가 넘어감 (result 에 banana)", /PROBE-ECHO-OK\s+banana/.test(r1?.result || ""), r1?.result);
+      const calls1 = s.recv.filter((m) => m.type === "assistant" && m.message?.model && m.message.model !== "<synthetic>").length;
+      ctx.info("모델 호출 수 (스킬이 본문을 모델에 넘기는가)", calls1);
+      ctx.info("result", JSON.stringify({ subtype: r1?.subtype, is_error: r1?.is_error, terminal_reason: r1?.terminal_reason, num_turns: r1?.num_turns, result: r1?.result }));
+      s.note(`[도구 메모] system/init 의 slash_commands 에 probe-echo: ${found1.slash} · skills 에: ${found1.skill} (녹화본은 긴 목록을 앞 5개만 남긴다)`);
+      s.note(`[도구 메모] result: ${r1?.result}`);
+      await s.shutdown();
+
+      // 2) --effort 를 같이 — 앱이 planner 설정(high)으로 넘길 모양. 스킬이 그대로 되는가 · CLI 가 인자를 받아들이는가
+      const e = ctx.newSession({ label: "effort", cwd: dir, maxTurns: 2, extra: ["--effort", "high"] });
+      watch(e, null);
+      const r2 = await turn(e, "/probe-echo mango");
+      ctx.check("--effort high 와 같이 시작해도 result success", r2?.subtype === "success" && r2?.is_error !== true, JSON.stringify({ subtype: r2?.subtype, is_error: r2?.is_error, result: r2?.result }));
+      ctx.check("--effort 와 같이여도 스킬이 인자와 함께 실행됨", /PROBE-ECHO-OK\s+mango/.test(r2?.result || ""), r2?.result);
+      const found2 = listed(e, "probe-echo");
+      ctx.check("--effort 와 같이여도 slash_commands 에 probe-echo 가 보임", found2.slash);
+      const errs = e.records.filter((r) => r.dir === "stderr").map((r) => r.raw);
+      ctx.check("--effort 때 stderr 에 오류 글이 없음", errs.length === 0, errs.join(" | ").slice(0, 300));
+      ctx.info("--effort high 일 때 모델", initOf(e)?.model);
+      e.note(`[도구 메모] --effort high: result ${r2?.subtype} · ${r2?.result} · stderr ${errs.length}줄`);
+      await e.shutdown();
     },
   },
 

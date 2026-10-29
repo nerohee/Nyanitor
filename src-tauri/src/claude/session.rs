@@ -22,10 +22,10 @@ use tauri_plugin_log::log;
 use super::KNOWN_CLI_VERSION;
 use super::discover;
 use super::events::{
-    AnswerValue, EndKind, RawLogEntry, Response, SessionEvent, SessionState, StartInfo,
-    StartRequest, StopInfo,
+    AnswerValue, EndKind, RawLogEntry, Response, SessionEvent, SessionState, StartInfo, StopInfo,
 };
 use super::exec::{self, ClaudeCommand};
+use super::launch::{EFFORT_LEVELS, StartPlan};
 use super::process_tree::ProcessTree;
 use super::protocol::{
     self, Interpretation, Interpreter, PendingKind, PendingRequest, truncate_chars,
@@ -138,6 +138,8 @@ struct Flags {
 struct Session {
     id: u64,
     pid: u32,
+    /// 등록된 프로젝트 번호 (D-47)
+    project_id: i64,
     project_dir: PathBuf,
     project_key: String,
     /// `--resume` 으로 시작했다면 그 세션 ID
@@ -265,14 +267,23 @@ impl SessionManager {
         self.shared.live_writers.load(Ordering::SeqCst)
     }
 
-    /// 세션을 시작한다. 이미 돌고 있으면 오류 (D-12).
-    pub fn start(
-        &self,
-        request: StartRequest,
-        command: ClaudeCommand,
-    ) -> Result<StartInfo, AppError> {
-        let project_dir = validate_project_dir(&request.project_dir)?;
-        let model = request.model.as_deref().map(validate_model).transpose()?;
+    /// 돌고 있는 세션에 알림을 하나 낸다 (시작을 마친 뒤 알게 된 것 — 예: 프로젝트를 "최근에 연" 으로 적지 못함). 세션이 없으면 아무것도 안 한다.
+    pub fn warn_current(&self, code: &str, detail: Option<String>) {
+        if let Some(session) = self.current() {
+            session.warn(&self.shared, code, detail);
+        }
+    }
+
+    /// 세션을 시작한다. 이미 돌고 있으면 오류 (D-12). 계획(`StartPlan`)은 Rust 가 만든다 — 화면이 보낸 것은 프로젝트 번호뿐이고
+    /// 폴더 · 모델 · 수준은 `launch` 가 정한다. 여기서도 폴더 · 모델 · 수준의 모양을 다시 확인한다 (인자로 들어가므로).
+    pub fn start(&self, plan: StartPlan, command: ClaudeCommand) -> Result<StartInfo, AppError> {
+        let project_dir = plan
+            .project_dir
+            .to_str()
+            .ok_or_else(|| AppError::InvalidInput("project folder is not valid UTF-8".into()))
+            .and_then(validate_project_dir)?;
+        let model = plan.model.as_deref().map(validate_model).transpose()?;
+        let effort = plan.effort.as_deref().map(validate_effort).transpose()?;
 
         // 시작 자리를 잡는다 — 두 번 눌러도 하나만 뜬다. 잠금은 표시를 하는 동안만 쥔다:
         // 아래의 `--version` 확인은 최대 20초 걸릴 수 있어서, 그 동안 잠그면 앱 종료 · 상태 조회가 같이 기다린다.
@@ -284,7 +295,13 @@ impl SessionManager {
             slot.starting = true;
             slot.cancelled = false;
         }
-        let result = self.start_claimed(&request, command, &project_dir, model.as_deref());
+        let result = self.start_claimed(
+            &plan,
+            command,
+            &project_dir,
+            model.as_deref(),
+            effort.as_deref(),
+        );
         let mut slot = lock(&self.shared.slot);
         slot.starting = false;
         slot.cancelled = false;
@@ -294,13 +311,14 @@ impl SessionManager {
     /// `start` 가 시작 자리를 잡은 뒤의 일: 버전 확인(잠금 밖) → 프로세스 띄우기 · 등록(잠금 안).
     fn start_claimed(
         &self,
-        request: &StartRequest,
+        plan: &StartPlan,
         command: ClaudeCommand,
         project_dir: &Path,
         model: Option<&str>,
+        effort: Option<&str>,
     ) -> Result<StartInfo, AppError> {
         let key = project_key(project_dir);
-        let resume_id = if request.resume {
+        let resume_id = if plan.resume {
             Some(
                 lock(&self.shared.store)
                     .get(&key)
@@ -310,11 +328,11 @@ impl SessionManager {
             None
         };
 
-        let command = command.keep_api_key(request.use_api_key);
+        let command = command.keep_api_key(plan.use_api_key);
         // 시작 전 버전 확인 (`system/init` 은 첫 메시지 뒤에야 온다). 잠금 밖에서 한다.
         let cli_version = discover::read_version(&command)?;
 
-        let args = build_args(model, resume_id.as_deref());
+        let args = build_args(model, effort, resume_id.as_deref());
         // 여기부터 자리 잠금 — 끝내기가 그 사이 들어왔으면 띄우지 않는다. 띄우기 · 등록은 짧다.
         let mut slot = lock(&self.shared.slot);
         if slot.cancelled {
@@ -351,6 +369,7 @@ impl SessionManager {
         let session = Arc::new(Session {
             id: self.shared.next_id.fetch_add(1, Ordering::Relaxed),
             pid,
+            project_id: plan.project_id,
             project_dir: project_dir.to_path_buf(),
             project_key: key,
             resume_id: resume_id.clone(),
@@ -367,23 +386,33 @@ impl SessionManager {
 
         self.shared.raw.clear();
         let info = StartInfo {
+            project_id: plan.project_id,
             project_dir: project_dir.display().to_string(),
             pid,
             resumed: resume_id.is_some(),
             resume_session_id: resume_id.clone(),
             cli_version: Some(cli_version.clone()),
+            model: model.map(str::to_string),
+            effort: effort.map(str::to_string),
         };
         // 읽기 스레드가 이벤트를 내기 전에 먼저 알린다.
         session.emit(
             &self.shared,
             SessionEvent::SessionStarted {
+                project_id: info.project_id,
                 project_dir: info.project_dir.clone(),
                 pid,
                 resumed: info.resumed,
                 resume_session_id: resume_id,
                 cli_version: Some(cli_version.clone()),
+                model: info.model.clone(),
+                effort: info.effort.clone(),
             },
         );
+        // 계획을 세우며 알게 된 것 (하네스 설정을 못 읽어 CLI 기본으로 띄움 등) — 막지 않고 알린다.
+        for warning in &plan.warnings {
+            session.warn(&self.shared, warning.code, warning.detail.clone());
+        }
         if protocol_version_differs(&cli_version) {
             session.warn(
                 &self.shared,
@@ -391,7 +420,7 @@ impl SessionManager {
                 Some(format!("found {cli_version}, verified {KNOWN_CLI_VERSION}")),
             );
         }
-        if request.use_api_key && exec::api_key_present() {
+        if plan.use_api_key && exec::api_key_present() {
             session.warn(&self.shared, "api_key_in_use", None);
         }
 
@@ -488,6 +517,7 @@ impl SessionManager {
         match self.current() {
             None => SessionState {
                 running: false,
+                project_id: None,
                 project_dir: None,
                 pid: None,
                 session_id: None,
@@ -501,6 +531,7 @@ impl SessionManager {
                 };
                 SessionState {
                     running: true,
+                    project_id: Some(session.project_id),
                     project_dir: Some(session.project_dir.display().to_string()),
                     pid: Some(session.pid),
                     session_id,
@@ -711,8 +742,20 @@ fn validate_project_dir(text: &str) -> Result<PathBuf, AppError> {
     }
 }
 
+/// `--effort` 값: CLI 가 받는 수준 이름만 (대소문자는 가리지 않고 소문자로 넘긴다). `claude --help`: low · medium · high · xhigh · max.
+pub fn validate_effort(text: &str) -> Result<String, AppError> {
+    let effort = text.trim().to_ascii_lowercase();
+    if EFFORT_LEVELS.contains(&effort.as_str()) {
+        Ok(effort)
+    } else {
+        Err(AppError::InvalidInput(
+            "effort level is not one the CLI accepts".into(),
+        ))
+    }
+}
+
 /// `--model` 값: 이름 모양만 (`opus`, `claude-sonnet-4-5`, `sonnet[1m]` …). `-` 로 시작하면 옵션으로 읽히므로 거절.
-fn validate_model(text: &str) -> Result<String, AppError> {
+pub fn validate_model(text: &str) -> Result<String, AppError> {
     let model = text.trim();
     let ok = !model.is_empty()
         && model.len() <= 64
@@ -731,7 +774,11 @@ fn validate_model(text: &str) -> Result<String, AppError> {
 
 /// 실행 인자 — 앱이 만든다 (D-44). `--dangerously-skip-permissions` · `bypassPermissions` · `--max-turns` ·
 /// `--no-session-persistence` 는 쓰지 않는다.
-pub fn build_args(model: Option<&str>, resume_id: Option<&str>) -> Vec<OsString> {
+pub fn build_args(
+    model: Option<&str>,
+    effort: Option<&str>,
+    resume_id: Option<&str>,
+) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "-p",
         "--input-format",
@@ -748,6 +795,10 @@ pub fn build_args(model: Option<&str>, resume_id: Option<&str>) -> Vec<OsString>
     if let Some(model) = model {
         args.push("--model".into());
         args.push(model.into());
+    }
+    if let Some(effort) = effort {
+        args.push("--effort".into());
+        args.push(effort.into());
     }
     if let Some(id) = resume_id {
         args.push("--resume".into());
@@ -1265,11 +1316,14 @@ mod tests {
 
     #[test]
     fn args_follow_d44_and_never_include_dangerous_flags() {
-        let args: Vec<String> =
-            build_args(Some("haiku"), Some("00000000-0000-4000-8000-000000000001"))
-                .iter()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect();
+        let args: Vec<String> = build_args(
+            Some("haiku"),
+            Some("high"),
+            Some("00000000-0000-4000-8000-000000000001"),
+        )
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
         assert_eq!(
             args,
             [
@@ -1283,15 +1337,21 @@ mod tests {
                 "stdio",
                 "--model",
                 "haiku",
+                "--effort",
+                "high",
                 "--resume",
                 "00000000-0000-4000-8000-000000000001"
             ]
         );
-        let bare: Vec<String> = build_args(None, None)
+        let bare: Vec<String> = build_args(None, None, None)
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert!(!bare.iter().any(|a| a == "--model" || a == "--resume"));
+        assert!(
+            !bare
+                .iter()
+                .any(|a| a == "--model" || a == "--effort" || a == "--resume")
+        );
         for forbidden in [
             "--dangerously-skip-permissions",
             "bypassPermissions",
@@ -1651,7 +1711,11 @@ mod edge_tests {
 
     #[test]
     fn arguments_put_the_model_and_resume_id_as_separate_values_and_nothing_else() {
-        let args = build_args(Some("opus"), Some("00000000-0000-4000-8000-000000000001"));
+        let args = build_args(
+            Some("opus"),
+            None,
+            Some("00000000-0000-4000-8000-000000000001"),
+        );
         let text: Vec<String> = args
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
@@ -1667,8 +1731,53 @@ mod edge_tests {
             6,
             "{text:?}"
         );
-        let plain = build_args(None, None);
+        let plain = build_args(None, None, None);
         assert!(!plain.iter().any(|a| a == "--model" || a == "--resume"));
+    }
+
+    #[test]
+    fn the_effort_level_is_its_own_flag_and_value_between_model_and_resume() {
+        let text = |args: Vec<OsString>| -> Vec<String> {
+            args.iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        };
+        let only = text(build_args(None, Some("max"), None));
+        let at = only.iter().position(|a| a == "--effort").unwrap();
+        assert_eq!(only[at + 1], "max");
+        assert_eq!(only.len(), 8 + 2, "{only:?}");
+        assert!(!only.iter().any(|a| a == "--model"));
+        let all = text(build_args(Some("opus"), Some("high"), Some("id")));
+        let pos = |flag: &str| all.iter().position(|a| a == flag).unwrap();
+        assert!(pos("--model") < pos("--effort") && pos("--effort") < pos("--resume"));
+        assert_eq!(all.iter().filter(|a| a.starts_with("--")).count(), 7);
+    }
+
+    #[test]
+    fn effort_levels_are_limited_to_the_names_the_cli_accepts() {
+        for ok in ["low", "medium", "high", "xhigh", "max"] {
+            assert_eq!(validate_effort(ok).unwrap(), ok);
+        }
+        // 대소문자 · 앞뒤 공백은 가리지 않는다 (소문자로 넘긴다)
+        assert_eq!(validate_effort("  High\n").unwrap(), "high");
+        for bad in [
+            "",
+            " ",
+            "-high",
+            "--help",
+            "ultra",
+            "high medium",
+            "high;calc",
+            "높음",
+            "hi\0gh",
+            "5",
+        ] {
+            assert_eq!(
+                validate_effort(bad).unwrap_err().kind(),
+                "invalid_input",
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]
@@ -1881,9 +1990,12 @@ mod edge_tests {
     /// 소스 글에서 `.warn(` 의 첫 글자열 인자와 `code: "…"` 를 모은다.
     fn warning_codes_in(source: &str) -> Vec<String> {
         let mut found = Vec::new();
-        for chunk in source.split(".warn(").skip(1) {
-            if let Some(code) = first_quoted(chunk) {
-                found.push(code);
+        // 시작 계획이 만드는 알림 (`launch.rs`) · 시작을 마친 뒤 내는 알림도 센다
+        for pattern in [".warn(", "PlanWarning::new(", ".warn_current("] {
+            for chunk in source.split(pattern).skip(1) {
+                if let Some(code) = first_quoted(chunk) {
+                    found.push(code);
+                }
             }
         }
         for chunk in source.split("code: \"").skip(1) {
@@ -1921,7 +2033,11 @@ mod edge_tests {
             .filter(|code| code != "code")
             .collect();
         let mut used = std::collections::BTreeSet::new();
-        for source in [include_str!("session.rs"), include_str!("protocol.rs")] {
+        for source in [
+            include_str!("session.rs"),
+            include_str!("protocol.rs"),
+            include_str!("launch.rs"),
+        ] {
             // 이 파일의 시험 모듈은 건너뛴다 (시험 글 안의 `code: "x"` 를 세지 않게)
             let production = source.split("#[cfg(test)]").next().unwrap();
             used.extend(warning_codes_in(production));

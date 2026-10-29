@@ -31,7 +31,7 @@ const event = (e: ClaudeEvent): LabAction => ({ type: "event", event: e });
 describe("labReducer", () => {
   it("세션이 시작되면 돌아가는 중으로, 끝나면 카드를 모두 닫는다", () => {
     const started = run([
-      event({ type: "session_started", projectDir: "C:\\p", pid: 1, resumed: false, resumeSessionId: null, cliVersion: "2.1.296" }),
+      event({ type: "session_started", projectId: 1, projectDir: "C:\\p", pid: 1, resumed: false, resumeSessionId: null, cliVersion: "2.1.296", model: null, effort: null }),
       event({ type: "permission_request", ...permission }),
     ]);
     expect(started.running).toBe(true);
@@ -111,7 +111,7 @@ describe("labReducer", () => {
     expect(missing.resumeNotFound).toBe("s-old");
     expect(run([{ type: "dismissResumeNotFound" }], missing).resumeNotFound).toBeNull();
     const restarted = run(
-      [event({ type: "session_started", projectDir: "C:\\p", pid: 2, resumed: false, resumeSessionId: null, cliVersion: null })],
+      [event({ type: "session_started", projectId: 1, projectDir: "C:\\p", pid: 2, resumed: false, resumeSessionId: null, cliVersion: null, model: null, effort: null })],
       missing,
     );
     expect(restarted.resumeNotFound).toBeNull();
@@ -123,6 +123,7 @@ describe("labReducer", () => {
         type: "restore",
         state: {
           running: true,
+          projectId: 1,
           projectDir: "C:\\p",
           pid: 9,
           sessionId: "s1",
@@ -131,7 +132,7 @@ describe("labReducer", () => {
         },
       },
     ]);
-    expect(state).toMatchObject({ running: true, busy: true, sessionId: "s1", projectDir: "C:\\p" });
+    expect(state).toMatchObject({ running: true, busy: true, sessionId: "s1", projectId: 1, projectDir: "C:\\p" });
     expect(state.cards).toHaveLength(2);
   });
 });

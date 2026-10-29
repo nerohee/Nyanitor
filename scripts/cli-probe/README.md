@@ -39,6 +39,11 @@ CLI 가 바뀌었는지 보는 순서: `run all --out <새 폴더>` → 끝에 �
 `node scripts/cli-probe/probe.mjs run usage` — stream-json 세션에 `/usage` 를 보내 `usage_report` 가 오는지(구독 한도 %·초기화 시각), 모델 호출이 있는지, 걸린 시간을 녹화한다. 같은 시나리오가 `claude -p "/usage" --output-format json` 한 번과 control 요청 `get_usage` 한 번도 본다 (`usage.jsonl` · `usage.print-json.json`).
 이 시나리오는 모델을 부르지 않아 비용이 0 이지만, 구독 한도를 읽는 호출이라 반복해서 돌리지는 않는다. 녹화본은 사용률 숫자 · 시간대 · 내가 많이 쓴 스킬 · 에이전트 이름을 가짜 값으로 바꾼다 (`redact.mjs`).
 
+## 사용자 스킬 시나리오 (`skill`, P6-02)
+
+`node scripts/cli-probe/probe.mjs run skill` — 임시 프로젝트 폴더의 `.claude/skills/probe-echo/SKILL.md`(한 줄로만 답하는 아주 짧은 스킬, `argument-hint` 하나)를 두고, stream-json 세션의 **첫 메시지로 `/probe-echo banana`** 를 보내 스킬이 실행되는지 · 인자(`$ARGUMENTS`)가 넘어가는지 · `system/init` 의 `slash_commands` 에 보이는지(이름은 `/` 없이 온다) · `--effort high` 를 같이 줘도 되는지(두 번째 세션 `skill.effort.jsonl`)를 본다. 2.1.296 에서는 모두 된다 — 슬래시 스킬은 모델을 한 번 부르는 평범한 턴으로 돈다(모델 호출 1, `num_turns` 1).
+haiku 턴 2개라 가볍다. 하네스 스킬(`/desktop-app` 등)은 Opus 사용량이 커서 실험하지 않는다.
+
 ## 녹화 형식 (`*.jsonl`, 한 줄에 JSON 하나)
 
 첫 줄은 `meta` (형식 `nyanitor-cli-record/1`, 시나리오, CLI 버전, 모델, 실행 인자, 뺀 환경 변수). 그 다음은 시간 순서:

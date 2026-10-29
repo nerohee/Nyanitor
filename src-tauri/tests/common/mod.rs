@@ -9,8 +9,9 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use nyanitor_lib::claude::events::{SessionEvent, StartInfo, StartRequest};
+use nyanitor_lib::claude::events::{SessionEvent, StartInfo};
 use nyanitor_lib::claude::exec::ClaudeCommand;
+use nyanitor_lib::claude::launch::StartPlan;
 use nyanitor_lib::claude::session::{EventSink, ManagerConfig, SessionManager};
 use nyanitor_lib::claude::store::ResumeStore;
 use nyanitor_lib::error::AppError;
@@ -194,23 +195,27 @@ impl Harness {
         FakeCmd { command, log }
     }
 
-    pub fn request(&self) -> StartRequest {
-        StartRequest {
-            project_dir: self.project.display().to_string(),
-            model: None,
+    /// 시작 계획 (화면이 보낸 요청을 Rust 가 풀어 만든 것 — 폴더 · 모델 · 수준은 이미 정해졌다). 프로젝트 번호는 1.
+    pub fn plan(&self) -> StartPlan {
+        StartPlan {
+            project_id: 1,
+            project_dir: self.project.clone(),
             resume: false,
             use_api_key: false,
+            model: None,
+            effort: None,
+            warnings: Vec::new(),
         }
     }
 
     pub fn start(&self, cmd: &FakeCmd) -> Result<StartInfo, AppError> {
-        self.manager.start(self.request(), cmd.command.clone())
+        self.manager.start(self.plan(), cmd.command.clone())
     }
 
     pub fn start_resume(&self, cmd: &FakeCmd) -> Result<StartInfo, AppError> {
-        let mut request = self.request();
-        request.resume = true;
-        self.manager.start(request, cmd.command.clone())
+        let mut plan = self.plan();
+        plan.resume = true;
+        self.manager.start(plan, cmd.command.clone())
     }
 
     /// 아직 보지 않은 이벤트 중 `pick` 이 `Some` 을 돌려주는 첫 번째를 기다려 꺼낸다 (그 앞의 것은 지나간 것으로 본다).

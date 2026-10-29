@@ -39,6 +39,10 @@ pub enum ConfigState {
 pub struct HarnessConfig {
     pub planner_model: Option<String>,
     pub planner_effort: Option<String>,
+    /// `planner.model` 이 설정에 있는데 쓸 수 없는 값이다 (글이 아니거나 `SHORT` 글자보다 길다 — 앞부분만 남긴 `planner_model` 을 믿고 쓰지 않게)
+    pub planner_model_odd: bool,
+    /// `planner.effort` 도 같다
+    pub planner_effort_odd: bool,
     /// 역할마다 작업자 이름 (모르는 역할 이름은 버렸다)
     pub workers: Vec<(AgentRole, String)>,
 }
@@ -64,6 +68,16 @@ fn short(value: &Value) -> Option<String> {
     (!text.is_empty()).then(|| text.chars().take(SHORT).collect())
 }
 
+/// 값이 있는데 쓸 수 없는 모양인가 — 글이 아니거나 너무 길다 (빈 글은 "정하지 않음" 으로 본다)
+fn odd(value: Option<&Value>) -> bool {
+    match value {
+        None | Some(Value::Null) => false,
+        Some(value) => value
+            .as_str()
+            .is_none_or(|text| text.trim().chars().count() > SHORT),
+    }
+}
+
 /// JSON 글에서 쓰는 값만 뽑는다. 최상위가 객체가 아니면 `None`. 키가 없거나 모양이 달라도 그 값만 건너뛴다.
 pub fn parse(text: &str) -> Option<HarnessConfig> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -74,6 +88,8 @@ pub fn parse(text: &str) -> Option<HarnessConfig> {
     Some(HarnessConfig {
         planner_model: planner.and_then(|p| p.get("model")).and_then(short),
         planner_effort: planner.and_then(|p| p.get("effort")).and_then(short),
+        planner_model_odd: odd(planner.and_then(|p| p.get("model"))),
+        planner_effort_odd: odd(planner.and_then(|p| p.get("effort"))),
         workers: AgentRole::WORKERS
             .iter()
             .filter_map(|role| {
@@ -172,6 +188,43 @@ mod tests {
     #[test]
     fn a_bom_in_front_is_tolerated() {
         assert!(parse("\u{feff}{\"planner\":{\"model\":\"m\"}}").is_some());
+    }
+
+    #[test]
+    fn planner_values_that_cannot_be_trusted_are_flagged_odd() {
+        let odd_of = |text: &str| {
+            let config = parse(text).unwrap();
+            (config.planner_model_odd, config.planner_effort_odd)
+        };
+        // 정상 · 없음 · 빈 글 · null 은 이상하지 않다
+        assert_eq!(
+            odd_of(r#"{ "planner": { "model": "opus", "effort": "high" } }"#),
+            (false, false)
+        );
+        assert_eq!(odd_of(r#"{ "planner": {} }"#), (false, false));
+        assert_eq!(odd_of("{}"), (false, false));
+        assert_eq!(
+            odd_of(r#"{ "planner": { "model": "", "effort": null } }"#),
+            (false, false)
+        );
+        // 글이 아니거나 너무 길다
+        assert_eq!(
+            odd_of(r#"{ "planner": { "model": 5, "effort": ["high"] } }"#),
+            (true, true)
+        );
+        let long = "x".repeat(SHORT + 1);
+        assert_eq!(
+            odd_of(&format!(
+                r#"{{ "planner": {{ "model": "{long}", "effort": "high" }} }}"#
+            )),
+            (true, false)
+        );
+        // 딱 `SHORT` 글자는 괜찮다
+        let exact = "x".repeat(SHORT);
+        assert_eq!(
+            odd_of(&format!(r#"{{ "planner": {{ "model": "{exact}" }} }}"#)),
+            (false, false)
+        );
     }
 
     #[test]

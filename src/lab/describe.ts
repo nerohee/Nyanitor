@@ -16,8 +16,11 @@ export function describeEvent(event: ClaudeEvent): string | null {
       return null;
     case "session_started":
       return tf("lab.event.sessionStarted", {
+        id: event.projectId,
         dir: event.projectDir,
         pid: event.pid,
+        model: event.model ?? t("lab.session.cliDefault"),
+        effort: event.effort ?? t("lab.session.cliDefault"),
         resumed: event.resumed ? t("lab.event.resumedSuffix") : "",
       });
     case "warning":

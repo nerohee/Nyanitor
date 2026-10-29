@@ -1,6 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "./fakeClaude";
+import { fakeProjects } from "./fakeProjects";
 import { AppError, CLAUDE_SESSION_EVENT, ipc, type ClaudeEvent } from "./ipc";
 
 afterEach(() => {
@@ -9,13 +10,24 @@ afterEach(() => {
 
 describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
   it("시작 요청은 { request } 로 묶어 보낸다 (실행 파일 · 인자 칸이 없다)", async () => {
-    const handler = vi.fn(() => ({ projectDir: "C:\\p", pid: 1, resumed: false, resumeSessionId: null, cliVersion: "2.1.296" }));
+    const handler = vi.fn(() => ({
+      projectId: 1,
+      projectDir: "C:\\p",
+      pid: 1,
+      resumed: false,
+      resumeSessionId: null,
+      cliVersion: "2.1.296",
+      model: "opus",
+      effort: "high",
+    }));
     mockIPC(handler);
 
-    await ipc.claudeSessionStart({ projectDir: "C:\\p", model: "haiku", resume: false, useApiKey: false });
+    const info = await ipc.claudeSessionStart({ projectId: 1, resume: false, useApiKey: false });
     expect(handler).toHaveBeenCalledWith("claude_session_start", {
-      request: { projectDir: "C:\\p", model: "haiku", resume: false, useApiKey: false },
+      request: { projectId: 1, resume: false, useApiKey: false },
     });
+    // 실제로 쓴 모델 · 수준은 돌려받는다 (보내는 칸은 없다)
+    expect(info).toMatchObject({ projectId: 1, model: "opus", effort: "high" });
   });
 
   it("답 · 보내기 · 중단 · 끝내기 · 상태 · 마지막 세션 · 원본 로그가 Rust 명령 이름과 인자 이름에 맞는다", async () => {
@@ -28,7 +40,7 @@ describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
     await ipc.claudeSessionInterrupt();
     await ipc.claudeSessionStop();
     await ipc.claudeSessionState();
-    await ipc.claudeLastSession("C:\\p");
+    await ipc.claudeLastSession(1);
     await ipc.claudeRawLog();
     await ipc.claudeDiscover();
     await ipc.claudeOpenLogin();
@@ -40,7 +52,7 @@ describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
       ["claude_session_interrupt", {}],
       ["claude_session_stop", {}],
       ["claude_session_state", {}],
-      ["claude_last_session", { projectDir: "C:\\p" }],
+      ["claude_last_session", { projectId: 1 }],
       ["claude_raw_log", {}],
       ["claude_discover", {}],
       ["claude_open_login", {}],
@@ -52,7 +64,7 @@ describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
       throw { kind: "session_running", message: "a session is already running" };
     });
 
-    const error = await ipc.claudeSessionStart({ projectDir: "C:\\p" }).catch((e: unknown) => e);
+    const error = await ipc.claudeSessionStart({ projectId: 1 }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ kind: "session_running" });
   });
@@ -93,6 +105,7 @@ async function collectEvents() {
 describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
   beforeEach(() => {
     fakeClaude.reset();
+    fakeProjects.reset();
   });
 
   it("찾기는 가짜 결과를 돌려준다", async () => {
@@ -100,10 +113,11 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
     expect(status).toMatchObject({ found: true, loggedIn: true, versionMatches: true, apiKeyPresent: false });
   });
 
-  it("폴더 없이 시작하면 invalid_input, 돌아가는 중에 또 시작하면 session_running", async () => {
-    await expect(ipc.claudeSessionStart({ projectDir: "  " })).rejects.toMatchObject({ kind: "invalid_input" });
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
-    await expect(ipc.claudeSessionStart({ projectDir: "C:\\p" })).rejects.toMatchObject({ kind: "session_running" });
+  it("번호가 아닌 값으로 시작하면 invalid_input, 돌아가는 중에 또 시작하면 session_running", async () => {
+    await expect(ipc.claudeSessionStart({ projectId: "1" as unknown as number })).rejects.toMatchObject({ kind: "invalid_input" });
+    await expect(ipc.claudeSessionStart({ projectId: Number.NaN })).rejects.toMatchObject({ kind: "invalid_input" });
+    await ipc.claudeSessionStart({ projectId: 1 });
+    await expect(ipc.claudeSessionStart({ projectId: 1 })).rejects.toMatchObject({ kind: "session_running" });
   });
 
   it("세션이 없으면 보내기 · 중단 · 답하기가 no_session", async () => {
@@ -115,7 +129,7 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
 
   it("보낸 말에 따라 권한 요청이 오고, 답하면 턴이 끝난다", async () => {
     const events = await collectEvents();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("파일 쓰기 해 줘");
     await vi.waitFor(() => expect(events.some((e) => e.type === "permission_request")).toBe(true));
 
@@ -138,7 +152,7 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
 
   it("다르게 말하기는 중단된 턴이 끝난 뒤 그 말을 새 메시지로 보낸다", async () => {
     const events = await collectEvents();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await vi.waitFor(() => expect(events.some((e) => e.type === "permission_request")).toBe(true));
     const request = events.find((e) => e.type === "permission_request");
@@ -154,7 +168,7 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
 
   it("질문 카드에는 맞는 답만 받는다", async () => {
     const events = await collectEvents();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("질문 해 줘");
     await vi.waitFor(() => expect(events.some((e) => e.type === "question_request")).toBe(true));
     const request = events.find((e) => e.type === "question_request");
@@ -167,23 +181,23 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
 
   it("끝내면 session_ended 가 오고 마지막 세션이 남아 이어 하기가 된다", async () => {
     const events = await collectEvents();
-    await expect(ipc.claudeSessionStart({ projectDir: "C:\\p", resume: true })).rejects.toMatchObject({ kind: "no_saved_session" });
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await expect(ipc.claudeSessionStart({ projectId: 1, resume: true })).rejects.toMatchObject({ kind: "no_saved_session" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await vi.waitFor(() => expect(events.some((e) => e.type === "permission_request")).toBe(true));
     await ipc.claudeSessionStop();
     expect(events[events.length - 1]).toMatchObject({ type: "session_ended", ended: "normal" });
     expect(events.some((e) => e.type === "request_cancelled")).toBe(true);
 
-    const saved = await ipc.claudeLastSession("C:\\p");
+    const saved = await ipc.claudeLastSession(1);
     expect(saved).not.toBeNull();
-    const info = await ipc.claudeSessionStart({ projectDir: "C:\\p", resume: true });
+    const info = await ipc.claudeSessionStart({ projectId: 1, resume: true });
     expect(info).toMatchObject({ resumed: true, resumeSessionId: saved });
   });
 
   it("중단하면 기다리던 카드가 취소되고 턴이 중단됨으로 끝난다", async () => {
     const events = await collectEvents();
-    await ipc.claudeSessionStart({ projectDir: "C:\\p" });
+    await ipc.claudeSessionStart({ projectId: 1 });
     await ipc.claudeSessionSend("hello");
     await vi.waitFor(() => expect(events.some((e) => e.type === "permission_request")).toBe(true));
     await ipc.claudeSessionInterrupt();

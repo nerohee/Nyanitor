@@ -6,6 +6,8 @@
 import { t } from "../i18n/ko";
 import { fakeHarness } from "./fakeHarness";
 import { fakeHouse } from "./fakeHouse";
+import { fakeProjects } from "./fakeProjects";
+import { fakeSkills } from "./fakeSkills";
 import {
   AppError,
   type AppInfo,
@@ -46,6 +48,24 @@ export function fakeProjectKey(dir: string): string {
   return key.toLowerCase();
 }
 
+/**
+ * 가짜 planner 설정 (하네스 `planner` 를 읽은 결과 흉내). 주소 쿼리 `?planner=`:
+ *  ok (기본, opus · high) · missing (설정 없음 → 모델 · 수준 없이 시작 + 알림) · odd (모델 값이 이상함 → 모델만 빼고 시작 + 알림)
+ */
+export type FakePlannerMode = "ok" | "missing" | "odd";
+const PLANNER_MODES: readonly FakePlannerMode[] = ["ok", "missing", "odd"];
+
+export function parseFakePlannerQuery(search: string): FakePlannerMode {
+  const value = new URLSearchParams(search).get("planner");
+  return PLANNER_MODES.find((mode) => mode === value) ?? "ok";
+}
+
+function plannerChoice(mode: FakePlannerMode): { model: string | null; effort: string | null; warnings: { code: string; detail: string | null }[] } {
+  if (mode === "missing") return { model: null, effort: null, warnings: [{ code: "planner_config_missing", detail: "none" }] };
+  if (mode === "odd") return { model: null, effort: "high", warnings: [{ code: "planner_model_unusable", detail: "bad_shape" }] };
+  return { model: "opus", effort: "high", warnings: [] };
+}
+
 const EMPTY_USAGE = { inputTokens: 3, outputTokens: 42, cacheCreationInputTokens: 0, cacheReadInputTokens: 1200 };
 
 function turnSummary(outcome: TurnSummary["outcome"], total: number): TurnSummary {
@@ -69,7 +89,10 @@ export function createFakeClaude() {
   const listeners = new Set<(event: ClaudeEvent) => void>();
   const lastSessions = new Map<string, string>();
   const rawLog: RawLogEntry[] = [];
-  let session: { projectDir: string; sessionId: string; busy: boolean; turns: number } | null = null;
+  let session: { projectId: number; projectDir: string; sessionId: string; busy: boolean; turns: number } | null = null;
+  /** 시험이 정한 planner 값. 없으면 부를 때마다 주소 쿼리를 읽는다 */
+  let plannerOverride: FakePlannerMode | null = null;
+  const plannerMode = (): FakePlannerMode => plannerOverride ?? parseFakePlannerQuery(typeof window === "undefined" ? "" : window.location.search);
   const pending = new Map<string, PendingFake>();
   let counter = 0;
 
@@ -206,15 +229,33 @@ export function createFakeClaude() {
     claude_open_login: () => undefined,
     claude_session_start: (args): StartInfo => {
       const request = args.request as StartRequest | undefined;
-      const projectDir = request?.projectDir?.trim() ?? "";
-      if (!projectDir) throw new AppError("invalid_input", "project folder is empty");
+      // 진짜처럼 번호만 받는다 (경로 · 모델 · 수준 칸이 없다). 번호가 아니면 거절 — Rust 의 `deny_unknown_fields` + 정수 해석과 같은 쪽
+      const projectId = request?.projectId;
+      if (typeof projectId !== "number" || !Number.isSafeInteger(projectId)) throw new AppError("invalid_input", "project id is not a number");
+      const extra = Object.keys(request ?? {}).filter((key) => !["projectId", "resume", "useApiKey"].includes(key));
+      if (extra.length > 0) throw new AppError("invalid_input", `unknown field: ${extra[0] ?? ""}`);
+      // 진짜 순서: 프로젝트 번호 확인(등록 · 폴더) → 돌고 있는 세션 확인 → 이어 하기 기록 확인
+      const projectDir = fakeProjects.existingDir(projectId);
       if (session) throw new AppError("session_running", "a session is already running");
       const saved = lastSessions.get(fakeProjectKey(projectDir)) ?? null;
       if (request?.resume && !saved) throw new AppError("no_saved_session", "no saved session for this project");
-      session = { projectDir, sessionId: saved ?? nextId("fake-session"), busy: false, turns: 0 };
+      const planner = plannerChoice(plannerMode());
+      session = { projectId, projectDir, sessionId: saved ?? nextId("fake-session"), busy: false, turns: 0 };
       rawLog.length = 0;
-      const info: StartInfo = { projectDir, pid: 4242, resumed: !!request?.resume, resumeSessionId: request?.resume ? saved : null, cliVersion: "2.1.296" };
+      const info: StartInfo = {
+        projectId,
+        projectDir,
+        pid: 4242,
+        resumed: !!request?.resume,
+        resumeSessionId: request?.resume ? saved : null,
+        cliVersion: "2.1.296",
+        model: planner.model,
+        effort: planner.effort,
+      };
       emit({ type: "session_started", ...info });
+      for (const warning of planner.warnings) emit({ type: "warning", ...warning });
+      const touchFailed = fakeProjects.touchQuiet(projectId);
+      if (touchFailed) emit({ type: "warning", code: "project_touch_failed", detail: touchFailed });
       return info;
     },
     claude_session_send: (args) => {
@@ -277,6 +318,7 @@ export function createFakeClaude() {
     },
     claude_session_state: (): ClaudeSessionState => ({
       running: session !== null,
+      projectId: session?.projectId ?? null,
       projectDir: session?.projectDir ?? null,
       pid: session ? 4242 : null,
       sessionId: session?.sessionId ?? null,
@@ -285,7 +327,10 @@ export function createFakeClaude() {
         "questions" in info ? ({ type: "question_request", ...info } as const) : ({ type: "permission_request", ...info } as const),
       ),
     }),
-    claude_last_session: (args) => lastSessions.get(fakeProjectKey(String(args.projectDir ?? ""))) ?? null,
+    claude_last_session: (args) => {
+      if (typeof args.projectId !== "number" || !Number.isSafeInteger(args.projectId)) throw new AppError("invalid_input", "project id is not a number");
+      return lastSessions.get(fakeProjectKey(fakeProjects.existingDir(args.projectId))) ?? null;
+    },
     claude_raw_log: () => [...rawLog],
   };
 
@@ -297,8 +342,9 @@ export function createFakeClaude() {
         listeners.delete(handler);
       };
     },
-    /** 시험용: 모든 상태를 처음으로 */
-    reset() {
+    /** 시험용: 모든 상태를 처음으로 (`planner` 를 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다) */
+    reset(next?: { planner?: FakePlannerMode }) {
+      plannerOverride = next?.planner ?? null;
       session = null;
       pending.clear();
       lastSessions.clear();
@@ -318,6 +364,8 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     ...fakeClaude.handlers,
     ...fakeHarness.handlers,
     ...fakeHouse.handlers,
+    ...fakeProjects.handlers,
+    ...fakeSkills.handlers,
   };
   const handler = handlers[command];
   if (!handler) {

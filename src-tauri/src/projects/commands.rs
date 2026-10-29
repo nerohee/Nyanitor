@@ -1,0 +1,131 @@
+//! 프로젝트의 Tauri 명령 — 얇게: 입력 전달 · 블로킹 풀에서 `projects` 의 일반 함수를 부를 뿐이다.
+//!
+//! **화면이 경로 글자를 보내는 명령은 없다** (D-47):
+//! - 폴더는 `project_pick_folder` 가 Rust 에서 대화상자(`tauri-plugin-dialog` 의 Rust API — 화면에는 `dialog` 권한이 없다)로 받아 들고 있고,
+//!   `project_add` 는 그 폴더만 등록한다.
+//! - 나머지는 모두 등록된 프로젝트 번호(`id`)로만 받는다. 파일 명령이 다루는 파일은 그 폴더 바로 아래 `requirements.md` 하나다.
+//!
+//! 모두 `async` + 블로킹 풀: DB 잠금 · 파일 · 폴더 살펴보기 · 대화상자가 화면 스레드를 막지 않는다.
+
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
+
+use super::requirements::{ReadResult, VersionResult, WriteResult};
+use super::{
+    AddRequest, PickedFolder, ProjectEntry, ProjectList, ProjectPatch, ProjectsState, add,
+    handle_picked, list, remove, requirements_read, requirements_version, requirements_write,
+    touch, update,
+};
+use crate::claude::commands::blocking;
+use crate::db::AppDb;
+use crate::error::AppError;
+use crate::strings;
+
+#[tauri::command]
+pub async fn projects_list(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+) -> Result<ProjectList, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || list(&db, &state.view_env())).await
+}
+
+/// 폴더 고르기 대화상자를 메인 창 위에 띄운다. 취소면 `null`. 고르면 확인한 결과를 돌려주고, 쓸 수 있는 폴더는 Rust 가 들고 있는다.
+#[tauri::command]
+pub async fn project_pick_folder(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+) -> Result<Option<PickedFolder>, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    // 대화상자는 하나만 (두 번 눌러도 하나)
+    let guard = state.begin_pick()?;
+    blocking(move || {
+        let _guard = guard;
+        let mut dialog = app.dialog().file().set_title(strings::PICK_FOLDER_TITLE);
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(chosen) = dialog.blocking_pick_folder() else {
+            return Ok(None);
+        };
+        let path = chosen
+            .into_path()
+            .map_err(|err| AppError::Internal(format!("the picked folder is not a path: {err}")))?;
+        handle_picked(&db, &state, &state.env(), &path).map(Some)
+    })
+    .await
+    .map_err(AppError::logged)
+}
+
+#[tauri::command]
+pub async fn project_add(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    request: AddRequest,
+) -> Result<ProjectEntry, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || add(&db, &state, &state.env(), request))
+        .await
+        .map_err(AppError::logged)
+}
+
+#[tauri::command]
+pub async fn project_update(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+    patch: ProjectPatch,
+) -> Result<ProjectEntry, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || update(&db, &state.view_env(), id, patch)).await
+}
+
+#[tauri::command]
+pub async fn project_remove(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+) -> Result<(), AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || remove(&db, &state, id)).await
+}
+
+#[tauri::command]
+pub async fn project_touch(db: State<'_, AppDb>, id: i64) -> Result<(), AppError> {
+    let db = db.inner().clone();
+    blocking(move || touch(&db, id)).await
+}
+
+#[tauri::command]
+pub async fn project_requirements_read(
+    db: State<'_, AppDb>,
+    id: i64,
+) -> Result<ReadResult, AppError> {
+    let db = db.inner().clone();
+    blocking(move || requirements_read(&db, id)).await
+}
+
+#[tauri::command]
+pub async fn project_requirements_version(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+) -> Result<VersionResult, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || requirements_version(&db, &state, id)).await
+}
+
+#[tauri::command]
+pub async fn project_requirements_write(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+    text: String,
+    base_version: Option<String>,
+) -> Result<WriteResult, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || requirements_write(&db, &state, id, &text, base_version.as_deref()))
+        .await
+        .map_err(AppError::logged)
+}

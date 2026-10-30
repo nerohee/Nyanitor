@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FAKE_PLANS } from "./schedule";
+import { assignSpots, FAKE_PLANS, REST_ALL } from "./schedule";
+import type { SpotId } from "./spots";
 import { useFakeIntents, useHouseSchedule, useSceneMotion, type SceneMotion } from "./useHouse";
 
 const CALM: SceneMotion = { reduced: false, hidden: false };
@@ -147,5 +148,60 @@ describe("움직임 끔 · 창 숨김 감시", () => {
     });
     expect(result.current.hidden).toBe(false);
     expect(document.documentElement.dataset.hidden).toBeUndefined();
+  });
+});
+
+describe("고양이 집 일정 훅 — 카드에 덮인 자리 (blocked)", () => {
+  type Props = { blocked?: readonly SpotId[] };
+  const spotOf = (placements: ReturnType<typeof useHouseSchedule>, cat: string) => placements.find((p) => p.cat === cat)?.spot;
+
+  it("처음 잰 막힌 자리는 걷지 않고 바로 옮기고, 막힌 자리에는 아무도 없다", () => {
+    const { result, rerender } = renderHook(({ blocked }: Props) => useHouseSchedule(REST_ALL, CALM, null, undefined, blocked), {
+      initialProps: {} as Props,
+    });
+    // 아직 못 쟀을 때는 좋아하는 자리 (나비 = 상자)
+    expect(spotOf(result.current, "nabi")).toBe("box");
+    rerender({ blocked: ["box", "cushion"] });
+    for (const p of result.current) {
+      expect(["box", "cushion"]).not.toContain(p.spot);
+      expect(p.walking).toBe(false);
+      expect(p.fade).toBeNull();
+    }
+  });
+
+  it("그 뒤 막힌 자리가 늘면 고양이마다 엇갈려 옮긴다", () => {
+    const { result, rerender } = renderHook(({ blocked }: Props) => useHouseSchedule(REST_ALL, CALM, null, undefined, blocked), {
+      initialProps: { blocked: [] } as Props,
+    });
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    rerender({ blocked: ["box"] });
+    expect(spotOf(result.current, "nabi")).toBe("box"); // 0.5초 전에는 아직
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(result.current.every((p) => p.spot !== "box")).toBe(true);
+  });
+
+  it("정보 패널이 열린 고양이는 자리가 막혀도 옮기지 않고, 패널이 닫히면 옮긴다", () => {
+    const { result, rerender } = renderHook(
+      ({ pinned, blocked }: { pinned: "nabi" | null; blocked: readonly SpotId[] }) => useHouseSchedule(REST_ALL, CALM, pinned, undefined, blocked),
+      { initialProps: { pinned: "nabi" as "nabi" | null, blocked: [] as readonly SpotId[] } },
+    );
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    rerender({ pinned: "nabi", blocked: ["box"] });
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(spotOf(result.current, "nabi")).toBe("box");
+    rerender({ pinned: null, blocked: ["box"] });
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(spotOf(result.current, "nabi")).not.toBe("box");
+  });
+
+  it("막힌 자리를 안 넘기면 예전 배정 그대로", () => {
+    const { result } = renderHook(() => useHouseSchedule(REST_ALL, CALM));
+    expect(Object.fromEntries(result.current.map((p) => [p.cat, p.spot]))).toEqual(assignSpots(REST_ALL));
   });
 });

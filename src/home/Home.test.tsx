@@ -7,7 +7,10 @@ import { TAB_ORDER } from "../components/house/schedule";
 import { fakeHouse } from "../lib/fakeHouse";
 import { fakeProjects } from "../lib/fakeProjects";
 import { ipc } from "../lib/ipc";
-import { AppError, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
+import { AppError, type UsageSummary, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
+import { spotHitBox } from "../components/house/blocked";
+import { SPOTS } from "../components/house/spots";
+import { resetSessionStore, useSessionStore } from "../workspace/chat/sessionStore";
 import Home from "./Home";
 
 const NAV = { onGo: () => undefined, onOpenProject: () => undefined, onNewProject: () => undefined };
@@ -138,8 +141,8 @@ describe("고양이 집 — 가짜 데이터 기본", () => {
     expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeEnabled();
     const nav = screen.getByRole("navigation", { name: "탐색" });
     expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["집", "작업 공간"]);
-    // 모델별 한도 · 세션 츄르 개수 줄은 아직 없다 (P6-06)
-    expect(screen.queryByText(/세션 츄르/)).not.toBeInTheDocument();
+    // 모델별 한도는 보이지 않는다
+    expect(screen.queryByText(/Opus/)).not.toBeInTheDocument();
   });
 
   it("사용률이 100% 를 넘으면 글자는 그대로, 막대 값은 100 에서 멈춘다 (모델별 한도 scoped 는 안 보인다)", async () => {
@@ -608,5 +611,103 @@ describe("고양이 집 — 개발 빌드 시험 화면 링크 · 정리", () =>
       resolvers.forEach((resolve) => resolve());
     });
     expect(errors).not.toHaveBeenCalled();
+  });
+});
+
+describe("고양이 집 — 오늘 앱 세션 츄르 줄", () => {
+  const FIXED_FAKE = 225_531; // 가짜 목록의 오늘 합 (fakeHistory.ts)
+
+  async function summary(override: Partial<UsageSummary["today"]> = {}): Promise<UsageSummary> {
+    const real = await ipc.appUsageSummary();
+    return { ...real, today: { ...real.today, ...override } };
+  }
+
+  afterEach(() => resetSessionStore());
+
+  it("오늘 합을 '약 n' 과 '추정' 표로 보인다 (숫자는 세 자리마다 쉼표)", async () => {
+    render(<Home {...NAV} />);
+    await loaded();
+    const line = await screen.findByText(/오늘 앱 세션 츄르 약/);
+    expect(line).toHaveTextContent(`오늘 앱 세션 츄르 약 ${FIXED_FAKE.toLocaleString("ko-KR")}추정`);
+    expect(within(line).getByText("추정")).toBeInTheDocument();
+  });
+
+  it("오늘 턴이 없으면 '아직 없음'", async () => {
+    vi.spyOn(ipc, "appUsageSummary").mockResolvedValue(await summary({ turns: 0, totalTokens: 0 }));
+    render(<Home {...NAV} />);
+    expect(await screen.findByText("오늘 앱 세션 츄르 아직 없음")).toBeInTheDocument();
+    expect(screen.queryByText("추정")).not.toBeInTheDocument();
+  });
+
+  it("한도를 못 읽어도 이 줄은 따로 보인다", async () => {
+    vi.spyOn(ipc, "usageRead").mockResolvedValue({ state: "unavailable", reason: "not_logged_in" });
+    render(<Home {...NAV} />);
+    expect(await screen.findByText("확인할 수 없음")).toBeInTheDocument();
+    expect(await screen.findByText(/오늘 앱 세션 츄르 약/)).toBeInTheDocument();
+  });
+
+  it("집이 보이는 동안 세션 저장소가 츄르를 새로 읽으면(턴이 끝나면) 다시 읽어 숫자가 바뀐다", async () => {
+    const first = await summary({ turns: 6, totalTokens: 1000 });
+    const second = await summary({ turns: 7, totalTokens: 2500 });
+    const read = vi.spyOn(ipc, "appUsageSummary").mockResolvedValueOnce(first).mockResolvedValue(second);
+    render(<Home {...NAV} />);
+    expect(await screen.findByText(/약 1,000/)).toBeInTheDocument();
+    await act(async () => {
+      useSessionStore.setState({ churros: { projectId: 1, totalTokens: 42, referenceOnly: true } });
+    });
+    expect(await screen.findByText(/약 2,500/)).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("다시 읽다 실패하면 지난 숫자를 그대로 둔다", async () => {
+    const first = await summary({ turns: 6, totalTokens: 1000 });
+    vi.spyOn(ipc, "appUsageSummary").mockResolvedValueOnce(first).mockRejectedValue(new AppError("db_unavailable", "x"));
+    render(<Home {...NAV} />);
+    expect(await screen.findByText(/약 1,000/)).toBeInTheDocument();
+    await act(async () => {
+      useSessionStore.setState({ churros: { projectId: 1, totalTokens: 42, referenceOnly: true } });
+    });
+    expect(screen.getByText(/약 1,000/)).toBeInTheDocument();
+  });
+
+  it("한 번도 못 읽었으면 줄을 감춘다 (앱은 그대로)", async () => {
+    vi.spyOn(ipc, "appUsageSummary").mockRejectedValue(new AppError("db_unavailable", "x"));
+    render(<Home {...NAV} />);
+    await loaded();
+    expect(screen.queryByText(/오늘 앱 세션 츄르/)).not.toBeInTheDocument();
+  });
+
+  it("집을 닫은 뒤에는 저장소가 바뀌어도 읽지 않는다", async () => {
+    const read = vi.spyOn(ipc, "appUsageSummary");
+    const { unmount } = render(<Home {...NAV} />);
+    await loaded();
+    const count = read.mock.calls.length;
+    unmount();
+    await act(async () => {
+      useSessionStore.setState({ churros: { projectId: 1, totalTokens: 7, referenceOnly: true } });
+    });
+    expect(read.mock.calls.length).toBe(count);
+  });
+});
+
+describe("고양이 집 — 카드에 덮인 자리", () => {
+  it("카드가 덮은 자리의 고양이는 다른 자리로 옮겨져 있다 (고양이는 7마리 그대로)", async () => {
+    const hit = spotHitBox("sun");
+    const rect = (left: number, top: number, right: number, bottom: number) =>
+      ({ left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    // 장면 1536 × 1024 (배경 1px = 화면 1px), 위 카드가 볕 자리를 덮는다
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.classList.contains("hm-scene")) return rect(0, 0, 1536, 1024);
+      if (this.classList.contains("hm-status")) return rect(hit.left - 5, hit.top - 5, hit.right + 5, hit.bottom + 5);
+      return rect(0, 0, 0, 0);
+    });
+    render(<Home {...NAV} />);
+    await loaded();
+    const spots = [...document.querySelectorAll(".hs-cat")].map((cat) => cat.getAttribute("data-spot"));
+    expect(spots).toHaveLength(7);
+    expect(spots).not.toContain("sun");
+    // 덮이지 않은 자리 — 나비의 상자는 그대로
+    expect(SPOTS.box.kind).toBe("rest");
+    expect(spots).toContain("box");
   });
 });

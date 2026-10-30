@@ -16,6 +16,7 @@ import {
 } from "../cat/catalog";
 import { CatSprite, motionForPose } from "../cat/CatFigure";
 import { t } from "../../i18n/ko";
+import { chooseBubble } from "./bubble";
 import type { CatPanel } from "./useCatPanel";
 import { PANEL_ID } from "./useCatPanel";
 import type { CatPlacement } from "./schedule";
@@ -25,7 +26,9 @@ import {
   ART,
   CHIME,
   depth,
+  POSE_BOX,
   PROPS,
+  SINK,
   SPOTS,
   spotDepth,
   spotPropK,
@@ -55,15 +58,6 @@ function bg(n: number): string {
 /** 이름표는 장면의 맨 위층 (시간대 덧씌우기 위) */
 const TAG_Z = 100_002;
 
-/** 자세마다 고양이가 차지하는 판 안 크기 (맞춘 그림에서 7마리 중 가장 큰 값 — 누르는 자리의 크기) */
-const POSE_BOX: Record<PoseName, { w: number; h: number }> = {
-  sit: { w: 301, h: 337 },
-  loaf: { w: 466, h: 288 },
-  sleep: { w: 374, h: 246 },
-  walk: { w: 472, h: 359 },
-  groom: { w: 364, h: 383 },
-};
-
 /** 그림자 타원 폭 (판 px) — 그림 폭의 약 55% (cat-assets.md §A6) */
 const SHADOW_W: Record<PoseName, number> = {
   sit: 165,
@@ -74,11 +68,6 @@ const SHADOW_W: Record<PoseName, number> = {
 };
 const SHADOW_RATIO = 0.22;
 
-/**
- * 누운 자세(자기 · 식빵)는 몸 아래가 둥글어 바닥에 닿는 면이 좁아 붕 떠 보일 수 있다 —
- * 판을 이만큼(판 px) 내려 바닥에 가라앉히고, 그림자는 작게 몸 아래로 바짝 붙인다. 다른 자세는 그대로.
- */
-const SINK: Partial<Record<PoseName, number>> = { sleep: 8, loaf: 6 };
 const SHADOW_TIGHT: Partial<Record<PoseName, number>> = { sleep: 190, loaf: 230 };
 
 export interface Crop {
@@ -95,6 +84,8 @@ export interface SceneInteraction {
   renderPanel: (cat: CatId) => ReactNode;
   /** 정보 패널이 놓일 층 — 장면 위 카드들보다도 앞에 있는 같은 크기의 빈 상자 (없으면 패널은 아직 안 보인다) */
   bubbleLayer: HTMLElement | null;
+  /** 패널이 되도록 덮지 않을 상자들 — 위 카드 · 아래 판 카드. 놓을 때마다 불러 지금 상자를 잰다 (없으면 안 피한다) */
+  avoid?: () => readonly Element[];
 }
 
 interface HouseSceneProps {
@@ -197,40 +188,23 @@ interface SceneCatProps {
   debug: boolean;
 }
 
-/** 정보 패널을 고양이 옆 빈 곳에 놓는다 — 자리마다 정한 쪽 순서대로, 장면 안에 들어가고 고양이를 가리지 않는 첫 곳 */
-function placeBubble(bubble: HTMLElement, layer: HTMLElement, button: HTMLElement, spot: Spot) {
-  const gap = 10;
-  const margin = 8;
+/** 정보 패널을 고양이 옆 빈 곳에 놓는다 — 장면 안 · 카드와 안 겹치는 곳을 먼저 (고르는 순서는 bubble.ts) */
+function placeBubble(bubble: HTMLElement, layer: HTMLElement, button: HTMLElement, spot: Spot, avoid: readonly Element[]) {
   const area = layer.getBoundingClientRect();
   const cat = button.getBoundingClientRect();
-  const w = bubble.offsetWidth;
-  const h = bubble.offsetHeight;
-  const tagRoom = 30; // 발 아래 이름표
-  const centerX = cat.left + cat.width / 2;
-  const centerY = cat.top + cat.height / 2;
-
-  const candidates = spot.bubble.map((side) => {
-    switch (side) {
-      case "above":
-        return { left: centerX - w / 2, top: cat.top - gap - h };
-      case "below":
-        return { left: centerX - w / 2, top: cat.bottom + tagRoom };
-      case "left":
-        return { left: cat.left - gap - w, top: centerY - h / 2 };
-      case "right":
-        return { left: cat.right + gap, top: centerY - h / 2 };
-    }
+  const tag = button.closest(".hs-cat")?.querySelector(".hs-tag")?.getBoundingClientRect();
+  const chosen = chooseBubble({
+    sides: spot.bubble,
+    cat,
+    keepClear: tag
+      ? { left: Math.min(cat.left, tag.left), top: Math.min(cat.top, tag.top), right: Math.max(cat.right, tag.right), bottom: Math.max(cat.bottom, tag.bottom) }
+      : undefined,
+    size: { w: bubble.offsetWidth, h: bubble.offsetHeight },
+    area,
+    avoid: avoid.map((el) => el.getBoundingClientRect()),
   });
-  const fits = (c: { left: number; top: number }) =>
-    c.left >= area.left + margin &&
-    c.top >= area.top + margin &&
-    c.left + w <= area.right - margin &&
-    c.top + h <= area.bottom - margin;
-  const chosen = candidates.find(fits) ?? candidates[0];
-  const left = Math.min(Math.max(chosen.left, area.left + margin), Math.max(area.left + margin, area.right - margin - w));
-  const top = Math.min(Math.max(chosen.top, area.top + margin), Math.max(area.top + margin, area.bottom - margin - h));
-  bubble.style.left = `${left - area.left}px`;
-  bubble.style.top = `${top - area.top}px`;
+  bubble.style.left = `${chosen.left - area.left}px`;
+  bubble.style.top = `${chosen.top - area.top}px`;
 }
 
 function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
@@ -256,10 +230,14 @@ function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
 
   // 정보 패널 자리 — 열릴 때, 고양이가 자리를 옮길 때, 창 크기가 바뀔 때
   const layer = interaction?.bubbleLayer ?? null;
+  const avoidRef = useRef(interaction?.avoid);
+  useEffect(() => {
+    avoidRef.current = interaction?.avoid;
+  });
   useLayoutEffect(() => {
     if (!open || !layer) return;
     const place = () => {
-      if (bubbleRef.current && buttonRef.current) placeBubble(bubbleRef.current, layer, buttonRef.current, spot);
+      if (bubbleRef.current && buttonRef.current) placeBubble(bubbleRef.current, layer, buttonRef.current, spot, avoidRef.current?.() ?? []);
     };
     place();
     window.addEventListener("resize", place);

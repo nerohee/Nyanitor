@@ -44,3 +44,8 @@ export function formatAgo(readAt: number, now: Date): string {
   if (hours < 24) return tf("home.ago.hours", { n: hours });
   return tf("home.ago.days", { n: Math.floor(hours / 24) });
 }
+
+/** 토큰 수 → 세 자리마다 쉼표 (시제품 `variants/fixtures.ts` 의 `formatTokens` 와 같은 꼴) */
+export function formatTokens(n: number): string {
+  return n.toLocaleString("ko-KR");
+}

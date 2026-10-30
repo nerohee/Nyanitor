@@ -2,7 +2,7 @@
 // 집이 화면 전체 무대, 카드는 그림의 빈 곳: 왼쪽 위 = 준비 상태 + 사용량, 아래 판 = 최근 프로젝트 + 새 프로젝트 단추 (P6-04).
 // 왼쪽에 메뉴(고양이 집 · 작업 공간) — 프로젝트를 누르면 작업 공간에서 열린다.
 // 지금은 모든 고양이가 쉬는 중이다 — 일하는 고양이 · 실제 작업 상태 연결은 P7.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { HouseScene } from "../components/house/HouseScene";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
 import { REST_ALL } from "../components/house/schedule";
@@ -16,6 +16,8 @@ import { HomeProjects } from "./HomeProjects";
 import { ReadyLine, UsageBlock } from "./StatusCard";
 import { useAgents, type AgentsState } from "./useAgents";
 import { useClock } from "./useClock";
+import { useAppChurros } from "./useAppChurros";
+import { cardElements, useBlockedSpots } from "./useBlockedSpots";
 import { useReadiness } from "./useReadiness";
 import { useUsage } from "./useUsage";
 import "./home.css";
@@ -54,9 +56,13 @@ export default function Home({ onGo, onOpenProject, onNewProject, clock }: HomeP
   const { state: agents, cats } = useAgents();
   const present = cats.map((c) => c.cat);
   // 일하는 고양이가 없다 (P7) — 쉬는 자리만 오간다. 에이전트가 없는 고양이는 집에 나오지 않는다
-  const placements = useHouseSchedule(REST_ALL, motion, panel.openCat, present).filter((p) => present.includes(p.cat));
+  // 위 카드 · 아래 판 카드에 덮인 자리는 고양이가 피한다 (창이 좁을수록 많이 덮는다)
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const blocked = useBlockedSpots(sceneRef);
+  const placements = useHouseSchedule(REST_ALL, motion, panel.openCat, present, blocked).filter((p) => present.includes(p.cat));
   const readiness = useReadiness(agents.status === "ready" && agents.list.state === "ok");
   const usage = useUsage();
+  const churros = useAppChurros();
   const projects = useProjects();
   const [bubbleLayer, setBubbleLayer] = useState<HTMLDivElement | null>(null);
   const note = agentsNote(agents);
@@ -79,13 +85,13 @@ export default function Home({ onGo, onOpenProject, onNewProject, clock }: HomeP
       <AppNav current="house" onGo={onGo} />
       <main className="hm-view">
         <h1 className="hm-sr">{t("home.title")}</h1>
-        <div className="hm-scene">
+        <div className="hm-scene" ref={sceneRef}>
           <HouseScene
             className="hm-room"
             label={t("home.cats")}
             time={time}
             placements={placements}
-            interaction={{ panel, renderPanel, bubbleLayer }}
+            interaction={{ panel, renderPanel, bubbleLayer, avoid: () => (sceneRef.current ? cardElements(sceneRef.current) : []) }}
             debug={spotsDebug()}
           />
 
@@ -96,7 +102,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, clock }: HomeP
                 {note}
               </p>
             )}
-            <UsageBlock {...usage} now={now} onRefresh={usage.refresh} />
+            <UsageBlock {...usage} now={now} churros={churros} onRefresh={usage.refresh} />
           </aside>
 
           {/* 아래 판 — 최근 프로젝트 몇 개 + 새 프로젝트 단추 (크기 · 자리는 시제품과 같다) */}

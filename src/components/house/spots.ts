@@ -81,6 +81,20 @@ export interface Spot {
   bubble: readonly ("above" | "below" | "left" | "right")[];
 }
 
+/** 자세마다 고양이가 차지하는 판 안 크기 (맞춘 그림에서 7마리 중 가장 큰 값 — 누르는 자리의 크기) */
+export const POSE_BOX: Record<PoseName, { w: number; h: number }> = {
+  sit: { w: 301, h: 337 },
+  loaf: { w: 466, h: 288 },
+  sleep: { w: 374, h: 246 },
+  walk: { w: 472, h: 359 },
+  groom: { w: 364, h: 383 },
+};
+
+/**
+ * 누운 자세(자기 · 식빵)는 몸 아래가 둥글어 바닥에 닿는 면이 좁아 붕 떠 보일 수 있다 —
+ * 판을 이만큼(판 px) 내려 바닥에 가라앉히고, 그림자는 작게 몸 아래로 바짝 붙인다. 다른 자세는 그대로.
+ */
+export const SINK: Partial<Record<PoseName, number>> = { sleep: 8, loaf: 6 };
 /** 깊이(z-index) — 발 y × 10, 한 자리 안의 앞뒤 층은 끝자리로 */
 export function depth(y: number, layer = 0): number {
   return Math.round(y) * 10 + layer;

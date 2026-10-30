@@ -382,6 +382,21 @@ body:has(.home) {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+/* 오늘 앱 세션 츄르 — 막대 아래 작은 한 줄. 토큰 숫자라 늘 추정 (시제품 .usage__badge 결) */
+.hm-usage__churros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hm-usage__badge {
+  padding: 0 var(--space-2);
+  border: var(--ui-line-w) solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
 .hm-usage__foot {
   display: flex;
   align-items: center;

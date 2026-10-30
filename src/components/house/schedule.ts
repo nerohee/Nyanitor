@@ -68,11 +68,16 @@ export const FAVORITE_SPOT: Readonly<Record<CatId, SpotId>> = {
 
 const REST_SPOTS = SPOT_IDS.filter((id) => SPOTS[id].kind === "rest");
 
-/** 고양이 목록 순서로 한 마리씩 자리를 정한다. 일 자리가 차면 쉬는 자리로 넘어간다. */
+/**
+ * 고양이 목록 순서로 한 마리씩 자리를 정한다. 일 자리가 차면 쉬는 자리로 넘어간다.
+ * `blocked` (카드에 덮인 자리) 가 있으면 쉬는 고양이는 그 자리를 피한다 — 이미 그 자리에 있던 고양이도 빈 자리로 옮긴다.
+ * 쉬는 자리가 모자라면 남는 고양이는 막힌 자리에라도 둔다 (고양이가 사라지면 안 된다). 없으면 예전과 똑같다.
+ */
 export function assignSpots(
   intents: Intents,
   current: Partial<Record<CatId, SpotId>> = {},
   rng: Rng = Math.random,
+  blocked: readonly SpotId[] = [],
 ): Assignment {
   const taken = new Set<SpotId>();
   const result: Partial<Record<CatId, SpotId>> = {};
@@ -93,17 +98,22 @@ export function assignSpots(
     else if (intent === "wait") claim(cat, ["stone"]);
   }
 
-  // 2) 나머지는 쉬는 자리 — 있던 자리를 지키고, 없으면 좋아하는 자리, 그래도 없으면 빈 자리 아무 곳
-  for (const cat of CAT_IDS) {
-    if (result[cat]) continue;
-    const here = current[cat];
-    const keep = here && SPOTS[here].kind === "rest" ? [here] : [];
-    if (claim(cat, [...keep, FAVORITE_SPOT[cat]])) continue;
-    const free = REST_SPOTS.filter((id) => !taken.has(id));
-    const pick = free[Math.floor(rng() * free.length)];
-    if (pick) {
-      taken.add(pick);
-      result[cat] = pick;
+  // 2) 나머지는 쉬는 자리 — 있던 자리를 지키고, 없으면 좋아하는 자리, 그래도 없으면 빈 자리 아무 곳.
+  //    먼저 안 막힌 자리로만 (한 바퀴), 자리를 못 얻은 고양이는 막힌 자리까지 열어 다시 (두 바퀴)
+  const rounds: readonly (readonly SpotId[])[] = blocked.length > 0 ? [blocked, []] : [[]];
+  for (const closed of rounds) {
+    const open = (id: SpotId) => !closed.includes(id);
+    for (const cat of CAT_IDS) {
+      if (result[cat]) continue;
+      const here = current[cat];
+      const keep = here && SPOTS[here].kind === "rest" ? [here] : [];
+      if (claim(cat, [...keep, FAVORITE_SPOT[cat]].filter(open))) continue;
+      const free = REST_SPOTS.filter((id) => !taken.has(id) && open(id));
+      const pick = free[Math.floor(rng() * free.length)];
+      if (pick) {
+        taken.add(pick);
+        result[cat] = pick;
+      }
     }
   }
   return result as Assignment;
@@ -131,6 +141,8 @@ export function pickRoam(
   pinned: CatId | null = null,
   /** 이 집에 없는 고양이(에이전트가 없다) — 자리를 옮기지 않는다 */
   absent: readonly CatId[] = [],
+  /** 카드에 덮인 자리 — 가끔 옮길 때 그 자리로는 가지 않는다 */
+  blocked: readonly SpotId[] = [],
 ): Roam {
   const resting = CAT_IDS.filter(
     (cat) =>
@@ -139,7 +151,7 @@ export function pickRoam(
   if (resting.length === 0) return null;
   const cat = resting[Math.floor(rng() * resting.length)];
   const occupied = new Set(Object.values(spots));
-  const free = REST_SPOTS.filter((id) => !occupied.has(id));
+  const free = REST_SPOTS.filter((id) => !occupied.has(id) && !blocked.includes(id));
   const canMove = free.length > 0;
   const canPose = SPOTS[spots[cat]].poses.length > 1;
   // 동작 바꾸기가 가능하면 절반은 그것 (자리 바꾸기는 "가끔")

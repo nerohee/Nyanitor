@@ -100,6 +100,8 @@ export function useHouseSchedule(
   pinned: CatId | null = null,
   /** 집에 있는 고양이만 가끔 옮긴다 (없으면 7마리 모두). 집에 없는 고양이의 자리는 눈에 보이지 않는다 */
   present: readonly CatId[] = CAT_IDS,
+  /** 카드에 덮인 자리 (Home 이 잰다) — 있으면 고양이가 그 자리를 피한다. 아직 못 쟀으면 undefined, 없으면 예전과 똑같다 */
+  blocked?: readonly SpotId[],
 ): CatPlacement[] {
   const [placements, setPlacements] = useState<Placements>(() => initialPlacements(assignSpots(intents)));
   const latest = useRef(placements);
@@ -110,7 +112,9 @@ export function useHouseSchedule(
   const motionRef = useRef(motion);
   const pinnedRef = useRef(pinned);
   const absentRef = useRef<readonly CatId[]>([]);
+  const blockedRef = useRef<readonly SpotId[]>([]);
   useEffect(() => {
+    blockedRef.current = blocked ?? [];
     intentsRef.current = intents;
     motionRef.current = motion;
     pinnedRef.current = pinned;
@@ -163,27 +167,41 @@ export function useHouseSchedule(
     });
   };
 
-  // 의도가 바뀌면 그 자리로 (처음에는 이미 맞다)
+  // 의도 · 막힌 자리가 바뀌면 그 자리로 (처음에는 이미 맞다). 처음 막힌 자리를 잰 때는 걷지 않고 바로 옮긴다 (첫 화면이 어수선하지 않게).
+  // 정보 패널이 열린 고양이는 막혀도 옮기지 않고(그 자리를 열어 둔다), 패널이 닫히면 다시 본다.
   const intentsKey = CAT_IDS.map((cat) => intents[cat]).join(",");
+  const blockedKey = blocked === undefined ? "-" : [...blocked].sort().join(",");
+  const measured = useRef(false);
   useEffect(() => {
-    const next = assignSpots(intentsRef.current, spotsOf(latest.current));
-    const moving = CAT_IDS.filter((cat) => next[cat] !== latest.current[cat].spot);
+    const firstMeasure = blocked !== undefined && !measured.current;
+    if (blocked !== undefined) measured.current = true;
+    const here = latest.current;
+    // 쉬는 중에 패널이 열린 고양이만 (일하러 가야 하면 예전처럼 간다)
+    const pinnedRaw = pinnedRef.current;
+    const pinnedCat = pinnedRaw && intentsRef.current[pinnedRaw] === "rest" && SPOTS[here[pinnedRaw].spot].kind === "rest" ? pinnedRaw : null;
+    const pinnedSpot = pinnedCat ? here[pinnedCat].spot : null;
+    const closed = blockedRef.current.filter((id) => id !== pinnedSpot);
+    const next = assignSpots(intentsRef.current, spotsOf(here), Math.random, closed);
+    const moving = CAT_IDS.filter((cat) => next[cat] !== here[cat].spot && cat !== pinnedCat);
     // 움직임 끔이면 기다리지 않고 바로 바꾼다
-    const delays = motionRef.current.reduced
+    const instantly = motionRef.current.reduced || firstMeasure;
+    const delays = instantly
       ? {}
-      : staggerDelays(moving.map((cat) => ({ cat, from: latest.current[cat].spot, to: next[cat] })));
+      : staggerDelays(moving.map((cat) => ({ cat, from: here[cat].spot, to: next[cat] })));
     for (const cat of moving) {
       // 같은 순간에 한꺼번에 사라졌다 나타나지 않게 고양이마다 엇갈려 옮긴다
       const ticket = (trip.current[cat] ?? 0) + 1;
       trip.current[cat] = ticket;
       const to = next[cat];
       const delay = delays[cat] ?? 0;
-      if (delay === 0) moveCat(cat, to);
+      if (firstMeasure && !motionRef.current.reduced) {
+        update(cat, { spot: to, pose: SPOTS[to].poses[0], facing: "right", walking: false, fade: null, instant: true });
+      } else if (delay === 0) moveCat(cat, to);
       else later(cat, ticket, delay, () => moveCat(cat, to));
     }
-    // moveCat 은 ref 만 읽는다 — 의도가 바뀔 때만 다시 계산하면 된다
+    // moveCat 은 ref 만 읽는다 — 의도 · 막힌 자리 · 패널이 바뀔 때만 다시 계산하면 된다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intentsKey]);
+  }, [intentsKey, blockedKey, blockedKey.length > 1 ? pinned === null : null]);
 
   // 가끔 쉬는 고양이가 자리나 동작을 바꾼다
   const { reduced, hidden } = motion;
@@ -201,6 +219,7 @@ export function useHouseSchedule(
               Math.random,
               pinnedRef.current,
               absentRef.current,
+              blockedRef.current,
             );
         if (roam?.kind === "pose") update(roam.cat, { pose: roam.pose });
         else if (roam?.kind === "move") moveCat(roam.cat, roam.to);

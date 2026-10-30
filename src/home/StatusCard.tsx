@@ -1,10 +1,11 @@
 // 왼쪽 위 카드 — 준비 상태 + 사용량 (D-24: 사용량을 못 받으면 "확인할 수 없음", 앱은 그대로).
 // 시제품 `variants/shared/HomeBlocks.tsx` 의 `ReadyLine` · `UsageBars` · `Meter` · `UsageUnavailable` 를 바탕으로 실제 값으로 새로 썼다.
-// 한도 막대는 "츄르" 로 부른다 (D-43, 2026-10-28 고객). 세션 츄르 개수(토큰 · 비용 추정) 줄과 모델별 한도(`scoped`)는 이번엔 보이지 않는다 (P6).
+// 한도 막대는 "츄르" 로 부른다 (D-43, 2026-10-28 고객). 막대 아래에 오늘 앱이 쓴 세션 츄르(토큰 추정) 한 줄. 모델별 한도(`scoped`)는 보이지 않는다.
 import { t, tf, type TextKey } from "../i18n/ko";
 import type { UsageResult, UsageWindow } from "../lib/ipc-types";
 import { Icon } from "../variants/shared/icons";
-import { barPercent, formatAgo, formatReset, percentOf } from "./format";
+import { barPercent, formatAgo, formatReset, formatTokens, percentOf } from "./format";
+import type { AppChurros } from "./useAppChurros";
 import { READY_ITEMS, type ReadinessState } from "./useReadiness";
 import type { UsageState } from "./useUsage";
 
@@ -106,7 +107,25 @@ function Placeholder() {
 
 interface UsageCardProps extends UsageState {
   now: Date;
+  /** 오늘 앱이 쓴 세션 츄르 — 한 번도 못 읽었으면 null (줄을 감춘다) */
+  churros?: AppChurros | null;
   onRefresh: () => void;
+}
+
+/** 오늘 앱 세션 츄르 한 줄 — 토큰 숫자라 늘 "추정". 한도(`/usage`)와 출처가 달라 한도를 못 읽어도 보인다 */
+function ChurrosLine({ churros }: { churros: AppChurros }) {
+  return (
+    <p className="hm-usage__churros">
+      {churros.turns === 0 ? (
+        t("home.churros.none")
+      ) : (
+        <>
+          {tf("home.churros.today", { n: formatTokens(churros.totalTokens) })}
+          <span className="hm-usage__badge">{t("home.churros.estimate")}</span>
+        </>
+      )}
+    </p>
+  );
 }
 
 /** 아래 줄 — 읽은 때를 읽는 중 · 갱신 실패에도 남긴다 */
@@ -117,7 +136,7 @@ function readLine(reading: boolean, stale: boolean, readAt: number | null, now: 
   return tf(stale ? "home.usage.staleSince" : "home.usage.readAgo", { ago });
 }
 
-export function UsageBlock({ result, reading, stale, now, onRefresh }: UsageCardProps) {
+export function UsageBlock({ result, reading, stale, now, churros = null, onRefresh }: UsageCardProps) {
   const reason = reasonKey(result);
   const readAt = result?.state === "ok" && !reason ? result.readAt : null;
   return (
@@ -132,6 +151,7 @@ export function UsageBlock({ result, reading, stale, now, onRefresh }: UsageCard
           {result.sevenDay && <Meter label={t("home.usage.weekly")} window={result.sevenDay} now={now} />}
         </div>
       ) : null}
+      {churros && <ChurrosLine churros={churros} />}
       <div className="hm-usage__foot">
         <span className="hm-usage__read" role="status">
           {readLine(reading, stale, readAt, now)}

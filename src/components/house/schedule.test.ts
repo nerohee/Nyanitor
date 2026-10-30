@@ -268,3 +268,58 @@ describe("자리 · 깊이 데이터", () => {
     expect(BASE_K).toBeCloseTo((WORLD_SCALE * 300) / 337);
   });
 });
+
+describe("카드에 덮인 자리 피하기 (blocked)", () => {
+  const REST_IDS = SPOT_IDS.filter((id) => SPOTS[id].kind === "rest");
+
+  it("blocked 가 없거나 비어 있으면 예전과 똑같이 배정한다", () => {
+    for (const plan of [...FAKE_PLANS, REST]) {
+      expect(assignSpots(plan, {}, fixed(0.3), [])).toEqual(assignSpots(plan, {}, fixed(0.3)));
+    }
+  });
+
+  it("좋아하는 자리가 막히면 다른 빈 쉬는 자리로 가고, 막힌 자리에는 아무도 없다", () => {
+    const blocked = ["box", "cushion"] as const;
+    const spots = Object.values(assignSpots(REST, {}, fixed(0), blocked));
+    expect(new Set(spots).size).toBe(CAT_IDS.length);
+    for (const id of blocked) expect(spots).not.toContain(id);
+  });
+
+  it("이미 막힌 자리에 있던 고양이는 빈 자리로 옮긴다", () => {
+    const result = assignSpots(REST, { nabi: "sun", kkaebi: "path" }, fixed(0), ["sun"]);
+    expect(result.nabi).not.toBe("sun");
+    expect(SPOTS[result.nabi].kind).toBe("rest");
+    expect(result.kkaebi).toBe("path");
+  });
+
+  it("쉬는 자리가 모자라면 남는 고양이는 막힌 자리에라도 둔다 — 고양이가 사라지지 않는다", () => {
+    const blocked = REST_IDS.slice(0, 5);
+    const spots = Object.values(assignSpots(REST, {}, fixed(0), blocked));
+    expect(spots).toHaveLength(CAT_IDS.length);
+    expect(new Set(spots).size).toBe(spots.length);
+    // 안 막힌 자리는 모두 쓰이고, 나머지 고양이가 막힌 자리에 있다
+    const openCount = REST_IDS.length - blocked.length;
+    expect(spots.filter((id) => !blocked.includes(id))).toHaveLength(openCount);
+    expect(spots.filter((id) => blocked.includes(id))).toHaveLength(CAT_IDS.length - openCount);
+  });
+
+  it("쉬는 자리가 전부 막혀도 모두 자리가 있다", () => {
+    expect(new Set(Object.values(assignSpots(REST, {}, fixed(0), REST_IDS))).size).toBe(CAT_IDS.length);
+  });
+
+  it("가끔 옮길 때 막힌 자리로는 가지 않는다", () => {
+    const spots = assignSpots(REST_ALL);
+    const poses = Object.fromEntries(CAT_IDS.map((cat) => [cat, SPOTS[spots[cat]].poses[0]])) as Parameters<typeof pickRoam>[2];
+    const occupied = new Set(Object.values(spots));
+    const free = REST_IDS.filter((id) => !occupied.has(id));
+    expect(free.length).toBeGreaterThan(0);
+    for (let i = 0; i < 80; i++) {
+      const roam = pickRoam(REST_ALL, spots, poses, () => (i + 0.5) / 80, null, [], [free[0]]);
+      if (roam?.kind === "move") expect(roam.to).not.toBe(free[0]);
+    }
+    // 빈 자리가 모두 막혔으면 자리를 옮기지 않는다 (동작 바꾸기만)
+    for (let i = 0; i < 40; i++) {
+      expect(pickRoam(REST_ALL, spots, poses, () => (i + 0.5) / 40, null, [], free)?.kind).not.toBe("move");
+    }
+  });
+});

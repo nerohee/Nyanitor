@@ -1,12 +1,16 @@
 // 실제 메인 화면(고양이 집) 시험 — 가짜 데이터 기본 · 사용량 못 받음(이유별) · 에이전트 깨짐 · 하네스 없음 ·
-// 읽는 중 · 다시 읽기 · 패널 키보드 흐름 · 시간대 바뀜(가짜 시계) · 움직임 끔 · 창 숨김 · 실패 · 언마운트.
+// 읽는 중 · 다시 읽기 · 패널 키보드 흐름 · 시간대 바뀜(가짜 시계) · 움직임 끔 · 창 숨김 · 실패 · 언마운트 ·
+// 아래 판(최근 프로젝트 · 새 프로젝트 단추 · 없음 · 읽는 중 · 못 읽음 · 읽기 전용) · 왼쪽 메뉴.
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TAB_ORDER } from "../components/house/schedule";
 import { fakeHouse } from "../lib/fakeHouse";
+import { fakeProjects } from "../lib/fakeProjects";
 import { ipc } from "../lib/ipc";
-import type { AgentsList, UsageResult, UsageUnavailableReason } from "../lib/ipc-types";
+import { AppError, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
 import Home from "./Home";
+
+const NAV = { onGo: () => undefined, onOpenProject: () => undefined, onNewProject: () => undefined };
 
 const OK_USAGE: UsageResult = {
   state: "ok",
@@ -19,12 +23,14 @@ const OK_USAGE: UsageResult = {
 
 beforeEach(() => {
   fakeHouse.reset();
+  fakeProjects.reset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   fakeHouse.reset();
+  fakeProjects.reset();
   window.history.replaceState({}, "", "/");
   delete document.documentElement.dataset.motion;
   delete document.documentElement.dataset.hidden;
@@ -45,9 +51,75 @@ async function loaded() {
   await vi.waitFor(() => expect(catButtons()).toHaveLength(7));
 }
 
+describe("고양이 집 — 아래 판 (프로젝트)", () => {
+  function slab() {
+    return screen.getByRole("region", { name: /최근 프로젝트|아직 프로젝트가 없어요|프로젝트/ });
+  }
+
+  it("최근 프로젝트 세 개를 눌러 열 수 있고 새 프로젝트 단추는 작업 공간으로 보낸다", async () => {
+    const onOpenProject = vi.fn();
+    const onNewProject = vi.fn();
+    const onGo = vi.fn();
+    // 가짜 목록의 시각(fakeProjects.ts 의 NOW)에 맞춘 가짜 시계
+    const clock = () => new Date(1_800_000_000 * 1000);
+    render(<Home onGo={onGo} onOpenProject={onOpenProject} onNewProject={onNewProject} clock={clock} />);
+
+    await screen.findByText("고양이 앨범");
+    const items = within(slab()).getAllByRole("button");
+    // 가짜 목록은 최근 연 순 — 고양이 앨범 · 레시피 상자 · 쇼핑몰 관리자 (폴더가 없어진 것은 시간 대신 안내)
+    expect(items.map((b) => b.textContent)).toEqual(["고양이 앨범1시간 전", "레시피 상자1일 전", "쇼핑몰 관리자폴더를 찾을 수 없어요"]);
+    expect(screen.queryByText("빵집 예약")).not.toBeInTheDocument();
+
+    fireEvent.click(items[1]);
+    expect(onOpenProject).toHaveBeenCalledWith(2);
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 시작" }));
+    expect(onNewProject).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    expect(onGo).toHaveBeenCalledWith("workspace");
+    // 지금 있는 곳(집)을 다시 눌러도 아무 일 없다
+    fireEvent.click(screen.getByRole("button", { name: "집" }));
+    expect(onGo).toHaveBeenCalledTimes(1);
+  });
+
+  it("프로젝트가 없으면 안내 한 줄과 새 프로젝트 단추", async () => {
+    fakeProjects.reset({ projects: "none" });
+    render(<Home {...NAV} />);
+    expect(await screen.findByRole("heading", { name: "아직 프로젝트가 없어요" })).toBeInTheDocument();
+    expect(screen.getByText(/새 프로젝트를 시작하면/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeEnabled();
+  });
+
+  it("읽는 중에는 한 줄, 새 프로젝트 단추는 아직 꺼져 있다", async () => {
+    vi.spyOn(ipc, "projectsList").mockReturnValue(new Promise(() => undefined));
+    render(<Home {...NAV} />);
+    expect(await screen.findByText("프로젝트를 불러오는 중…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeDisabled();
+  });
+
+  it("못 읽으면 이유 한 줄과 다시 읽기 — 다시 읽으면 목록이 나온다", async () => {
+    const spy = vi.spyOn(ipc, "projectsList").mockRejectedValueOnce(new AppError("db_unavailable", "x"));
+    render(<Home {...NAV} />);
+    expect(await screen.findByText(/프로젝트 목록을 읽지 못했어요/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeDisabled();
+
+    fireEvent.click(within(slab()).getByRole("button", { name: "다시 읽기" }));
+    expect(await screen.findByText("고양이 앨범")).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("DB 가 읽기 전용이면 목록은 보이고 새 프로젝트 단추만 끈다", async () => {
+    fakeProjects.reset({ db: "read_only" });
+    render(<Home {...NAV} />);
+    expect(await screen.findByText("고양이 앨범", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/읽기만 할 수 있어요/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeDisabled();
+  });
+});
+
 describe("고양이 집 — 가짜 데이터 기본", () => {
-  it("고양이 7마리가 Tab 순서대로 있고, 사용량 · 준비 상태 · 빈 프로젝트 판이 보인다", async () => {
-    render(<Home />);
+  it("고양이 7마리가 Tab 순서대로 있고, 사용량 · 준비 상태 · 최근 프로젝트 판이 보인다", async () => {
+    render(<Home {...NAV} />);
     await loaded();
 
     expect(catButtons().map(catName)).toEqual(TAB_ORDER.map((cat) => ({ danchu: "단추", kkaebi: "깨비", nabi: "나비", mulgam: "물감", mukmul: "먹물", dubu: "두부", gureum: "구름" })[cat]));
@@ -61,16 +133,18 @@ describe("고양이 집 — 가짜 데이터 기본", () => {
     expect(screen.getByText("준비 완료 4/4")).toBeInTheDocument();
     expect(screen.getByText(/방금 읽음/)).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { name: "아직 프로젝트가 없어요" })).toBeInTheDocument();
-    // 이번엔 메뉴 · 새 프로젝트 단추 · 모델별 한도 · 세션 츄르 개수 줄(P6)이 없다
-    expect(screen.queryByRole("navigation", { name: /메뉴|탐색/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /새 프로젝트/ })).not.toBeInTheDocument();
+    // 아래 판 — 새 프로젝트 단추 + 최근 프로젝트 (가짜 목록의 앞 세 개)
+    expect(await screen.findByRole("heading", { name: "최근 프로젝트" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeEnabled();
+    const nav = screen.getByRole("navigation", { name: "탐색" });
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["집", "작업 공간"]);
+    // 모델별 한도 · 세션 츄르 개수 줄은 아직 없다 (P6-06)
     expect(screen.queryByText(/세션 츄르/)).not.toBeInTheDocument();
   });
 
   it("사용률이 100% 를 넘으면 글자는 그대로, 막대 값은 100 에서 멈춘다 (모델별 한도 scoped 는 안 보인다)", async () => {
     vi.spyOn(ipc, "usageRead").mockResolvedValue(OK_USAGE);
-    render(<Home />);
+    render(<Home {...NAV} />);
     await screen.findByRole("meter", { name: "주간 츄르" });
     expect(screen.getByText("105% 먹음")).toBeInTheDocument();
     expect(screen.getByRole("meter", { name: "주간 츄르" })).toHaveAttribute("aria-valuenow", "100");
@@ -79,13 +153,13 @@ describe("고양이 집 — 가짜 데이터 기본", () => {
 
   it("한도 창이 하나뿐이면 있는 것만 보이고, 둘 다 없으면 '확인할 수 없음'", async () => {
     const spy = vi.spyOn(ipc, "usageRead").mockResolvedValue({ ...OK_USAGE, sevenDay: null });
-    const { unmount } = render(<Home />);
+    const { unmount } = render(<Home {...NAV} />);
     await screen.findByRole("meter", { name: "5시간 츄르" });
     expect(screen.queryByRole("meter", { name: "주간 츄르" })).not.toBeInTheDocument();
     unmount();
 
     spy.mockResolvedValue({ ...OK_USAGE, fiveHour: null, sevenDay: null });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("확인할 수 없음")).toBeInTheDocument();
     expect(screen.getByText("받은 츄르 정보가 비어 있어요.")).toBeInTheDocument();
     expect(screen.queryByRole("meter")).not.toBeInTheDocument();
@@ -105,7 +179,7 @@ describe("고양이 집 — 사용량을 못 받을 때", () => {
   for (const [reason, text] of Object.entries(REASONS)) {
     it(`${reason} — '확인할 수 없음' 과 이유 한 줄, 고양이 · 준비 상태는 그대로`, async () => {
       fakeHouse.reset({ usage: reason as UsageUnavailableReason });
-      render(<Home />);
+      render(<Home {...NAV} />);
       expect(await screen.findByText("확인할 수 없음")).toBeInTheDocument();
       expect(screen.getByText(text)).toBeInTheDocument();
       expect(screen.getByText("앱 기능에는 영향이 없어요.")).toBeInTheDocument();
@@ -118,7 +192,7 @@ describe("고양이 집 — 사용량을 못 받을 때", () => {
 
   it("사용량 명령이 오류를 내도(앱 오류) 화면은 '읽지 못함' 으로 — 깨지지 않는다", async () => {
     vi.spyOn(ipc, "usageRead").mockRejectedValue(new Error("boom"));
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("사용량을 읽지 못했어요.")).toBeInTheDocument();
     await vi.waitFor(() => expect(catButtons()).toHaveLength(7));
   });
@@ -128,7 +202,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
   it("처음 읽는 중에는 막대 자리를 그대로 두고 '읽는 중…', 다시 읽기는 못 누른다", async () => {
     let finish: (value: UsageResult) => void = () => undefined;
     vi.spyOn(ipc, "usageRead").mockImplementation(() => new Promise((resolve) => (finish = resolve)));
-    render(<Home />);
+    render(<Home {...NAV} />);
 
     expect(screen.getByText("읽는 중…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "다시 읽기" })).toBeDisabled();
@@ -146,7 +220,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
     const second: UsageResult = { ...OK_USAGE, fiveHour: { utilization: 0.77, resetsAt: null, severity: null } };
     const resolvers: ((value: UsageResult) => void)[] = [];
     const read = vi.spyOn(ipc, "usageRead").mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => resolvers[0](first));
     expect(screen.getByText("10% 먹음")).toBeInTheDocument();
 
@@ -174,7 +248,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
   for (const [name, fail] of transient) {
     it(`받은 뒤 잠깐 못 받으면(${name}) 마지막 숫자를 남기고 '갱신 실패 · n분 전 기준', 다시 받으면 새 값`, async () => {
       const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
-      render(<Home />);
+      render(<Home {...NAV} />);
       expect(await screen.findByText("10분 전 읽음")).toBeInTheDocument();
 
       read.mockImplementation(fail);
@@ -192,7 +266,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
 
   it("받은 뒤 이유가 분명하면(로그인 풀림) 숫자를 지우고 이유를 보인다", async () => {
     const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
-    render(<Home />);
+    render(<Home {...NAV} />);
     await screen.findByText("10분 전 읽음");
 
     read.mockResolvedValue({ state: "unavailable", reason: "not_logged_in" });
@@ -204,7 +278,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
 
   it("못 받은 뒤 다시 읽어서 받으면 막대가 나온다", async () => {
     fakeHouse.reset({ usage: "timeout" });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("확인할 수 없음")).toBeInTheDocument();
     fakeHouse.reset({ usage: "ok" });
     fireEvent.click(screen.getByRole("button", { name: "다시 읽기" }));
@@ -215,7 +289,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
   it("화면이 다시 보일 때 5분이 지났으면 다시 읽고, 안 지났으면 읽지 않는다", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(OK_USAGE);
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => undefined);
     expect(read).toHaveBeenCalledTimes(1);
 
@@ -232,7 +306,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
   it("창이 숨어 있는 동안에는 다시 읽지 않는다", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(OK_USAGE);
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => undefined);
     vi.setSystemTime(Date.now() + 10 * 60_000);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
@@ -246,7 +320,7 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
 describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
   it("하네스 없음 — 먹물만 집에 있고 카드에 안내 한 줄, 준비 상태에는 하네스가 빠졌다고", async () => {
     fakeHouse.reset({ agents: "no_harness" });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("하네스를 설치하면 고양이들이 와요")).toBeInTheDocument();
     await screen.findByRole("meter", { name: "5시간 츄르" });
     expect(catButtons().map(catName)).toEqual(["먹물"]);
@@ -262,7 +336,7 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
 
   it("설정이 깨졌다(역할을 모름) — 먹물만, 안내 한 줄", async () => {
     fakeHouse.reset({ agents: "broken" });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("하네스 설정을 읽지 못해 먹물만 있어요")).toBeInTheDocument();
     expect(catButtons().map(catName)).toEqual(["먹물"]);
   });
@@ -281,7 +355,7 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
       ],
     };
     vi.spyOn(ipc, "agentsList").mockResolvedValue(list);
-    render(<Home />);
+    render(<Home {...NAV} />);
     await vi.waitFor(() => expect(catButtons().map(catName).sort()).toEqual(["구름", "깨비", "먹물"]));
 
     fireEvent.click(screen.getByRole("button", { name: /^깨비,/ }));
@@ -301,14 +375,14 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
 
   it("목록 명령이 오류를 내도 먹물은 집에 있고 안내 한 줄 — 앱이 죽지 않는다", async () => {
     vi.spyOn(ipc, "agentsList").mockRejectedValue(new Error("boom"));
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("에이전트 목록을 읽지 못했어요")).toBeInTheDocument();
     expect(catButtons().map(catName)).toEqual(["먹물"]);
   });
 
   it("설정 폴더 위치를 정할 수 없으면 그렇다고 알린다", async () => {
     vi.spyOn(ipc, "agentsList").mockResolvedValue({ state: "location_unusable", config: "none", agents: [], missingRoles: [] });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("Claude 설정 폴더를 찾지 못했어요")).toBeInTheDocument();
   });
 
@@ -316,7 +390,7 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
     vi.spyOn(ipc, "claudeDiscover").mockRejectedValue(new Error("boom"));
     vi.spyOn(ipc, "harnessStatus").mockRejectedValue(new Error("boom"));
     fakeHouse.reset({ agents: "no_harness" });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("준비 상태를 확인하지 못했어요.")).toBeInTheDocument();
     expect(screen.getByText("준비 중 0/4")).toBeInTheDocument();
     await screen.findByRole("meter", { name: "5시간 츄르" });
@@ -336,7 +410,7 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
       otherBilling: [],
       problem: null,
     });
-    render(<Home />);
+    render(<Home {...NAV} />);
     expect(await screen.findByText("준비 중 2/4")).toBeInTheDocument();
     expect(screen.getByText("필요한 것: Claude Code · 로그인")).toBeInTheDocument();
   });
@@ -344,7 +418,7 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
 
 describe("고양이 집 — 정보 패널 키보드 흐름", () => {
   it("Enter(클릭) 로 열면 제목으로 포커스, 실제 필드가 나오고, Esc 로 닫으면 그 고양이로 포커스가 돌아온다", async () => {
-    render(<Home />);
+    render(<Home {...NAV} />);
     await loaded();
 
     const nabi = screen.getByRole("button", { name: /^나비,/ });
@@ -376,7 +450,7 @@ describe("고양이 집 — 정보 패널 키보드 흐름", () => {
   });
 
   it("닫기 단추로 닫아도 그 고양이로 포커스가 돌아온다", async () => {
-    render(<Home />);
+    render(<Home {...NAV} />);
     await loaded();
     const mukmul = screen.getByRole("button", { name: /^먹물,/ });
     fireEvent.click(mukmul);
@@ -402,7 +476,7 @@ describe("고양이 집 — 정보 패널 키보드 흐름", () => {
       ],
     };
     vi.spyOn(ipc, "agentsList").mockResolvedValue(list);
-    render(<Home />);
+    render(<Home {...NAV} />);
     await vi.waitFor(() => expect(catButtons()).toHaveLength(3));
 
     fireEvent.click(screen.getByRole("button", { name: /^물감,/ }));
@@ -424,7 +498,7 @@ describe("고양이 집 — 정보 패널 키보드 흐름", () => {
   });
 
   it("고양이를 다시 누르면 패널이 닫힌다", async () => {
-    render(<Home />);
+    render(<Home {...NAV} />);
     await loaded();
     const gureum = screen.getByRole("button", { name: /^구름,/ });
     fireEvent.click(gureum);
@@ -439,7 +513,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
     vi.useFakeTimers();
     let hour = 9;
     const clock = () => new Date(2026, 9, 28, hour, 30);
-    render(<Home clock={clock} />);
+    render(<Home {...NAV} clock={clock} />);
     await act(async () => undefined);
     expect(screen.getByTestId("home")).toHaveAttribute("data-time", "morning");
     expect(screen.getByRole("region", { name: "고양이들" })).toHaveAttribute("data-time", "morning");
@@ -462,7 +536,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "Date"] });
     vi.setSystemTime(new Date(2026, 9, 28, 13, 0));
     vi.spyOn(ipc, "usageRead").mockResolvedValue({ ...OK_USAGE, readAt: Math.floor(Date.now() / 1000) });
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => undefined);
     expect(screen.getByText("방금 읽음")).toBeInTheDocument();
     await act(async () => {
@@ -474,7 +548,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
   it("움직임 끔이면 걷지도 사라지지도 않는다", async () => {
     document.documentElement.dataset.motion = "reduced";
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => undefined);
     for (let i = 0; i < 6; i++) {
       await act(async () => {
@@ -489,7 +563,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
 
   it("창이 숨으면 :root 에 data-hidden 이 붙고 고양이가 자리를 바꾸지 않는다", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
-    render(<Home />);
+    render(<Home {...NAV} />);
     await act(async () => undefined);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     act(() => {
@@ -505,7 +579,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
   });
 
   it("고양이는 쉬는 자리에만 있다 — 캣휠 · 캣타워 · 댓돌(일 · 기다림 자리)은 비어 있다", async () => {
-    render(<Home />);
+    render(<Home {...NAV} />);
     await loaded();
     const spots = [...document.querySelectorAll(".hs-cat")].map((cat) => cat.getAttribute("data-spot"));
     expect(spots).toHaveLength(7);
@@ -515,7 +589,7 @@ describe("고양이 집 — 시간대 · 움직임", () => {
 
 describe("고양이 집 — 개발 빌드 시험 화면 링크 · 정리", () => {
   it("개발 빌드에서는 구석에 시험 화면 링크가 있다", async () => {
-    render(<Home />);
+    render(<Home {...NAV} />);
     const nav = screen.getByRole("navigation", { name: "개발 빌드 전용 화면" });
     expect(within(nav).getByRole("link", { name: /Claude 연결 시험 화면/ })).toHaveAttribute("href", "?lab=session");
     expect(within(nav).getByRole("link", { name: /하네스 설치 점검/ })).toHaveAttribute("href", "?lab=harness");
@@ -528,7 +602,7 @@ describe("고양이 집 — 개발 빌드 시험 화면 링크 · 정리", () =>
     const slow = <T,>(value: T) => new Promise<T>((resolve) => resolvers.push(() => resolve(value)));
     vi.spyOn(ipc, "agentsList").mockImplementation(() => slow({ state: "no_harness", config: "none", agents: [], missingRoles: [] } as AgentsList));
     vi.spyOn(ipc, "usageRead").mockImplementation(() => slow(OK_USAGE));
-    const { unmount } = render(<Home />);
+    const { unmount } = render(<Home {...NAV} />);
     unmount();
     await act(async () => {
       resolvers.forEach((resolve) => resolve());

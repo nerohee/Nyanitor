@@ -1,0 +1,79 @@
+/*
+ * 왼쪽 메뉴 — ③ 스티커 수첩 (D-43): 수첩 스프링 + 색 인덱스 스티커.
+ * 시제품(`variants/a/house.css` 의 `.ha-nav` + `skins/skin-3.css`)에서 옮겨 왔고, 값은 모두 tokens.css 의 토큰이다.
+ * 폭 92px 은 시제품 ③ 의 메뉴 폭 그대로 (tokens.css 의 --nav-w 56px 는 스킨 없는 기본 폭). 두 화면의 뿌리가 이 폭으로 칸을 나눈다.
+ */
+.an {
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: var(--ui-line-w) solid var(--ui-line);
+  background:
+    radial-gradient(circle at 82px 14px, var(--ui-line) 0 4px, transparent 4.5px) 0 0 / 100% 28px repeat-y,
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
+    var(--color-bg);
+}
+.an ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4) 14px var(--space-4) var(--space-2);
+  list-style: none;
+}
+.an li:nth-child(1) {
+  --tab: var(--ui-4);
+}
+.an li:nth-child(2) {
+  --tab: var(--ui-1);
+}
+.an button {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) 0 6px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 10px 7px 9px 6px / 7px 10px 6px 9px;
+  background: var(--tab);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-xs);
+  box-shadow: 2px 2px 0 var(--ui-line);
+  cursor: default;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.an li:nth-child(odd) button {
+  transform: rotate(-2deg);
+}
+.an li:nth-child(even) button {
+  transform: rotate(1.5deg);
+}
+.an button:hover {
+  transform: rotate(0deg) translateY(-1px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.an [aria-current="page"] {
+  box-shadow:
+    0 0 0 4px var(--sticker-edge),
+    3px 4px 0 4px var(--ui-line);
+}
+.an [aria-current="page"] span {
+  text-decoration: underline wavy var(--ui-line) 1.5px;
+  text-underline-offset: 3px;
+}
+.an :focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .an button {
+    transition: none;
+  }
+}

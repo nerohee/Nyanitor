@@ -22,14 +22,16 @@ body:has(.home) {
   --wobble: 14px 9px 13px 8px / 9px 14px 8px 13px;
   --wobble-sm: 10px 7px 9px 6px / 7px 10px 6px 9px;
   --tape-clip: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 88% 0, 92% 10%, 96% 0, 100% 8%, 100% 92%, 96% 100%, 92% 90%, 88% 100%, 12% 100%, 8% 90%, 4% 100%, 0 92%);
-  /* 아래 판(slab)의 높이 — 시제품과 같다. P6 에서 내용만 바뀐다 */
+  /* 아래 판(slab)의 높이 — 시제품과 같다 */
   --slab-h: 132px;
+  /* 왼쪽 메뉴 폭 — 시제품 ③ 과 같다 (src/components/nav/nav.css) */
+  --nav-w: 92px;
   /* 왼쪽 위 카드의 바깥 폭 — 시제품(.ha-status: 내용 248 + 안쪽 여백 + 선)과 같게 */
   --status-w: calc(248px + var(--space-4) * 2 + var(--ui-line-w) * 2);
+  display: grid;
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
   height: 100vh;
-  /* 창이 아주 작거나 배율이 크면 세로로만 스크롤 — 카드끼리 겹치지 않게 (가로 스크롤은 없다) */
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
@@ -39,6 +41,13 @@ body:has(.home) {
   word-break: keep-all;
   overflow-wrap: anywhere;
   font-synthesis: none; /* Jua 는 굵기가 하나 — 가짜 굵게를 막는다 */
+}
+/* 메뉴 옆 화면 — 창이 아주 작거나 배율이 크면 세로로만 스크롤 — 카드끼리 겹치지 않게 (가로 스크롤은 없다) */
+.hm-view {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .home :focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring);
@@ -385,7 +394,7 @@ body:has(.home) {
   font-size: var(--text-xs);
 }
 
-/* ── 아래 판(slab): 프로젝트 자리 — 지금은 빈 상태 ── */
+/* ── 아래 판(slab): 새 프로젝트 단추 + 최근 프로젝트 ── */
 .hm-slab {
   position: relative;
   z-index: 1;
@@ -408,7 +417,7 @@ body:has(.home) {
     height: auto;
   }
 }
-/* 빈 상태 카드는 글만큼만 — 판을 가로지르는 긴 띠 대신 왼쪽 잔디 위 쪽지 (P6 에서 새 프로젝트 단추 + 목록으로 바뀐다) */
+/* 빈 상태 카드는 글만큼만 — 판을 가로지르는 긴 띠 대신 잔디 위 쪽지. 프로젝트가 있으면 남는 폭을 다 쓴다 */
 .hm-slab__card {
   flex: 0 1 auto;
   min-width: 0;
@@ -421,6 +430,10 @@ body:has(.home) {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px,
     var(--color-surface);
 }
+.hm-slab__card[data-wide] {
+  flex: 1 1 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
 .hm-slab__title {
   margin: 0;
   font-family: var(--font-round);
@@ -432,6 +445,106 @@ body:has(.home) {
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+/* 노란 스티커 단추 — 시제품 ③ 의 .ha-new */
+.hm-new {
+  flex: none;
+  height: 62px;
+  padding: 0 var(--space-6);
+  border-radius: var(--wobble);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 20px;
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    5px 6px 0 5px var(--ui-line);
+  transform: rotate(-1.5deg);
+}
+.hm-new:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: rotate(-1.5deg) translate(-1px, -1px);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    6px 7px 0 5px var(--ui-line);
+}
+.hm-new:active:not(:disabled) {
+  transform: rotate(-1.5deg) translate(3px, 3px);
+  box-shadow:
+    0 0 0 5px var(--sticker-edge),
+    2px 3px 0 5px var(--ui-line);
+}
+.hm-new:disabled {
+  background: var(--color-surface-sunken);
+  box-shadow: 0 0 0 5px var(--sticker-edge);
+}
+.hm-new .icon {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 2px;
+  border: var(--ui-line-w) solid currentColor;
+  border-radius: 50%;
+}
+/* 최근 프로젝트 — 점선 쪽지 몇 장 */
+.hm-recent {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hm-recent li {
+  flex: 1;
+  min-width: 0;
+}
+.hm-recent__item {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  height: 58px;
+  padding: var(--space-1) var(--space-3);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.hm-recent li:nth-child(odd) .hm-recent__item {
+  transform: rotate(-0.6deg);
+}
+.hm-recent li:nth-child(even) .hm-recent__item {
+  transform: rotate(0.6deg);
+}
+.hm-recent__item:hover {
+  border: var(--ui-line-w) solid var(--ui-line);
+  background: var(--color-surface-raised);
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.hm-recent__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+}
+.hm-recent__when {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.hm-recent__when[data-missing="true"] {
+  color: var(--color-warning);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hm-recent__item {
+    transition: none;
+  }
 }
 
 /* ── 고양이 정보 패널 ── */

@@ -1,6 +1,6 @@
 // 브라우저(`npm run dev`)에서 시험 화면이 돌도록 하는 가짜 Claude 세션. Tauri 밖에서만 `ipc.ts` 가 쓴다.
 // 진짜 세션 관리자(`src-tauri/src/claude/`)와 같은 명령 · 이벤트 모양을 흉내 내고 몇 가지 정해진 대본만 돈다:
-//  · 보낸 말에 "쓰기" 가 있으면 파일 쓰기 권한 요청 · "질문" 이 있으면 질문 카드 · 그 밖에는 명령 권한 요청
+//  · 보낸 말에 "쓰기" 가 있으면 파일 쓰기 권한 요청 · "질문" 이 있으면 질문 카드 · "승인" 이 있으면 단계 승인 질문(하네스 약속 §7-2 의 글 모양) · 그 밖에는 명령 권한 요청
 //  · 허용 / 항상 허용 / 거부 / 다르게 말하기 / 질문 답 / 중단 / 끝내기 / 이어 하기
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
@@ -135,6 +135,7 @@ export function createFakeClaude() {
       emit({ type: "turn_started", sessionId: session.sessionId, model: "fake-haiku", cliVersion: "2.1.296", permissionMode: "default", apiKeySource: "none" });
       emit({ type: "text", text: t("lab.fake.greeting") });
       if (text.includes("질문")) askQuestion();
+      else if (text.includes("승인")) askApproval();
       else if (text.includes("쓰기")) askPermission("Write");
       else askPermission("Bash");
     });
@@ -198,6 +199,28 @@ export function createFakeClaude() {
             { label: t("lab.fake.q2.o1"), description: null, preview: null },
             { label: t("lab.fake.q2.o2"), description: null, preview: null },
             { label: t("lab.fake.q2.o3"), description: null, preview: null },
+          ],
+        },
+      ],
+    };
+    pending.set(requestId, { info });
+    emit({ type: "question_request", ...info });
+  }
+
+  /** 단계 승인 질문 — 질문 글이 하네스 약속 §7-2 의 모양이다 (앱이 네 칸으로 읽어 승인 카드로 보인다) */
+  function askApproval() {
+    const requestId = nextId("fake-appr");
+    const info: QuestionRequestInfo = {
+      requestId,
+      toolUseId: nextId("toolu"),
+      questions: [
+        {
+          question: t("lab.fake.approval.question"),
+          header: t("lab.fake.approval.header"),
+          multiSelect: false,
+          options: [
+            { label: t("lab.fake.approval.o1"), description: t("lab.fake.approval.d1"), preview: null },
+            { label: t("lab.fake.approval.o2"), description: t("lab.fake.approval.d2"), preview: null },
           ],
         },
       ],

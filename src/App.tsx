@@ -1,6 +1,7 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { NavPlace } from "./components/nav/AppNav";
 import Home from "./home/Home";
+import { startSessionStore } from "./workspace/chat/sessionStore";
 import { wantsHarnessLab, wantsSessionLab } from "./lab/query";
 import { wantsVariantFrame } from "./variants/query";
 
@@ -29,6 +30,10 @@ interface View {
 function App() {
   const search = window.location.search;
   const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false });
+  // 세션 이벤트는 앱이 켜질 때 한 번만 듣는다 — 고양이 집 · 작업 공간을 오가도 끊기지 않고 대화 · 기다리는 카드가 쌓인다
+  useEffect(() => {
+    void startSessionStore();
+  }, []);
   if (SessionLab && wantsSessionLab(search)) {
     return (
       <Suspense fallback={null}>

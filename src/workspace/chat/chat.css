@@ -1,0 +1,1100 @@
+/*
+ * 작업 공간의 채팅 판 (P6-05) — 시안 a · ③ 스티커 수첩(D-43). 시제품(`variants/shared/workspace.css` · `workspace-detail.css` · `skins/skin-3.css`)의
+ * 채팅 · 카드 · 입력줄 모양을 이 화면에 맞게 옮겨 왔고, 값은 모두 tokens.css 의 토큰이다. 단추 · 입력칸은 workspace.css 의 `ws-btn` 을 쓴다.
+ * 접두사 `wc-` = workspace chat.
+ */
+.wc {
+  /* 알림 띠 — workspace.css 가 정하지 않은 위험 띠 (tokens.css 의 [data-variant] 절과 같은 식) */
+  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  /* 창이 아주 낮으면(최소 창 · 200% 배율) 목록이 사라지지 않게 판 전체가 스크롤된다 */
+  overflow-y: auto;
+}
+
+/* ── 머리 ── */
+.wc-head {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--ui-line-w) dashed var(--ui-line);
+  font-size: var(--text-sm);
+}
+.wc-head__avatar {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+.wc-head__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  font-weight: var(--weight-semibold);
+}
+.wc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+}
+.wc-head[data-state="working"] .wc-dot {
+  background: var(--color-success);
+}
+.wc-head[data-state="waiting"] .wc-dot {
+  background: var(--accent);
+}
+.wc-head[data-state="waiting"] .wc-head__pill {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.wc-head[data-state="stopped"] .wc-dot {
+  background: var(--color-danger);
+}
+.wc-head[data-state="stopped"] .wc-head__pill {
+  background: var(--banner-danger-bg);
+}
+/* 오른쪽 묶음 — 좁아서 줄이 바뀌어도 오른쪽에 모여 있다 */
+.wc-head__tools {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.wc-head__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.wc-head__chip--mono {
+  font-family: var(--font-mono);
+}
+.wc-head__ref {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+.wc-actionerr {
+  margin: var(--space-2) var(--space-3) 0;
+}
+
+/* ── 목록 ── */
+.wc-logwrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 160px;
+}
+.wc-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 160px;
+  padding: var(--space-3);
+  overflow: auto;
+}
+.wc-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.wc-older {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+.wc-unread {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.wc-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.wc-state p {
+  margin: 0;
+}
+.wc-state > .icon {
+  color: var(--color-warning);
+}
+.wc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin: auto;
+  max-width: 420px;
+  padding: var(--space-5);
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  text-align: center;
+}
+.wc-empty__title {
+  margin: 0;
+  font-family: var(--font-round);
+  font-size: var(--text-lg);
+}
+.wc-empty__body {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+}
+/* 단추 글이 길어도 잘리지 않게 (스킬 이름 + requirements.md) */
+.wc-empty .ws-btn,
+.wc-block .ws-btn {
+  height: auto;
+  min-height: var(--field-h);
+  white-space: normal;
+}
+
+/* 말풍선 */
+.wc-msg {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 92%;
+  min-width: 0;
+}
+.wc-msg--user {
+  align-self: flex-end;
+}
+.wc-msg__avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+}
+.wc-msg__bubble {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px solid var(--ui-line);
+  border-radius: 14px 12px 14px 3px / 12px 14px 12px 3px;
+  background: var(--color-surface);
+}
+.wc-msg--user .wc-msg__bubble {
+  border-radius: 12px 14px 3px 14px / 14px 12px 3px 12px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.wc-msg__who {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-msg__tag {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-weight: var(--weight-regular);
+}
+.wc-msg__text {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+.wc-msg__cut {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-msg .ws-md {
+  margin-top: 2px;
+}
+
+/* 도구 사용 · 실패 한 줄 */
+.wc-tool,
+.wc-toolerr {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-tool b {
+  flex: none;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+}
+.wc-tool__summary {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wc-toolerr {
+  color: var(--color-danger);
+}
+.wc-toolerr .icon {
+  flex: none;
+}
+.wc-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.wc-tools__toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: default;
+}
+.wc-tools__toggle .icon {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.wc-tools__toggle[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+
+/* 알림 줄 */
+.wc-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+  font-size: var(--text-sm);
+}
+.wc-note[data-tone="error"] {
+  background: var(--banner-danger-bg);
+}
+.wc-note[data-tone="limit"],
+.wc-note[data-tone="warn"] {
+  background: var(--banner-warn-bg);
+}
+.wc-note[data-tone="info"] {
+  background: var(--banner-info-bg);
+}
+.wc-note__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+.wc-note[data-tone="error"] .wc-note__icon {
+  color: var(--color-danger);
+}
+.wc-note[data-tone="limit"] .wc-note__icon,
+.wc-note[data-tone="warn"] .wc-note__icon {
+  color: var(--color-warning);
+}
+.wc-note__body {
+  flex: 1;
+  min-width: 0;
+}
+.wc-note__title {
+  margin: 2px 0 0;
+  font-weight: var(--weight-semibold);
+}
+.wc-note__text {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── 카드 ── */
+.wc-card {
+  container-type: inline-size;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  box-shadow: 3px 3px 0 var(--ui-line);
+  font-size: var(--text-sm);
+}
+.wc-card:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* 기다리는 카드 — 굵은 둘레 띠 (색만이 아니라 "답을 기다려요" 글자도) */
+.wc-card[data-pending="true"] {
+  box-shadow:
+    0 0 0 4px var(--accent),
+    4px 5px 0 4px var(--ui-line);
+}
+/* 지나감 · 취소됨 — 흐리게 (글자 대비는 지키고 테두리 · 그림자만 조용히) */
+.wc-card[data-status="expired"],
+.wc-card[data-status="cancelled"] {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-sunken);
+  box-shadow: none;
+  color: var(--color-text-muted);
+}
+.wc-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1.5px dashed var(--ui-line);
+}
+.wc-card__icon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+.wc-card[data-pending="true"] .wc-card__icon {
+  color: var(--accent-strong);
+}
+.wc-card__kind {
+  font-weight: var(--weight-bold);
+}
+.wc-card__state {
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-card__state[data-status="pending"] {
+  border: 1.5px solid var(--ui-line);
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+  font-weight: var(--weight-semibold);
+}
+.wc-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.wc-card__title {
+  margin: 0;
+  font-size: var(--text-md);
+}
+.wc-card__text {
+  margin: 0;
+}
+.wc-card__code {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.wc-card__code code,
+.wc-q__preview pre,
+.wc-perm__input pre {
+  font: inherit;
+}
+.wc-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.wc-card__hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-card__result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--color-success);
+  font-weight: var(--weight-semibold);
+}
+.wc-card__result[data-result="deny"] {
+  color: var(--color-danger);
+}
+.wc-card__result code,
+.wc-perm__always code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+}
+.wc-card__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+.wc-card__error .icon {
+  flex: none;
+  margin-top: 2px;
+}
+.wc-card__gone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.wc-card__asked {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+/* 질문 */
+.wc-q {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.wc-q + .wc-q {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border-strong);
+}
+.wc-q__prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-weight: var(--weight-semibold);
+}
+.wc-q__header {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-q__text {
+  font-size: var(--text-md);
+}
+.wc-q__multi {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+}
+.wc-q__grid {
+  display: grid;
+  gap: var(--space-2);
+}
+.wc-q__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+/* 미리보기 있는 질문: 넓으면 선택지 | 미리보기, 좁으면 위아래 */
+@container (min-width: 520px) {
+  .wc-q[data-preview="true"] .wc-q__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+.wc-q__preview {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+}
+.wc-q__preview figcaption {
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-q__preview pre {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+/*
+ * 선택지 표시 (D-43) — 동그라미 · 네모 없이. 진짜 radio · checkbox 는 선택지 전체를 덮는 투명 층으로 남긴다
+ * (역할 · 방향키 · Space · Enter 그대로, 누르는 곳은 칸 전체). 고른 것은 색만이 아니라 선(안쪽 한 줄 더) · 모양(✓)으로.
+ */
+.wc-opt,
+.wc-opt__inline {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.wc-opt {
+  padding: var(--space-2);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+}
+.wc-opt--write {
+  flex-direction: column;
+  align-items: stretch;
+}
+.wc-opt input:is([type="radio"], [type="checkbox"]) {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: default;
+}
+.wc-opt:has(input:is([type="radio"], [type="checkbox"]):focus-visible) {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.wc-opt:has(input:is([type="radio"], [type="checkbox"]):checked) {
+  border: 1.5px solid var(--ui-line);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-strong);
+  color: var(--accent-soft-text);
+}
+.wc-opt[data-peek="true"]:not(:has(input:checked)) {
+  background: var(--color-surface-sunken);
+}
+.wc-opt__key {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: 17px;
+  text-align: center;
+}
+.wc-opt:has(input:checked) .wc-opt__key {
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: transparent;
+}
+.wc-opt:has(input[type="checkbox"]:checked) .wc-opt__key {
+  border-radius: 5px;
+}
+.wc-opt:has(input:checked) .wc-opt__key::after {
+  content: "";
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  width: 5px;
+  height: 10px;
+  border: solid var(--color-surface);
+  border-width: 0 2.5px 2.5px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.wc-opt__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.wc-opt__label {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.wc-opt__desc {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-opt:has(input:checked) .wc-opt__desc {
+  color: inherit;
+}
+.wc-opt__text-in,
+.wc-tell__in {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 var(--space-2);
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+.wc-opt__text-in {
+  position: relative;
+  z-index: 2;
+  height: var(--control-h-md);
+}
+.wc-opt__text-in:focus-visible,
+.wc-tell__in:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+/* 답한 질문 — 짧게 */
+.wc-q-done {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.wc-q-done > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.wc-q-done dt {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-q-done dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 단계 승인 */
+.wc-appr {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.wc-appr dt {
+  padding-top: 2px;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-appr dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-appr dd[data-missing="true"] {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+@container (max-width: 340px) {
+  .wc-appr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 권한 */
+.wc-perm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.wc-perm__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-perm__tool code {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.wc-perm__kind {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+}
+.wc-perm__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--space-3);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.wc-perm__meta dt {
+  color: var(--color-text-muted);
+}
+.wc-perm__meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-perm__meta code {
+  font-family: var(--font-mono);
+}
+.wc-perm__input summary {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  cursor: default;
+}
+.wc-perm__input pre {
+  max-height: 200px;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.wc-perm__always {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-tell {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.wc-tell__in {
+  flex: 1;
+  min-height: 52px;
+  padding: var(--space-2);
+  font-family: var(--font-sans);
+  resize: vertical;
+}
+
+/* ── 입력줄 ── */
+.wc-composer {
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-2);
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--color-surface);
+  box-shadow: 3px 3px 0 var(--ui-line);
+}
+.wc-composer:focus-within {
+  border-color: var(--focus-ring);
+  box-shadow:
+    0 0 0 var(--focus-ring-w) var(--focus-ring),
+    3px 3px 0 var(--ui-line);
+}
+.wc-composer__input {
+  min-height: 40px;
+  padding: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  resize: none;
+}
+/* 글 칸의 초점은 입력줄 테두리가 보인다 (`.ws :focus-visible` 보다 구체적으로) */
+.ws .wc-composer__input:focus,
+.ws .wc-composer__input:focus-visible {
+  outline: none;
+}
+.wc-composer__input::placeholder {
+  color: var(--color-text-subtle);
+}
+.wc-composer__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.wc-composer__spacer {
+  flex: 1;
+}
+.wc-composer__keys {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 좁은 입력줄에서는 키 안내를 숨긴다 (입력칸 안내 글에도 있음) */
+@container (max-width: 520px) {
+  .wc-composer__keys {
+    display: none;
+  }
+}
+.wc-composer__skill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: default;
+}
+.wc-composer__skill:disabled {
+  color: var(--color-text-subtle);
+}
+.wc-composer__skill code {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.wc-composer__send {
+  height: var(--control-h-md);
+  padding: 0 var(--space-4);
+}
+.wc-queued {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--banner-info-bg);
+  font-size: var(--text-sm);
+}
+.wc-queued__text {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wc-queued q {
+  color: var(--color-text-muted);
+}
+.wc-skill {
+  position: relative;
+}
+.wc-skill__pop {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 5;
+  width: min(360px, 80vw);
+  max-height: 60vh;
+  padding: var(--space-2);
+  overflow: auto;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+.wc-skill__pop:focus-visible {
+  outline: none;
+}
+.wc-skill__title {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-skill__empty {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.wc-skill__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wc-skill__list:focus-visible {
+  outline: none;
+}
+.wc-skill__opt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: default;
+}
+.wc-skill__opt code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.wc-skill__desc {
+  grid-column: 1 / -1;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-skill__mine {
+  justify-self: start;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-skill__opt[data-cursor="true"] {
+  background: var(--row-hover);
+}
+.wc-skill__list:focus-visible .wc-skill__opt[data-cursor="true"] {
+  box-shadow: inset 0 0 0 var(--focus-ring-w) var(--focus-ring);
+}
+.wc-skill__opt[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.wc-skill__opt[aria-selected="true"] .wc-skill__desc {
+  color: inherit;
+}
+.wc-skill__keys {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* 확인 한 번 (중단 · 세션 끝내기 · 다른 세션 끝내고 시작) */
+.wc-stop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: 5;
+  width: min(380px, 100%);
+  padding: var(--space-3);
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+.wc-stop--head {
+  top: calc(100% + var(--space-1));
+  bottom: auto;
+  right: var(--space-3);
+}
+.wc-stop__title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+.wc-stop__body {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.wc-stop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 입력줄 자리를 대신하는 한 칸 — 다른 프로젝트에서 도는 중 · 준비 안 됨 · 폴더 없음 */
+.wc-block {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-3);
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--banner-warn-bg);
+}
+.wc-block__text {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+}
+.wc-block__text .icon {
+  flex: none;
+  margin-top: 2px;
+}
+.wc-block__text--solo {
+  flex: none;
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-3);
+  border: var(--ui-line-w) dashed var(--ui-line);
+  border-radius: var(--wobble);
+  background: var(--banner-warn-bg);
+}
+.wc-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.wc-block .wc-stop {
+  position: static;
+  width: 100%;
+  box-shadow: none;
+}
+
+/* 낮은 창 — 머리 · 입력줄을 줄여 목록 자리를 지킨다 */
+@media (max-height: 640px) {
+  .wc-head {
+    min-height: 0;
+    padding: var(--space-1) var(--space-3);
+  }
+  .wc-composer {
+    gap: var(--space-1);
+    margin: var(--space-1) var(--space-3) var(--space-2);
+  }
+  .wc-composer__input {
+    min-height: 32px;
+  }
+  .wc-composer__keys {
+    display: none;
+  }
+}

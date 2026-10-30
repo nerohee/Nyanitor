@@ -5,10 +5,13 @@ import { EditorView } from "@codemirror/view";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeClaude } from "../lib/fakeClaude";
+import { fakeHistory } from "../lib/fakeHistory";
 import { fakeProjects, type FakeProjectsOptions } from "../lib/fakeProjects";
 import { fakeSkills } from "../lib/fakeSkills";
 import { ipc } from "../lib/ipc";
 import { AppError } from "../lib/ipc-types";
+import { resetSessionStore } from "./chat/sessionStore";
 import Workspace from "./Workspace";
 
 /** 앱(App)이 하듯 고른 프로젝트를 들고 있는 틀 */
@@ -29,13 +32,19 @@ function setWide(wide: boolean) {
 beforeEach(() => {
   fakeProjects.reset();
   fakeSkills.reset();
+  fakeClaude.reset();
+  fakeHistory.reset();
+  resetSessionStore();
   setWide(true);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetSessionStore();
   fakeProjects.reset();
   fakeSkills.reset();
+  fakeClaude.reset();
+  fakeHistory.reset();
   // @ts-expect-error jsdom 에는 matchMedia 가 없다 — 시험이 넣은 것을 지운다
   delete window.matchMedia;
 });
@@ -77,7 +86,7 @@ describe("프로젝트 목록", () => {
     expect(within(list()).getByRole("button", { name: /쇼핑몰 관리자/ })).toHaveTextContent("폴더를 찾을 수 없어요");
 
     expect(screen.getByRole("region", { name: "요구사항" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "채팅" })).toHaveTextContent("채팅은 다음에 열려요");
+    await waitFor(() => expect(screen.getByRole("region", { name: "채팅" })).toHaveTextContent("이전 대화 더 보기"));
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toContain("우리 집 고양이 사진"));
     expect(touch).toHaveBeenCalledWith(1);
@@ -252,7 +261,7 @@ describe("좁은 창", () => {
     fireEvent.keyDown(tabs, { key: "ArrowRight" });
     expect(chatTab).toHaveAttribute("aria-selected", "true");
     expect(chatTab).toHaveFocus();
-    expect(screen.getByRole("tabpanel", { name: "채팅" })).toHaveTextContent("채팅은 다음에 열려요");
+    await waitFor(() => expect(screen.getByRole("tabpanel", { name: "채팅" })).toHaveTextContent("이전 대화 더 보기"));
     // 편집기 칸은 숨겨졌을 뿐 그대로 있다 (글 · 저장이 끊기지 않는다)
     expect(document.querySelector(".cm-editor")).not.toBeNull();
     fireEvent.keyDown(tabs, { key: "ArrowRight" });
@@ -565,5 +574,55 @@ describe("프로젝트 설정", () => {
       if (left > 1) await waitFor(() => expect(names()).toHaveLength(left - 1));
     }
     expect(await screen.findByRole("heading", { name: "아직 프로젝트가 없어요" })).toBeInTheDocument();
+  });
+});
+
+describe("채팅 판", () => {
+  const chatPanel = () => screen.getByRole("region", { name: "채팅" });
+
+  async function startChatting() {
+    await mount();
+    await waitFor(() => expect(chatPanel()).toHaveTextContent("이전 대화 더 보기"));
+  }
+
+  it("넓은 창 — 채팅 판에서 말을 보내면 먹물 글 · 권한 카드가 오고, 프로젝트를 바꿨다 돌아와도 카드가 그대로다 (세션은 계속 돈다)", async () => {
+    fakeHistory.reset("empty");
+    await mount();
+    await within(chatPanel()).findByText("요구사항을 쓰고 시작해요");
+    fireEvent.click(within(chatPanel()).getByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
+    const card = await within(chatPanel()).findByRole("article", { name: "권한 요청" });
+    expect(card).toHaveAttribute("data-pending", "true");
+
+    // 다른 프로젝트로 — 거기서는 "지금 「고양이 앨범」에서 일하는 중" 이 보이고 카드는 이 프로젝트에 남는다
+    fireEvent.click(within(list()).getByRole("button", { name: /레시피 상자/ }));
+    expect(await within(chatPanel()).findByText("지금 「고양이 앨범」에서 먹물이 일하는 중이에요")).toBeInTheDocument();
+    // "그 프로젝트로 가기" 로 돌아오면 같은 카드
+    fireEvent.click(within(chatPanel()).getByRole("button", { name: "그 프로젝트로 가기" }));
+    await waitFor(() => expect(within(list()).getByRole("button", { current: "page" })).toHaveTextContent("고양이 앨범"));
+    expect(await within(chatPanel()).findByRole("article", { name: "권한 요청" })).toHaveAttribute("data-pending", "true");
+  });
+
+  it("좁은 창 — 답을 기다리는 카드가 있으면 채팅 탭에 수가 붙고, 화면 읽기 프로그램에 알린다 (포커스는 그대로)", async () => {
+    fakeHistory.reset("empty");
+    setWide(false);
+    await mount();
+    const tabs = screen.getByRole("tablist", { name: "작업 공간 보기" });
+    const [, chatTab] = within(tabs).getAllByRole("tab");
+    expect(within(chatTab!).queryByLabelText(/기다리는 카드/)).not.toBeInTheDocument();
+    fireEvent.click(chatTab!);
+    const panel = screen.getByRole("tabpanel", { name: "채팅" });
+    fireEvent.click(await within(panel).findByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
+    await within(panel).findByRole("article", { name: "권한 요청" });
+    expect(within(chatTab!).getByLabelText("기다리는 카드 1개")).toHaveTextContent("1");
+    expect(screen.getByText("답을 기다리는 카드가 있어요 (1)", { selector: "[role='status']" })).toBeInTheDocument();
+    expect(document.activeElement?.closest("article")).toBeNull();
+    // 답하면 수가 사라진다
+    fireEvent.click(within(panel).getByRole("button", { name: "이번만 허용" }));
+    await waitFor(() => expect(within(chatTab!).queryByLabelText(/기다리는 카드/)).not.toBeInTheDocument());
+  });
+
+  it("지난 대화(?history=full)가 보인다", async () => {
+    await startChatting();
+    expect(within(chatPanel()).getByText("계획을 정리했어요. 승인해 주세요.")).toBeInTheDocument();
   });
 });

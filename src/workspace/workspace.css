@@ -686,6 +686,20 @@ body:has(.ws) {
   outline-offset: -4px;
   border-radius: var(--radius-control);
 }
+/* 탭에 붙는 "기다리는 카드 n" 배지 — 색만이 아니라 숫자로 */
+.ws-wp__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: 15px;
+  text-align: center;
+}
 /* 접은 칸 = 수첩 옆에 꽂힌 하늘색 인덱스 띠 */
 .ws-wp__strip {
   display: flex;
@@ -714,9 +728,6 @@ body:has(.ws) {
   letter-spacing: 0.1em;
   font-family: var(--font-round);
   font-size: 15px;
-}
-.ws-soon {
-  color: var(--color-text-muted);
 }
 
 /* ── 요구사항 편집기 ── */

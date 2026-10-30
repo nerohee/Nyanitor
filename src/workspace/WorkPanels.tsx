@@ -21,6 +21,8 @@ export function useWide(query = "(min-width: 1280px)"): boolean {
 export interface WorkPanel {
   id: string;
   label: string;
+  /** 기다리는 카드 수 (좁은 창의 탭에 붙는다, D-25) */
+  badge?: number;
   /** 넓은 창에서 칸 너비 (grid 값). 접으면 띠 */
   size: string;
   /** 넓은 창에서 접을 수 있나 */
@@ -116,6 +118,11 @@ export function WorkPanels({ panels, wide, active, onActive, className, tabStart
                 }}
               >
                 {panel.label}
+                {panel.badge ? (
+                  <span className="ws-wp__badge" aria-label={tf("variant.ws.badge", { n: panel.badge })}>
+                    {panel.badge}
+                  </span>
+                ) : null}
               </button>
             );
           })}

@@ -3,14 +3,20 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fakeProjects } from "./lib/fakeProjects";
+import { fakeClaude } from "./lib/fakeClaude";
 import { ipc } from "./lib/ipc";
+import { resetSessionStore } from "./workspace/chat/sessionStore";
 
 beforeEach(() => {
   fakeProjects.reset();
+  fakeClaude.reset();
+  resetSessionStore();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetSessionStore();
+  fakeClaude.reset();
   fakeProjects.reset();
   window.history.replaceState({}, "", "/");
 });
@@ -28,6 +34,20 @@ describe("App (브라우저 가짜 모드)", () => {
 });
 
 describe("화면 전환 (주소가 아니라 앱 상태)", () => {
+  it("세션 이벤트는 앱이 켜질 때 한 번만 듣는다 — 고양이 집 ↔ 작업 공간을 오가도 다시 듣지 않는다", async () => {
+    const listen = vi.spyOn(ipc, "onClaudeEvent");
+    render(<App />);
+    await screen.findByTestId("home");
+    await waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    await screen.findByTestId("workspace");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "집" }));
+    await screen.findByTestId("home");
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    await screen.findByTestId("workspace");
+    expect(listen).toHaveBeenCalledTimes(1);
+  });
+
   it("왼쪽 메뉴로 고양이 집 ↔ 작업 공간 — 메뉴는 두 곳뿐이고 지금 있는 곳이 표시된다", async () => {
     render(<App />);
     await screen.findByTestId("home");

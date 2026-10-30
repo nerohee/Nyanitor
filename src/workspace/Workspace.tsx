@@ -1,6 +1,6 @@
 // 실제 작업 공간 — 시안 a 「들여다보는 창」 (D-30 · ③ 스티커 수첩, D-43). 뒤로 물러난 마당 장면 위 종이(`ws-paper`)에
 // 넓은 창은 프로젝트 목록 | 요구사항(접을 수 있음) | 채팅, 좁은 창은 프로젝트 바꾸기 단추 + 탭.
-// 이번(P6-04)에는 프로젝트 · 새 프로젝트 · 프로젝트 설정 · 요구사항 편집기까지 — 채팅 판은 자리표시 (P6-05 가 내용만 바꾼다). 진행 보기 · 둥근 창문 · 일하는 고양이는 P7.
+// 프로젝트 · 새 프로젝트 · 프로젝트 설정 · 요구사항 편집기 (P6-04) + 채팅 (P6-05, `chat/`). 진행 보기 · 둥근 창문 · 일하는 고양이는 P7.
 // 고른 프로젝트(`projectId`)는 앱(App)이 들고 있다 — 고양이 집에서 프로젝트를 눌러 들어와도 같다. 고른 것이 없으면 가장 최근에 연 프로젝트.
 import { useEffect, useRef, useState } from "react";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
@@ -19,6 +19,9 @@ import { Dialog as DialogBox } from "./Dialog";
 import { RequirementsEditor, type EditorGuard } from "./RequirementsEditor";
 import { useProjects } from "./useProjects";
 import { useWide, WorkPanels } from "./WorkPanels";
+import { PendingAnnouncer } from "./chat/Announcer";
+import { ChatPane } from "./chat/ChatPane";
+import { selectPending, startSessionStore, useSessionStore } from "./chat/sessionStore";
 import "./workspace.css";
 
 interface Props {
@@ -112,6 +115,13 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   const readOnly = ready && state.db === "read_only";
   const selected = projects.find((project) => project.id === projectId) ?? projects[0] ?? null;
   const selectedId = selected?.id ?? null;
+  /** 채팅 탭에 붙는, 답을 기다리는 카드 수 */
+  const waitingCards = useSessionStore(selectPending(selectedId));
+
+  // 세션 저장소는 앱이 켜질 때 한 번 시작한다 (`App.tsx`) — 여기서 한 번 더 불러도 같은 것 (작업 공간만 따로 열어 본 시험)
+  useEffect(() => {
+    void startSessionStore();
+  }, []);
 
   // 프로젝트를 열 때 "최근에 연" 으로 (못 적어도 — 읽기 전용 DB 등 — 열기는 막지 않는다)
   useEffect(() => {
@@ -149,6 +159,7 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
       <AppNav current="workspace" onGo={go} />
       <main className="ws-stage">
         <h1 className="ws-sr">{t("variant.nav.workspace")}</h1>
+        <PendingAnnouncer />
         {/* 뒤로 물러난 장면 — 같은 마당이 종이 뒤에 비친다 */}
         <HouseScene className="ws-backdrop" time={time} placements={[]} />
         <div
@@ -221,12 +232,8 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
                       id: "chat",
                       label: t("variant.ws.tab.chat"),
                       size: "minmax(0, 1.25fr)",
-                      // 채팅은 P6-05 — 판 자리와 크기만 시안 그대로, 내용은 한 줄
-                      content: (
-                        <div className="ws-state ws-soon">
-                          <p>{t("ws.chat.soon")}</p>
-                        </div>
-                      ),
+                      badge: waitingCards,
+                      content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} />,
                     },
                   ]}
                 />

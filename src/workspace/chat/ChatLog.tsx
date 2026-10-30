@@ -1,0 +1,168 @@
+// 채팅 목록 — 줄 그리기 + 스크롤: 처음엔 맨 아래(기다리는 카드가 있으면 그 카드 머리가 보이게), 새 글이 오면 맨 아래에 붙되
+// 사용자가 위를 보고 있으면 끌어내리지 않고 "새 글 n" 단추, 이전 쪽을 앞에 붙여도 보던 자리가 그대로.
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { t, tf } from "../../i18n/ko";
+import { Icon } from "../../variants/shared/icons";
+import { QuestionRequest, PermissionCard, type Respond } from "./Cards";
+import { NoticeLine, OrchMessage, ToolErrorLine, ToolGroup, ToolLine, TurnEndLine, UserMessage } from "./Lines";
+import type { ChatLine } from "./model";
+
+/** 도구 사용이 이만큼 이어지면 접는다 */
+const TOOL_GROUP_MIN = 3;
+/** 맨 아래에서 이만큼(px) 안이면 "맨 아래" 로 본다 */
+const STICK_PX = 48;
+
+type Block = { type: "line"; line: ChatLine } | { type: "tools"; lines: Extract<ChatLine, { kind: "tool" }>[] };
+
+/** 이어진 도구 줄을 묶는다 */
+export function groupLines(lines: readonly ChatLine[]): Block[] {
+  const blocks: Block[] = [];
+  let run: Extract<ChatLine, { kind: "tool" }>[] = [];
+  const flush = () => {
+    if (run.length >= TOOL_GROUP_MIN) blocks.push({ type: "tools", lines: run });
+    else for (const line of run) blocks.push({ type: "line", line });
+    run = [];
+  };
+  for (const line of lines) {
+    if (line.kind === "tool") run.push(line);
+    else {
+      flush();
+      blocks.push({ type: "line", line });
+    }
+  }
+  flush();
+  return blocks;
+}
+
+interface Props {
+  lines: readonly ChatLine[];
+  hasMore: boolean;
+  loadingOlder: boolean;
+  olderFailed: boolean;
+  onLoadOlder: () => void;
+  onRespond: Respond;
+  /** 목록이 비었을 때 대신 보일 것 */
+  empty?: ReactNode;
+}
+
+function LineView({ line, first, onRespond }: { line: ChatLine; first: boolean; onRespond: Respond }) {
+  switch (line.kind) {
+    case "user":
+      return <UserMessage line={line} />;
+    case "orch":
+      return <OrchMessage line={line} />;
+    case "tool":
+      return <ToolLine line={line} />;
+    case "toolError":
+      return <ToolErrorLine line={line} />;
+    case "question":
+      return <QuestionRequest info={line.info} state={line.state} onRespond={onRespond} first={first} />;
+    case "permission":
+      return <PermissionCard info={line.info} state={line.state} onRespond={onRespond} first={first} />;
+    case "turnEnd":
+      return <TurnEndLine line={line} />;
+    case "notice":
+      return <NoticeLine line={line} />;
+  }
+}
+
+export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder, onRespond, empty }: Props) {
+  const log = useRef<HTMLDivElement>(null);
+  /** 맨 아래를 보고 있는가 (스크롤할 때마다 갱신) */
+  const stuck = useRef(true);
+  const prev = useRef<{ first: string | null; last: string | null; count: number; height: number } | null>(null);
+  const [unread, setUnread] = useState(0);
+
+  const firstPending = lines.findIndex((line) => (line.kind === "question" || line.kind === "permission") && line.state.status === "pending");
+
+  const toBottom = (el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight;
+    // 기다리는 카드가 있으면 그 카드 머리가 보이게
+    const card = el.querySelector<HTMLElement>('[data-pending-card="true"]');
+    if (card) {
+      const top = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 12;
+      if (top < el.scrollTop) el.scrollTop = top;
+    }
+    stuck.current = true;
+  };
+
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (!el) return;
+    const first = lines[0]?.key ?? null;
+    const last = lines[lines.length - 1]?.key ?? null;
+    const before = prev.current;
+    prev.current = { first, last, count: lines.length, height: el.scrollHeight };
+    if (!before || before.count === 0) {
+      toBottom(el);
+      setUnread(0);
+      return;
+    }
+    if (first !== before.first && last === before.last) {
+      // 이전 쪽을 앞에 붙였다 — 보던 자리를 그대로
+      el.scrollTop += el.scrollHeight - before.height;
+      return;
+    }
+    if (last !== before.last) {
+      const added = Math.max(1, lines.length - before.count);
+      if (stuck.current) toBottom(el);
+      else setUnread((n) => n + added);
+    }
+  }, [lines]);
+
+  const onScroll = () => {
+    const el = log.current;
+    if (!el) return;
+    stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_PX;
+    if (stuck.current) setUnread(0);
+  };
+
+  const blocks = groupLines(lines);
+
+  return (
+    <div className="wc-logwrap">
+      <div className="wc-log" ref={log} onScroll={onScroll} data-testid="chat-log">
+        {lines.length === 0 ? (
+          empty
+        ) : (
+          <div className="wc-items">
+            {hasMore && (
+              <div className="wc-older">
+                <button type="button" className="ws-btn ws-btn--small" disabled={loadingOlder} onClick={onLoadOlder}>
+                  <Icon name="history" size={14} />
+                  {t(loadingOlder ? "ws.chat.older.loading" : "ws.chat.older")}
+                </button>
+                {olderFailed && (
+                  <p className="wc-card__error" role="alert">
+                    <Icon name="alert" size={16} />
+                    {t("ws.chat.older.failed")}
+                  </p>
+                )}
+              </div>
+            )}
+            {blocks.map((block) =>
+              block.type === "tools" ? (
+                <ToolGroup key={block.lines[0]?.key} lines={block.lines} />
+              ) : (
+                <LineView key={block.line.key} line={block.line} first={lines.indexOf(block.line) === firstPending} onRespond={onRespond} />
+              ),
+            )}
+          </div>
+        )}
+      </div>
+      {unread > 0 && (
+        <button
+          type="button"
+          className="ws-btn ws-btn--primary ws-btn--small wc-unread"
+          onClick={() => {
+            if (log.current) toBottom(log.current);
+            setUnread(0);
+          }}
+        >
+          <Icon name="arrow" size={14} />
+          {tf("ws.chat.unread", { n: unread })}
+        </button>
+      )}
+    </div>
+  );
+}

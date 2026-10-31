@@ -6,6 +6,8 @@
 .wc {
   /* 알림 띠 — workspace.css 가 정하지 않은 위험 띠 (tokens.css 의 [data-variant] 절과 같은 식) */
   --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
+  /* 머리 줄이 판 폭에 맞춰 한 줄 / 두 줄을 고른다 (아래 @container wc) */
+  container: wc / inline-size;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -16,16 +18,28 @@
 }
 
 /* ── 머리 ── */
+/*
+ * 한 줄: 먹물 · 상태 …… 단추들 · 모델 · 츄르 칩 (시제품처럼 칩이 오른쪽 끝).
+ * 판이 좁으면(@container wc) 두 줄: 먹물 · 상태 …… 단추들 / 그 아래 오른쪽에 칩 묶음 — 단추 · 칩이 섞여 두 줄로 흩어지지 않게.
+ * 칩은 누르는 것이 아니라 순서만 바꿔도 키보드 차례(단추)는 그대로다.
+ */
 .wc-head {
   position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   min-height: 48px;
+  box-sizing: border-box;
   padding: var(--space-2) var(--space-3);
   border-bottom: var(--ui-line-w) dashed var(--ui-line);
   font-size: var(--text-sm);
+}
+.wc-head > b {
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 .wc-head__avatar {
   display: block;
@@ -33,24 +47,34 @@
   width: 24px;
   height: 24px;
 }
+/* 상태 알약 — ③ 테이프 색 알약 (시제품 .wstatus__pill) */
 .wc-head__pill {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: 1px var(--space-2);
   border: 1.5px solid var(--ui-line);
-  border-radius: var(--radius-pill);
+  border-radius: 9px 7px 9px 6px / 7px 9px 6px 9px;
   background: var(--color-surface-sunken);
-  font-weight: var(--weight-semibold);
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 .wc-dot {
-  width: 8px;
-  height: 8px;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ui-line);
   border-radius: 50%;
   background: var(--color-text-subtle);
 }
 .wc-head[data-state="working"] .wc-dot {
   background: var(--color-success);
+}
+.wc-head[data-state="working"] .wc-head__pill {
+  background: var(--ui-1);
 }
 .wc-head[data-state="waiting"] .wc-dot {
   background: var(--accent);
@@ -63,24 +87,39 @@
   background: var(--color-danger);
 }
 .wc-head[data-state="stopped"] .wc-head__pill {
-  background: var(--banner-danger-bg);
+  background: var(--ui-2);
 }
-/* 오른쪽 묶음 — 좁아서 줄이 바뀌어도 오른쪽에 모여 있다 */
+/* 단추 · 칩은 머리 줄에 바로 놓인다 (묶음 상자 없이) — 첫 단추부터 오른쪽으로 */
 .wc-head__tools {
-  display: flex;
-  flex: 1;
+  display: contents;
+}
+.wc-head__tools > button:first-of-type {
+  margin-left: auto;
+}
+.wc-head__meta {
+  order: 1;
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
+}
+/* 단추가 없을 때 (드묾) 칩 묶음이 오른쪽 끝으로 */
+.wc-head__tools:not(:has(> button)) > .wc-head__meta {
+  margin-left: auto;
+}
+@container wc (max-width: 680px) {
+  .wc-head__meta {
+    flex: 1 0 100%;
+  }
 }
 .wc-head__chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: 1px var(--space-2);
-  border: 1px solid var(--color-border-strong);
+  border: 1.5px dashed var(--ui-line);
   border-radius: var(--radius-pill);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
@@ -501,7 +540,11 @@
   padding-top: var(--space-3);
   border-top: 1px dashed var(--color-border-strong);
 }
+/* legend 을 띄워(float) 테두리 위가 아니라 칸 안에 둔다 — 둘째 질문의 점선 구분선이 질문 글 가운데를 지나가지 않게 */
 .wc-q__prompt {
+  float: left;
+  box-sizing: border-box;
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -526,6 +569,7 @@
   font-weight: var(--weight-regular);
 }
 .wc-q__grid {
+  clear: both;
   display: grid;
   gap: var(--space-2);
 }
@@ -1081,6 +1125,47 @@
   box-shadow: none;
 }
 
+/* ③ 둥근 제목 글꼴 — 카드 · 말풍선 이름 · 알림 · 질문 · 떠 있는 창 제목 (시제품 skins.css · workspace-detail.css ③ 절과 같은 자리).
+   Jua 는 굵기가 하나라 400 (위 규칙의 굵기를 덮도록 맨 뒤에), 본문 · 값은 시스템 글꼴 그대로 */
+.wc-card__kind,
+.wc-card__title,
+.wc-msg__who,
+.wc-note__title,
+.wc-q__text,
+.wc-q-done dt,
+.wc-perm__kind,
+.wc-stop__title,
+.wc-skill__title {
+  font-family: var(--font-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+/* Jua 는 같은 크기에서 시스템 글꼴보다 작아 보인다 — 카드 종류는 한 단계 */
+.wc-card__kind {
+  font-size: var(--text-md);
+}
+
+/* 위험 단추 · 중단 — ③ 분홍 테이프 (시제품 .hbtn--danger · .wcomposer__stop). 위험은 색만이 아니라 단추 글로 알린다 */
+.wc-composer__stop:not(:disabled) {
+  background: var(--ui-2);
+}
+.wc-composer__stop:hover:not(:disabled) {
+  background: var(--ui-2);
+}
+
+/* 질문 머리표 · 권한 명령 칸 — ③ 테이프 · 점선 (시제품 workspace-detail.css ③ 절) */
+.wc-q__header,
+.wc-q-done dt {
+  border: 1.5px solid var(--ui-line);
+  border-radius: 7px 5px 7px 4px / 5px 7px 4px 7px;
+  background: var(--ui-4);
+  color: var(--color-text);
+}
+.wc-perm .wc-card__code {
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+}
+
 /* 낮은 창 — 머리 · 입력줄을 줄여 목록 자리를 지킨다 */
 @media (max-height: 640px) {
   .wc-head {
@@ -1096,5 +1181,34 @@
   }
   .wc-composer__keys {
     display: none;
+  }
+}
+/* 아주 낮은 창 (작은 화면 PC 를 최대화 — 683×384 등) — 목록 최소 높이를 줄여 머리 · 입력줄까지 한 화면에 들어가게.
+   그래도 넘치면 위 `.wc` 의 판 스크롤이 마지막 안전장치 */
+@media (max-height: 480px) {
+  .wc-head {
+    min-height: 0;
+  }
+  .wc-logwrap,
+  .wc-log {
+    min-height: 72px;
+  }
+  .wc-log {
+    padding: var(--space-2) var(--space-3);
+  }
+  .wc-composer {
+    padding: var(--space-1) var(--space-2);
+  }
+  /* 글 칸은 한 줄 높이 (긴 글은 칸 안에서 스크롤) */
+  .wc-composer__input {
+    height: calc(1lh + var(--space-1) * 2);
+    min-height: 0;
+  }
+  .wc-empty {
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+  .wc-block {
+    padding: var(--space-2);
   }
 }

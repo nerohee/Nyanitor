@@ -37,14 +37,20 @@ describe("카드에 덮인 자리", () => {
     expect(blockedSpots(scene(1280, 800), [scene(1280, 800)])).toEqual(SPOT_IDS);
   });
 
-  it("카드에 누르는 상자가 닿는 자리만 막는다 (닿기만 하면 막지 않는다)", () => {
+  it("누르는 상자가 절반 이상 덮인 자리만 막는다 (조금 걸치거나 닿기만 하면 막지 않는다)", () => {
     const s = scene(1536, 1024); // u = 1 — 화면 좌표 = 배경 좌표
     const sun = spotHitBox("sun");
+    const w = sun.right - sun.left;
+    // 왼쪽 60% 를 덮는 카드 — 막는다
+    const most = blockedSpots(s, [{ left: sun.left - 10, top: sun.top - 10, right: sun.left + w * 0.6, bottom: sun.bottom + 10 }]);
+    expect(most).toContain("sun");
+    expect(most.length).toBeLessThan(SPOT_IDS.length);
+    // 왼쪽 40% 만 덮는 카드 — 막지 않는다
+    expect(blockedSpots(s, [{ left: sun.left - 10, top: sun.top - 10, right: sun.left + w * 0.4, bottom: sun.bottom + 10 }])).not.toContain("sun");
+    // 가운데 작은 조각 · 맞닿기만 — 막지 않는다
     const cx = (sun.left + sun.right) / 2;
     const cy = (sun.top + sun.bottom) / 2;
-    const blocked = blockedSpots(s, [{ left: cx, top: cy, right: cx + 4, bottom: cy + 4 }]);
-    expect(blocked).toContain("sun");
-    expect(blocked.length).toBeLessThan(SPOT_IDS.length);
+    expect(blockedSpots(s, [{ left: cx, top: cy, right: cx + 4, bottom: cy + 4 }])).not.toContain("sun");
     expect(blockedSpots(s, [{ left: sun.right, top: sun.top, right: sun.right + 50, bottom: sun.bottom }])).not.toContain("sun");
   });
 

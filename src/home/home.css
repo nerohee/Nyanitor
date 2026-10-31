@@ -392,10 +392,12 @@ body:has(.home) {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+/* "추정" 표 — ③ 점선 테이프 (시제품 skin-3 .usage__badge: 갈색 점선 · 본문 글자) */
 .hm-usage__badge {
   padding: 0 var(--space-2);
-  border: var(--ui-line-w) solid var(--color-border-strong);
+  border: 1.5px dashed var(--ui-line);
   border-radius: var(--radius-pill);
+  color: var(--color-text);
 }
 .hm-usage__foot {
   display: flex;
@@ -430,6 +432,35 @@ body:has(.home) {
 @media (max-height: 470px) {
   .hm-slab {
     height: auto;
+  }
+}
+/* 아주 낮은 창 (작은 화면을 최대화 — 683×384 등) 에서는 위 카드를 줄여 장면을 덜 덮는다 (P6-07 고객, 안 1).
+   "다시 채워짐" 시각 · 준비가 다 됐을 때의 세부 줄은 숨긴다 — 준비가 덜 됐을 때의 세부 줄은 그대로 */
+@media (max-height: 480px) {
+  .hm-status {
+    margin: var(--space-3);
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+  .hm-ready {
+    padding-bottom: var(--space-2);
+  }
+  .hm-ready[data-state="done"] .hm-ready__detail {
+    display: none;
+  }
+  .hm-usage,
+  .hm-usage__rows {
+    gap: var(--space-2);
+  }
+  .hm-usage__reset {
+    display: none;
+  }
+  .hm-usage__bar {
+    height: 10px;
+    margin: 2px 0 0;
+  }
+  .hm-slab {
+    padding: var(--space-2) var(--space-4) var(--space-3);
   }
 }
 /* 빈 상태 카드는 글만큼만 — 판을 가로지르는 긴 띠 대신 잔디 위 쪽지. 프로젝트가 있으면 남는 폭을 다 쓴다 */
@@ -549,7 +580,11 @@ body:has(.home) {
   white-space: nowrap;
   font-weight: var(--weight-semibold);
 }
+/* 좁은 창에서 쪽지가 좁아져도 두 줄(이름 · 언제)을 지킨다 — 줄이 넘치면 쪽지 높이(58)를 넘어 이름이 잘렸다 */
 .hm-recent__when {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
@@ -716,7 +751,12 @@ body:has(.home) {
 .hm-dev:focus-within {
   opacity: 1;
 }
+/* 한 줄로 (좁으면 … 로 줄임) — 줄바꿈된 첫 링크가 둘째 링크와 겹쳤다 (683 폭) */
 .hm-dev a {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);

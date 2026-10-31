@@ -278,16 +278,20 @@ export function ChatPane({ project, projects, onGoProject }: Props) {
               {tf("variant.ws.chat.jumpN", { n: pending })}
             </button>
           )}
-          {isHere && session && (
-            <span className="wc-head__chip wc-head__chip--mono" title={t("variant.ws.chat.modelHint")}>
-              {modelText(chat.data.lastStart?.model ?? null, chat.data.lastStart?.effort ?? null)}
-            </span>
-          )}
-          {isHere && churros && churros.projectId === project.id && (
-            <span className="wc-head__chip" title={t(churrosStale ? "ws.chat.churros.stale" : "ws.chat.churros.hint")}>
-              {tf("ws.chat.churros", { n: churros.totalTokens.toLocaleString("ko-KR") })}
-              {churros.referenceOnly && <span className="wc-head__ref">{t("ws.chat.churros.ref")}</span>}
-              {churrosStale && <span className="wc-head__ref">{t("ws.chat.churros.old")}</span>}
+          {isHere && (session || (churros && churros.projectId === project.id)) && (
+            <span className="wc-head__meta">
+              {session && (
+                <span className="wc-head__chip wc-head__chip--mono" title={t("variant.ws.chat.modelHint")}>
+                  {modelText(chat.data.lastStart?.model ?? null, chat.data.lastStart?.effort ?? null)}
+                </span>
+              )}
+              {churros && churros.projectId === project.id && (
+                <span className="wc-head__chip" title={t(churrosStale ? "ws.chat.churros.stale" : "ws.chat.churros.hint")}>
+                  {tf("ws.chat.churros", { n: churros.totalTokens.toLocaleString("ko-KR") })}
+                  {churros.referenceOnly && <span className="wc-head__ref">{t("ws.chat.churros.ref")}</span>}
+                  {churrosStale && <span className="wc-head__ref">{t("ws.chat.churros.old")}</span>}
+                </span>
+              )}
             </span>
           )}
           {isHere && (

@@ -198,10 +198,15 @@ body:has(.ws) {
   padding: 0 var(--space-2);
   font-size: var(--text-sm);
 }
+/* 위험 단추 — ③ 분홍 테이프 (시제품 .hbtn--danger: 갈색 선 · 분홍 바탕 · 본문 글자). 위험은 색만이 아니라 단추 글로 알린다 */
 .ws-btn--danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-  box-shadow: 2px 2px 0 var(--color-danger);
+  background: var(--ui-2);
+}
+.ws-btn--danger:hover:not(:disabled) {
+  background: var(--ui-2);
+}
+.ws-btn--danger:disabled {
+  background: var(--color-surface-sunken);
 }
 .ws-icon-btn {
   display: inline-flex;
@@ -343,8 +348,10 @@ body:has(.ws) {
   margin: 0 0 var(--space-2);
   padding: 0 var(--space-2);
   color: var(--color-text-muted);
+  font-family: var(--font-round);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 .ws-proj__count {
   padding: 0 6px;
@@ -390,7 +397,10 @@ body:has(.ws) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: var(--weight-semibold);
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 .ws-proj__item[data-missing="true"] .ws-proj__name {
   color: var(--color-text-muted);
@@ -621,6 +631,21 @@ body:has(.ws) {
   font-size: var(--text-xs);
 }
 
+/* 좁은 창(탭) — 바로 아래 프로젝트 바꾸기 단추가 같은 이름을 보이므로, 머리 줄은 스킬 · 경로 · 설정만 보인다.
+   이름은 화면 읽기 프로그램에는 그대로 (제목 h2) */
+.ws-paper:not([data-wide]) .ws-phead > .icon {
+  display: none;
+}
+.ws-paper:not([data-wide]) .ws-phead__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ── 칸 틀: 나란히 / 탭 ── */
 .ws-wp {
   display: flex;
@@ -672,14 +697,15 @@ body:has(.ws) {
   border: 0;
   background: none;
   color: var(--color-text-muted);
-  font-weight: var(--weight-medium);
+  font-family: var(--font-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 .ws-wp__tab:hover {
   color: var(--color-text);
 }
 .ws-wp__tab[aria-selected="true"] {
   color: var(--color-text);
-  font-weight: var(--weight-semibold);
   background: linear-gradient(transparent 60%, var(--accent) 60% 88%, transparent 88%);
 }
 .ws-wp__tab:focus-visible {
@@ -859,7 +885,10 @@ body:has(.ws) {
 }
 .ws-ed__banner-title {
   display: block;
-  font-weight: var(--weight-semibold);
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 /* 충돌 띠의 두 단추는 설명 아래 한 줄로 (좁으면 둘째 단추가 다음 줄) */
 .ws-ed__banner[data-tone="warn"] > .ws-ed__banner-actions {
@@ -945,10 +974,47 @@ body:has(.ws) {
   font-family: var(--font-mono);
   font-size: 11px;
 }
-/* 낮은 창(최소 창의 큰 배율)에서는 안내 줄을 접어 쓰는 칸을 넓힌다 */
+/* 낮은 창(작은 화면 PC 를 최대화 — 683×384 등)에서는 안내 줄을 접고 종이 둘레 · 머리 줄 · 탭을 줄여 쓰는 칸 · 채팅 목록을 넓힌다 */
 @media (max-height: 480px) {
   .ws-ed__foot {
     display: none;
+  }
+  .ws-stage {
+    padding: var(--space-3);
+  }
+  .ws-phead {
+    padding: var(--space-1) var(--space-3);
+  }
+  .ws-wp__tab {
+    height: var(--control-h-md);
+  }
+  .ws-wp__bar {
+    padding-block: var(--space-1);
+  }
+  .ws-switch__btn {
+    height: var(--control-h-sm);
+  }
+  .ws-ed__bar {
+    padding-block: var(--space-1);
+  }
+  /* 프로젝트 없음 — 시작 단추까지 한 화면에 */
+  .ws-none {
+    padding: var(--space-4) var(--space-5);
+  }
+  .ws-none__cat {
+    width: 72px;
+    height: 72px;
+  }
+  .ws-none__title {
+    margin: var(--space-2) 0 var(--space-1);
+    font-size: var(--text-xl);
+  }
+  .ws-none__steps {
+    margin: var(--space-2) 0;
+    padding-block: var(--space-2);
+  }
+  .ws-none__note {
+    margin-top: var(--space-2);
   }
 }
 

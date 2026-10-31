@@ -1,5 +1,5 @@
 // 카드에 덮인 고양이 자리 — 위 카드 · 아래 판 카드가 장면 그림의 일부를 덮는다. 창이 좁을수록 더 많이 덮어,
-// 그 밑 자리의 고양이는 보이지도 눌리지도 않는다. 고양이 누르는 상자(자리 · 자세마다 다름)가 카드와 겹치면 그 자리는 막는다.
+// 그 밑 자리의 고양이는 보이지도 눌리지도 않는다. 고양이 누르는 상자(자리 · 자세마다 다름)가 한 카드에 절반 이상 덮이면 그 자리는 막는다.
 // 화면 코드와 섞이지 않는 순수 함수 (시험 가능) — Home 이 상자들을 재서 넣고, 일정(`assignSpots`)이 막힌 자리를 피한다.
 import { CAT_IDS, catScale, findCat, type CatEntry } from "../cat/catalog";
 import { overlaps, type Box } from "./bubble";
@@ -43,11 +43,24 @@ export function stageToScreen(box: Box, scene: Box): Box {
   return { left: x(box.left), top: y(box.top), right: x(box.right), bottom: y(box.bottom) };
 }
 
-/** 카드(화면 좌표)에 누르는 상자가 닿는 자리들 */
+/**
+ * 누르는 상자가 이만큼 이상 한 카드에 덮이면 막는다 (P6-07 고객).
+ * 누르는 상자는 모든 자세 · 가장 큰 고양이를 합친 것이라 넉넉하다 — 절반이 덮여도 실제 고양이는 그보다 덜 가려진다.
+ */
+export const BLOCK_COVER = 0.5;
+
+function coverOf(hit: Box, card: Box): number {
+  if (!overlaps(hit, card)) return 0;
+  const w = Math.min(hit.right, card.right) - Math.max(hit.left, card.left);
+  const h = Math.min(hit.bottom, card.bottom) - Math.max(hit.top, card.top);
+  return (w * h) / ((hit.right - hit.left) * (hit.bottom - hit.top));
+}
+
+/** 카드(화면 좌표)에 누르는 상자가 절반 이상 덮인 자리들 */
 export function blockedSpots(scene: Box, cards: readonly Box[]): SpotId[] {
   if (scene.right - scene.left <= 0 || scene.bottom - scene.top <= 0) return [];
   return SPOT_IDS.filter((id) => {
     const hit = stageToScreen(spotHitBox(id), scene);
-    return cards.some((card) => overlaps(hit, card));
+    return cards.some((card) => coverOf(hit, card) >= BLOCK_COVER);
   });
 }

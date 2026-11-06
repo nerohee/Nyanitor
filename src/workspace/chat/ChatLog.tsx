@@ -45,7 +45,7 @@ interface Props {
   empty?: ReactNode;
 }
 
-function LineView({ line, first, onRespond }: { line: ChatLine; first: boolean; onRespond: Respond }) {
+function LineView({ line, first, more, onRespond }: { line: ChatLine; first: boolean; more: number; onRespond: Respond }) {
   switch (line.kind) {
     case "user":
       return <UserMessage line={line} />;
@@ -58,7 +58,7 @@ function LineView({ line, first, onRespond }: { line: ChatLine; first: boolean; 
     case "question":
       return <QuestionRequest info={line.info} state={line.state} onRespond={onRespond} first={first} />;
     case "permission":
-      return <PermissionCard info={line.info} state={line.state} onRespond={onRespond} first={first} />;
+      return <PermissionCard info={line.info} state={line.state} onRespond={onRespond} first={first} more={more} />;
     case "turnEnd":
       return <TurnEndLine line={line} />;
     case "notice":
@@ -74,6 +74,11 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
   const [unread, setUnread] = useState(0);
 
   const firstPending = lines.findIndex((line) => (line.kind === "question" || line.kind === "permission") && line.state.status === "pending");
+
+  // 기다리는 권한 요청은 가장 먼저 온 하나만 그린다 — 나머지는 그 카드 머리의 "남은 요청 n개" 로 (답하면 다음 것이 그 자리에)
+  const pendingPerms = lines.filter((line) => line.kind === "permission" && line.state.status === "pending");
+  const frontPerm = pendingPerms[0];
+  const morePerms = pendingPerms.length - 1;
 
   const toBottom = (el: HTMLElement) => {
     el.scrollTop = el.scrollHeight;
@@ -117,7 +122,7 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
     if (stuck.current) setUnread(0);
   };
 
-  const blocks = groupLines(lines);
+  const blocks = groupLines(lines).filter((block) => block.type === "tools" || block.line.kind !== "permission" || block.line.state.status !== "pending" || block.line === frontPerm);
 
   return (
     <div className="wc-logwrap">
@@ -144,7 +149,7 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
               block.type === "tools" ? (
                 <ToolGroup key={block.lines[0]?.key} lines={block.lines} />
               ) : (
-                <LineView key={block.line.key} line={block.line} first={lines.indexOf(block.line) === firstPending} onRespond={onRespond} />
+                <LineView key={block.line.key} line={block.line} first={lines.indexOf(block.line) === firstPending} more={block.line === frontPerm ? morePerms : 0} onRespond={onRespond} />
               ),
             )}
           </div>

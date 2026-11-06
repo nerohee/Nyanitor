@@ -1,5 +1,6 @@
 // 브라우저(`npm run dev`)에서 시험 화면이 돌도록 하는 가짜 Claude 세션. Tauri 밖에서만 `ipc.ts` 가 쓴다.
 // 진짜 세션 관리자(`src-tauri/src/claude/`)와 같은 명령 · 이벤트 모양을 흉내 내고 몇 가지 정해진 대본만 돈다:
+//  · "질문4" 는 질문 넷짜리 카드(차례로 보이는지) · "권한3" 은 권한 요청 셋이 동시에(맨 앞 하나만 보이는지)
 //  · 보낸 말에 "쓰기" 가 있으면 파일 쓰기 권한 요청 · "질문" 이 있으면 질문 카드 · "승인" 이 있으면 단계 승인 질문(하네스 약속 §7-2 의 글 모양) · 그 밖에는 명령 권한 요청
 //  · 허용 / 항상 허용 / 거부 / 다르게 말하기 / 질문 답 / 중단 / 끝내기 / 이어 하기
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
@@ -134,7 +135,9 @@ export function createFakeClaude() {
       lastSessions.set(fakeProjectKey(session.projectDir), session.sessionId);
       emit({ type: "turn_started", sessionId: session.sessionId, model: "fake-haiku", cliVersion: "2.1.296", permissionMode: "default", apiKeySource: "none" });
       emit({ type: "text", text: t("lab.fake.greeting") });
-      if (text.includes("질문")) askQuestion();
+      if (text.includes("권한3")) for (let i = 0; i < 3; i += 1) askPermission(i === 1 ? "Write" : "Bash");
+      else if (text.includes("질문4")) askQuestion(true);
+      else if (text.includes("질문")) askQuestion();
       else if (text.includes("승인")) askApproval();
       else if (text.includes("쓰기")) askPermission("Write");
       else askPermission("Bash");
@@ -175,7 +178,7 @@ export function createFakeClaude() {
     emit({ type: "permission_request", ...info });
   }
 
-  function askQuestion() {
+  function askQuestion(four = false) {
     const requestId = nextId("fake-q");
     const info: QuestionRequestInfo = {
       requestId,
@@ -203,6 +206,28 @@ export function createFakeClaude() {
         },
       ],
     };
+    if (four) {
+      info.questions.push(
+        {
+          question: t("lab.fake.q3.question"),
+          header: t("lab.fake.q3.header"),
+          multiSelect: false,
+          options: [
+            { label: t("lab.fake.q3.o1"), description: null, preview: null },
+            { label: t("lab.fake.q3.o2"), description: null, preview: null },
+          ],
+        },
+        {
+          question: t("lab.fake.q4.question"),
+          header: t("lab.fake.q4.header"),
+          multiSelect: false,
+          options: [
+            { label: t("lab.fake.q4.o1"), description: null, preview: null },
+            { label: t("lab.fake.q4.o2"), description: null, preview: null },
+          ],
+        },
+      );
+    }
     pending.set(requestId, { info });
     emit({ type: "question_request", ...info });
   }

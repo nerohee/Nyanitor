@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ClaudeResponse, PermissionRequestInfo, QuestionRequestInfo } from "../../lib/ipc-types";
 import { AppError } from "../../lib/ipc-types";
 import { PermissionCard, QuestionRequest, type Respond } from "./Cards";
+import { ChatLog } from "./ChatLog";
 import type { CardState, PermissionView } from "./model";
 
 const PENDING: CardState = { status: "pending", answer: null };
@@ -42,28 +43,52 @@ const QUESTIONS: QuestionRequestInfo = {
   ],
 };
 
+const FOUR: QuestionRequestInfo = {
+  requestId: "r4",
+  toolUseId: null,
+  questions: [
+    { question: "Q1?", header: "첫째", multiSelect: false, options: [{ label: "가", description: null, preview: null }, { label: "나", description: null, preview: null }] },
+    { question: "Q2?", header: "둘째", multiSelect: true, options: [{ label: "다", description: null, preview: null }, { label: "라", description: null, preview: null }] },
+    { question: "Q3?", header: "셋째", multiSelect: false, options: [{ label: "마", description: null, preview: null }, { label: "바", description: null, preview: null }] },
+    { question: "Q4?", header: "넷째", multiSelect: false, options: [{ label: "사", description: null, preview: null }, { label: "아", description: null, preview: null }] },
+  ],
+};
+
 describe("질문 카드", () => {
-  it("권장 표시는 선택지 글 그대로 · 설명 · 미리보기 상자가 보이고, 다 고르기 전에는 보낼 수 없다", () => {
+  it("권장 표시는 선택지 글 그대로 · 설명 · 미리보기 상자가 보이고, 질문이 여럿이면 하나씩 보인다", () => {
     render(<QuestionRequest info={QUESTIONS} state={PENDING} onRespond={responder()} />);
     expect(screen.getByText("파랑 (권장)")).toBeInTheDocument();
     expect(screen.getByText("차분한 색")).toBeInTheDocument();
     expect(screen.getByText(/파랑/, { selector: "pre" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "답 보내기" })).toBeDisabled();
+    // 둘째 질문은 아직 안 보인다 · 첫 칸에는 보내기 대신 [다음]
+    expect(screen.queryByText("넣을 것을 모두 골라 주세요")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "답 보내기" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "이전" })).toBeDisabled();
     expect(screen.getByText("2개 중 0개 답함", { exact: false })).toBeInTheDocument();
   });
 
-  it("하나 고르기 + 여러 개 고르기 → 질문 문장을 열쇠로 한 answer 를 보낸다", async () => {
+  it("하나 고르기 + 여러 개 고르기 → 요약을 거쳐 질문 문장을 열쇠로 한 answer 를 보낸다", async () => {
     const respond = responder();
     render(<QuestionRequest info={QUESTIONS} state={PENDING} onRespond={respond} />);
-    const [blue, green] = screen.getAllByRole("radio");
+    const [, green] = screen.getAllByRole("radio");
     fireEvent.click(green!);
-    fireEvent.click(blue!);
-    expect(blue).toBeChecked();
-    expect(green).not.toBeChecked();
-    // 미리보기는 고른 것을 따라간다
-    fireEvent.click(screen.getByRole("checkbox", { name: /표/ }));
+    // 하나 고르기는 고르면 다음 질문으로
+    expect(await screen.findByText("넣을 것을 모두 골라 주세요")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /^색/ }));
+    expect(screen.getAllByRole("radio")[0]).not.toBeChecked();
+    expect(screen.getAllByRole("radio")[1]).toBeChecked();
+    fireEvent.click(screen.getAllByRole("radio")[0]!);
+    // 여러 개 고르기는 [다음] 으로
+    fireEvent.click(await screen.findByRole("checkbox", { name: /표/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /그림/ }));
-    expect(screen.getByRole("button", { name: "답 보내기" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "답 보내기" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    // 요약
+    expect(await screen.findByRole("heading", { name: "이렇게 보낼까요?" })).toBeInTheDocument();
+    expect(screen.getByText("파랑 (권장)")).toBeInTheDocument();
+    expect(screen.getByText("그림 · 표")).toBeInTheDocument();
+    expect(respond).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "답 보내기" }));
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
     expect(respond).toHaveBeenCalledWith("r1", {
@@ -72,26 +97,99 @@ describe("질문 카드", () => {
     });
   });
 
-  it("직접 쓰기 — 하나 고르기는 선택지를 대신하고, 여러 개 고르기는 선택지와 함께. 빈 글은 답이 아니다", async () => {
+  it("직접 쓰기 — 하나 고르기는 선택지를 대신하고(고르는 즉시 넘어가지 않는다), 여러 개 고르기는 선택지와 함께. 빈 글은 답이 아니다", async () => {
     const respond = responder();
     render(<QuestionRequest info={QUESTIONS} state={PENDING} onRespond={respond} />);
-    const [singleWrite] = screen.getAllByRole("radio").slice(-1);
-    const [, , multiWriteBox] = screen.getAllByRole("checkbox").slice(-3);
-    fireEvent.click(singleWrite!);
-    // 칸이 열렸지만 비어 있어 아직 답이 아니다
-    expect(screen.getByRole("button", { name: "답 보내기" })).toBeDisabled();
-    const [firstText] = screen.getAllByRole("textbox", { name: "직접 쓴 답" });
-    fireEvent.change(firstText!, { target: { value: "  보라색  " } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /그림/ }));
-    fireEvent.click(multiWriteBox!);
-    const texts = screen.getAllByRole("textbox", { name: "직접 쓴 답" });
-    fireEvent.change(texts[1]!, { target: { value: "글" } });
-    fireEvent.click(screen.getByRole("button", { name: "답 보내기" }));
+    fireEvent.click(screen.getByRole("radio", { name: "직접 쓰기" }));
+    // 칸이 열렸지만 비어 있어 아직 답이 아니다 — 넘어가지 않고 [다음] 도 꺼져 있다
+    expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "직접 쓴 답" }), { target: { value: "  보라색  " } });
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /그림/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "직접 쓰기" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "직접 쓴 답" }), { target: { value: "글" } });
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    fireEvent.click(await screen.findByRole("button", { name: "답 보내기" }));
     await waitFor(() => expect(respond).toHaveBeenCalled());
     expect(respond).toHaveBeenCalledWith("r1", {
       kind: "answer",
       answers: { "어떤 색이 좋아요?": "보라색", "넣을 것을 모두 골라 주세요": ["그림", "글"] },
     });
+  });
+
+  it("질문 4개 — 하나씩, 탭에 답함 표시 · 앞으로 돌아가 바꾸기 · 요약에서 바꾸기, 보내는 모양은 그대로", async () => {
+    const respond = responder();
+    render(<QuestionRequest info={FOUR} state={PENDING} onRespond={respond} />);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["첫째", "둘째", "셋째", "넷째", "확인"]);
+    expect(screen.getByText("1/4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /가/ }));
+    expect(await screen.findByText("Q2?")).toBeInTheDocument();
+    expect(screen.getByText("2/4")).toBeInTheDocument();
+    // 답한 질문은 글로도 알린다 (색만이 아니라)
+    expect(screen.getByRole("tab", { name: "첫째 (답함)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "둘째" })).toHaveAttribute("aria-selected", "true");
+    // 앞으로 돌아가 바꾸면 다시 다음으로
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    expect(screen.getByRole("radio", { name: /가/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /나/ }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /라/ }));
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /바/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /사/ }));
+    expect(await screen.findByRole("heading", { name: "이렇게 보낼까요?" })).toBeInTheDocument();
+    // 요약에서 하나 바꾸기
+    fireEvent.click(screen.getByRole("button", { name: "셋째 답 바꾸기" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /마/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "답 보내기" }));
+    await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    expect(respond).toHaveBeenCalledWith("r4", { kind: "answer", answers: { "Q1?": "나", "Q2?": ["라"], "Q3?": "마", "Q4?": "사" } });
+  });
+
+  it("다 안 골랐으면 요약에서 보낼 수 없고, 안 고른 칸은 그렇게 쓴다", async () => {
+    render(<QuestionRequest info={FOUR} state={PENDING} onRespond={responder()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "확인" }));
+    expect(await screen.findByRole("button", { name: "답 보내기" })).toBeDisabled();
+    expect(screen.getAllByText("아직 안 골랐어요")).toHaveLength(4);
+  });
+
+  it("방향키로 선택지를 훑을 때는 넘어가지 않는다 — Enter 로 다음", async () => {
+    render(<QuestionRequest info={FOUR} state={PENDING} onRespond={responder()} />);
+    const first = screen.getByRole("radio", { name: /가/ });
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("radio", { name: /나/ })); // 브라우저가 방향키로 고를 때 보내는 click
+    fireEvent.keyUp(first, { key: "ArrowDown" });
+    expect(screen.getByText("Q1?")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /나/ })).toBeChecked();
+    fireEvent.keyDown(screen.getByRole("radio", { name: /나/ }), { key: "Enter" });
+    expect(await screen.findByText("Q2?")).toBeInTheDocument();
+  });
+
+  it("탭 줄은 ←/→ 로 옮기고 초점이 따라간다, 단추로 질문이 바뀌면 초점은 새 질문 제목으로", async () => {
+    render(<QuestionRequest info={FOUR} state={PENDING} onRespond={responder()} />);
+    const [t1] = screen.getAllByRole("tab");
+    t1!.focus();
+    fireEvent.keyDown(t1!, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "둘째" })).toHaveFocus();
+    expect(screen.getByText("Q2?")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "둘째" }), { key: "End" });
+    expect(screen.getByRole("tab", { name: "확인" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "확인" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "첫째" })).toHaveFocus();
+    // 고르면 다음 질문 제목(질문 2/4 …)으로
+    fireEvent.click(screen.getByRole("radio", { name: /가/ }));
+    const group = await screen.findByRole("group", { name: /질문 2\/4/ });
+    expect(within(group).getByText("Q2?").closest("legend")).toHaveFocus();
+  });
+
+  it("고른 값은 카드를 다시 그려도 남는다 (보던 칸까지)", async () => {
+    const first = render(<QuestionRequest info={FOUR} state={PENDING} onRespond={responder()} />);
+    fireEvent.click(screen.getByRole("radio", { name: /나/ }));
+    await screen.findByText("Q2?");
+    first.unmount();
+    render(<QuestionRequest info={FOUR} state={PENDING} onRespond={responder()} />);
+    expect(screen.getByText("Q2?")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "첫째 (답함)" })).toBeInTheDocument();
   });
 
   it("선택지에서 Enter 를 누르면 보낸다 (다 골랐을 때만)", async () => {
@@ -334,5 +432,43 @@ describe("권한 카드", () => {
     rerender(<PermissionCard info={base} state={{ status: "cancelled", answer: null }} onRespond={responder()} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.getByText("취소됨")).toBeInTheDocument();
+  });
+});
+
+describe("기다리는 권한 카드는 맨 앞 하나만", () => {
+  const perm = (id: string, cmd: string): PermissionView => ({
+    requestId: id,
+    toolUseId: null,
+    tool: "Bash",
+    displayName: "Bash",
+    description: cmd,
+    command: cmd,
+    path: null,
+    cwd: "C:/p",
+    alwaysRule: null,
+  });
+  const lines = [
+    { key: "1", kind: "permission", info: perm("p1", "첫째 명령"), state: PENDING },
+    { key: "2", kind: "question", info: QUESTIONS, state: PENDING },
+    { key: "3", kind: "permission", info: perm("p2", "둘째 명령"), state: PENDING },
+    { key: "4", kind: "permission", info: perm("p3", "셋째 명령"), state: PENDING },
+    { key: "5", kind: "permission", info: perm("p0", "지난 명령"), state: answered({ kind: "allow" }) },
+  ] as const;
+
+  it("질문 카드와 권한 카드는 각각 맨 앞 하나씩 · 답한 카드는 기록으로 남는다 · 머리에 남은 요청 수", () => {
+    render(<ChatLog lines={lines} hasMore={false} loadingOlder={false} olderFailed={false} onLoadOlder={() => undefined} onRespond={responder()} />);
+    expect(screen.getAllByRole("article", { name: "권한 요청" })).toHaveLength(2);
+    expect(screen.getByText("첫째 명령", { selector: "pre code" })).toBeInTheDocument();
+    expect(screen.queryByText("둘째 명령", { selector: "pre code" })).not.toBeInTheDocument();
+    expect(screen.getByText("지난 명령", { selector: "pre code" })).toBeInTheDocument();
+    expect(screen.getByText("남은 요청 2개")).toBeInTheDocument();
+    expect(screen.getAllByRole("article", { name: "질문" })).toHaveLength(1);
+  });
+
+  it("앞의 카드가 답으로 닫히면 다음 요청이 나온다, 하나만 남으면 남은 요청 글이 없다", () => {
+    const next = [{ ...lines[0], state: answered({ kind: "allow" }) }, ...lines.slice(1, 3)];
+    render(<ChatLog lines={next as never} hasMore={false} loadingOlder={false} olderFailed={false} onLoadOlder={() => undefined} onRespond={responder()} />);
+    expect(screen.getByText("둘째 명령", { selector: "pre code" })).toBeInTheDocument();
+    expect(screen.queryByText(/남은 요청/)).not.toBeInTheDocument();
   });
 });

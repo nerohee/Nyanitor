@@ -98,11 +98,14 @@ describe("카드에 답하기 (키보드)", () => {
     await say("질문 하나 해 줘");
     const card = await screen.findByRole("article", { name: "질문" });
     expect(within(card).getByText("어떤 색이 좋아요?")).toBeInTheDocument();
-    const radio = within(card).getByRole("radio", { name: /초록/ });
-    radio.focus();
-    fireEvent.click(radio);
-    fireEvent.click(within(card).getByRole("checkbox", { name: /그림/ }));
-    fireEvent.keyDown(radio, { key: "Enter" });
+    // 질문은 하나씩 — 하나 고르기는 고르면 다음, 여러 개 고르기는 Enter 로 다음, 요약에서 보낸다
+    fireEvent.click(within(card).getByRole("radio", { name: /초록/ }));
+    const box = await within(card).findByRole("checkbox", { name: /그림/ });
+    box.focus();
+    fireEvent.click(box);
+    fireEvent.keyDown(box, { key: "Enter" });
+    await within(card).findByRole("heading", { name: "이렇게 보낼까요?" });
+    fireEvent.click(within(card).getByRole("button", { name: "답 보내기" }));
     // 접힘: 단추 · 선택지 없음, 고른 답
     await waitFor(() => expect(within(screen.getByRole("article", { name: "질문" })).getByText("초록")).toBeInTheDocument());
     const done = screen.getByRole("article", { name: "질문" });
@@ -133,6 +136,31 @@ describe("카드에 답하기 (키보드)", () => {
     fireEvent.click(within(card).getByRole("button", { name: "이번만 허용" }));
     await waitFor(() => expect(screen.getByText("이번만 허용함")).toBeInTheDocument());
     expect(await screen.findByText("끝났어요.")).toBeInTheDocument();
+  });
+
+  it("권한 요청이 동시에 셋 — 카드는 맨 앞 하나 + 남은 요청 수, 답할 때마다 다음 카드가 그 자리에 (기다리는 수는 전체 그대로)", async () => {
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("권한3 해 줘");
+    await screen.findByRole("button", { name: "기다리는 카드로 (3)" });
+    let cards = screen.getAllByRole("article", { name: "권한 요청" });
+    expect(cards).toHaveLength(1);
+    expect(within(cards[0]!).getByText("남은 요청 2개")).toBeInTheDocument();
+    expect(within(cards[0]!).getByText("mkdir demo", { selector: "pre code" })).toBeInTheDocument();
+    fireEvent.click(within(cards[0]!).getByRole("button", { name: "이번만 허용" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "기다리는 카드로 (2)" })).toBeInTheDocument());
+    // 답한 카드는 기록으로 남고, 기다리는 카드는 다시 하나 (두 번째 요청: 파일 쓰기)
+    cards = screen.getAllByRole("article", { name: "권한 요청" });
+    const waiting = cards.filter((el) => el.getAttribute("data-pending") === "true");
+    expect(cards).toHaveLength(2);
+    expect(waiting).toHaveLength(1);
+    expect(within(waiting[0]!).getByText("남은 요청 1개")).toBeInTheDocument();
+    expect(within(waiting[0]!).getByRole("button", { name: "이 프로젝트에서 항상 허용" })).toBeInTheDocument();
+    fireEvent.click(within(waiting[0]!).getByRole("button", { name: "이번만 허용" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "기다리는 카드로 (1)" })).toBeInTheDocument());
+    const last = screen.getAllByRole("article", { name: "권한 요청" }).filter((el) => el.getAttribute("data-pending") === "true");
+    expect(last).toHaveLength(1);
+    expect(within(last[0]!).queryByText(/남은 요청/)).not.toBeInTheDocument();
   });
 
   it("권한 — 항상 허용 · 다르게 하라고 말하기(중단 줄 + 말이 새 메시지로)", async () => {
@@ -463,8 +491,9 @@ describe("화면을 다시 그릴 때", () => {
     expect(screen.getByText("답을 기다리는 중", { selector: ".wc-head__pill" })).toBeInTheDocument();
     // 되살린 카드에도 답할 수 있다
     fireEvent.click(within(card).getAllByRole("radio")[0]!);
-    fireEvent.click(within(card).getAllByRole("checkbox")[0]!);
-    fireEvent.click(within(card).getByRole("button", { name: "답 보내기" }));
+    fireEvent.click(await within(card).findByRole("checkbox", { name: /그림/ }));
+    fireEvent.click(within(card).getByRole("button", { name: "다음" }));
+    fireEvent.click(await within(card).findByRole("button", { name: "답 보내기" }));
     await waitFor(() => expect(screen.getByRole("article", { name: "질문" })).toHaveAttribute("data-status", "answered"));
   });
 });

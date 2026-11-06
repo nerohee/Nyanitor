@@ -1,9 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { resetCardDrafts } from "../workspace/chat/cardDrafts";
 
 afterEach(() => {
   cleanup();
+  resetCardDrafts();
 });
 
 // jsdom 에는 글자 위치를 재는 `Range.getClientRects` · `getBoundingClientRect` 가 없다 — CodeMirror(요구사항 편집기)가 재려고 부른다.

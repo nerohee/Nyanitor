@@ -1,11 +1,12 @@
 // 채팅 안의 선택 카드 (D-14 · D-23) — 질문 · 단계 승인 · 권한. 시제품 `variants/shared/cards.tsx` 의 모양에 실제 답 보내기를 붙였다.
 // 카드는 답을 `onRespond` 로 올릴 뿐이다 (`claudeSessionRespond`). 답한 카드는 접혀서 고른 답이 보이고, 지나감 · 취소됨은 흐리게 한 줄.
 // 항상 허용의 규칙은 요청의 `alwaysRule` 이고 화면이 고르지 않는다 — 없으면 단추를 보이지 않는다 (D-23 · D-45).
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { t, tf, type TextKey } from "../../i18n/ko";
 import type { AnswerValue, ClaudeResponse, QuestionInfo, QuestionRequestInfo } from "../../lib/ipc-types";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { approvalChoiceOf, approvalLabel, parseApproval, type Approval } from "./approval";
+import { dropDraft, getDraft, setDraft } from "./cardDrafts";
 import { chatErrorText } from "./errors";
 import type { CardState, PermissionView } from "./model";
 
@@ -55,13 +56,14 @@ const STATE_LABEL: Record<CardState["status"], TextKey> = {
   expired: "ws.chat.card.expired",
 };
 
-function CardHead({ label, icon, status }: { label: string; icon: IconName; status: CardState["status"] }) {
+function CardHead({ label, icon, status, note }: { label: string; icon: IconName; status: CardState["status"]; note?: string | null }) {
   return (
     <header className="wc-card__head">
       <span className="wc-card__icon" aria-hidden="true">
         <Icon name={icon} size={16} />
       </span>
       <span className="wc-card__kind">{label}</span>
+      {note && <span className="wc-card__more">{note}</span>}
       <span className="wc-card__state" data-status={status}>
         {t(STATE_LABEL[status])}
       </span>
@@ -142,11 +144,19 @@ function QuestionBlock({
   value,
   disabled,
   onChange,
+  onPicked,
+  position,
+  legendRef,
 }: {
   question: QuestionInfo;
   value: Selection;
   disabled: boolean;
   onChange: (next: Selection) => void;
+  /** 하나 고르기에서 선택지를 골랐다 (방향키로 훑을 때는 부르지 않는다) — 질문이 여럿이면 다음으로 넘기는 데 쓴다 */
+  onPicked?: () => void;
+  /** 질문이 여럿일 때 "질문 2/4" — 화면 읽기 프로그램용 */
+  position?: string;
+  legendRef?: Ref<HTMLLegendElement>;
 }) {
   const name = useId();
   const previewId = useId();
@@ -158,8 +168,13 @@ function QuestionBlock({
   const preview = question.options[shown]?.preview ?? null;
   const writeRef = useRevealWhenOpen<HTMLInputElement>(value.write);
 
+  const arrowing = useRef(false);
+
   const toggle = (index: number, checked: boolean) => {
-    if (!multi) onChange({ ...value, picks: [index], write: false });
+    if (!multi) {
+      onChange({ ...value, picks: [index], write: false });
+      if (!arrowing.current) onPicked?.();
+    }
     else onChange({ ...value, picks: checked ? [...value.picks.filter((pick) => pick !== index), index] : value.picks.filter((pick) => pick !== index) });
   };
   const toggleWrite = (checked: boolean) => {
@@ -169,13 +184,23 @@ function QuestionBlock({
 
   return (
     <fieldset className="wc-q" data-preview={hasPreview ? "true" : undefined} disabled={disabled}>
-      <legend className="wc-q__prompt">
+      <legend className="wc-q__prompt" ref={legendRef} tabIndex={legendRef ? -1 : undefined}>
+        {position && <span className="ws-sr">{position}</span>}
         {question.header && <span className="wc-q__header">{question.header}</span>}
         <span className="wc-q__text">{question.question}</span>
         {multi && <span className="wc-q__multi">{t("variant.ws.card.multi")}</span>}
       </legend>
       <div className="wc-q__grid">
-        <div className="wc-q__options" onMouseLeave={() => setPeek(null)}>
+        <div
+          className="wc-q__options"
+          onMouseLeave={() => setPeek(null)}
+          onKeyDown={(event) => {
+            if (event.key.startsWith("Arrow")) arrowing.current = true;
+          }}
+          onKeyUp={() => {
+            arrowing.current = false;
+          }}
+        >
           {question.options.map((option, index) => (
             <label
               key={`${index}:${option.label}`}
@@ -237,51 +262,207 @@ function answerText(value: AnswerValue | undefined): string {
   return (Array.isArray(value) ? value : [value]).filter((item) => item !== "").join(" · ") || t("ws.chat.card.answeredNoText");
 }
 
-/** 질문 카드 — 선택지 + 직접 쓰기, 여러 개 고르기, 미리보기. 다 고르면 "답 보내기" */
+/** 질문 카드 — 질문이 하나면 고르고 보내기, 여럿이면 질문 하나씩(머리말 탭 · 이전 · 다음) 보이고 마지막에 요약을 보고 보낸다 */
 export function QuestionCard({ info, state, onRespond, first }: CardProps & { info: QuestionRequestInfo }) {
-  const [selections, setSelections] = useState<Selection[]>(() => info.questions.map(() => EMPTY));
+  const total = info.questions.length;
+  const multiStep = total > 1;
+  const draft = getDraft(info.requestId);
+  const [selections, setSelections] = useState<Selection[]>(() => (draft && draft.selections.length === total ? draft.selections : info.questions.map(() => EMPTY)));
+  const [step, setStep] = useState(() => (multiStep && draft && draft.selections.length === total ? Math.min(draft.step, total) : 0));
   const { sending, error, submit } = useSubmit(onRespond, info.requestId);
   const progressId = useId();
+  const tabsId = useId();
   const pending = state.status === "pending";
   const done = selections.filter(isAnswered).length;
-  const complete = done === info.questions.length;
+  const complete = done === total;
+  const summary = multiStep && step >= total;
+  const tabs = useRef(new Map<number, HTMLButtonElement>());
+  const headRef = useRef<HTMLElement | null>(null);
+  const wantFocus = useRef(false);
+  /** 요약에서 [바꾸기] 로 왔다 — 고치고 나면 남은 질문을 거치지 않고 요약으로 돌아간다 */
+  const backToSummary = useRef(false);
+
+  // 고른 값 · 보던 칸은 카드가 닫힐 때까지 앱 안에 둔다
+  useEffect(() => {
+    if (pending) setDraft(info.requestId, { selections, step });
+    else dropDraft(info.requestId);
+  }, [pending, info.requestId, selections, step]);
+  // 질문이 바뀌면(탭 줄이 아닌 단추 · 고르기로) 새 질문 제목으로 초점 — "질문 2/4 …" 를 듣게
+  useEffect(() => {
+    if (!wantFocus.current) return;
+    wantFocus.current = false;
+    headRef.current?.focus();
+  }, [step]);
+
+  const go = (to: number, moveFocus: boolean) => {
+    wantFocus.current = moveFocus;
+    backToSummary.current = false;
+    setStep(Math.max(0, Math.min(total, to)));
+  };
+  const advance = () => {
+    if (backToSummary.current) go(total, true);
+    else go(step + 1, true);
+  };
+  const change = (index: number) => {
+    go(index, true);
+    backToSummary.current = true;
+  };
+  const moveTab = (to: number) => {
+    const next = (to + total + 1) % (total + 1);
+    go(next, false);
+    tabs.current.get(next)?.focus();
+  };
+  const onTabKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "ArrowRight") moveTab(step + 1);
+    else if (event.key === "ArrowLeft") moveTab(step - 1);
+    else if (event.key === "Home") moveTab(0);
+    else if (event.key === "End") moveTab(total);
+    else return;
+    event.preventDefault();
+  };
 
   const send = (event?: FormEvent) => {
     event?.preventDefault();
     if (!complete || sending) return;
+    // 질문이 여럿이면 요약에서만 보낸다
+    if (multiStep && !summary) return;
     void submit({ kind: "answer", answers: buildAnswers(info.questions, selections) });
   };
-  // 선택지에서 Enter = 보내기 (다 골랐을 때)
+  // 선택지에서 Enter = 질문 하나면 보내기 (다 골랐을 때), 여럿이면 다음으로 (이 질문에 답했을 때)
   const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
     const target = event.target as HTMLInputElement;
     if (event.key === "Enter" && (target.type === "radio" || target.type === "checkbox")) {
       event.preventDefault();
-      send();
+      if (!multiStep) send();
+      else if (!summary && isAnswered(selections[step] ?? EMPTY)) advance();
     }
   };
+
+  const tabName = (index: number) => info.questions[index]?.header || tf("ws.chat.card.tabN", { n: index + 1 });
+  const current = summary ? null : info.questions[step];
+  const tabId = (index: number) => `${tabsId}-tab-${index}`;
 
   return (
     <Article kind="question" label={t("variant.ws.card.question")} state={state} first={first}>
       <CardHead label={t("variant.ws.card.question")} icon="info" status={state.status} />
       {pending ? (
         <form className="wc-card__body" onSubmit={send} onKeyDown={onKeyDown}>
-          {info.questions.map((question, index) => (
-            <QuestionBlock
-              key={`${index}:${question.question}`}
-              question={question}
-              value={selections[index] ?? EMPTY}
-              disabled={sending}
-              onChange={(next) => setSelections((prev) => prev.map((sel, i) => (i === index ? next : sel)))}
-            />
-          ))}
+          {multiStep && (
+            <div className="wc-qtabs">
+              <div className="wc-qtabs__list" role="tablist" aria-label={t("ws.chat.card.tabs")} onKeyDown={onTabKeyDown}>
+                {info.questions.map((question, index) => {
+                  const answered = isAnswered(selections[index] ?? EMPTY);
+                  return (
+                    <button
+                      key={`${index}:${question.question}`}
+                      type="button"
+                      role="tab"
+                      id={tabId(index)}
+                      aria-selected={step === index}
+                      aria-controls={`${tabsId}-panel`}
+                      tabIndex={step === index ? 0 : -1}
+                      className="wc-qtab"
+                      data-done={answered ? "true" : undefined}
+                      disabled={sending}
+                      onClick={() => go(index, false)}
+                      ref={(el) => {
+                        if (el) tabs.current.set(index, el);
+                        else tabs.current.delete(index);
+                      }}
+                    >
+                      {answered && <Icon name="check" size={12} />}
+                      {tabName(index)}
+                      {answered && " "}
+                      {answered && <span className="ws-sr">({t("ws.chat.card.tabDone")})</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  role="tab"
+                  id={tabId(total)}
+                  aria-selected={summary}
+                  aria-controls={`${tabsId}-panel`}
+                  tabIndex={summary ? 0 : -1}
+                  className="wc-qtab"
+                  disabled={sending}
+                  onClick={() => go(total, false)}
+                  ref={(el) => {
+                        if (el) tabs.current.set(total, el);
+                        else tabs.current.delete(total);
+                      }}
+                >
+                  {t("ws.chat.card.tabSummary")}
+                </button>
+              </div>
+              <span className="wc-qtabs__count" aria-hidden="true">
+                {summary ? tf("ws.chat.card.stepSummary", { total }) : `${step + 1}/${total}`}
+              </span>
+            </div>
+          )}
+          <div className="wc-qpanel" role={multiStep ? "tabpanel" : undefined} id={multiStep ? `${tabsId}-panel` : undefined} aria-labelledby={multiStep ? tabId(step) : undefined}>
+            {summary ? (
+              <section className="wc-qsum" aria-labelledby={`${tabsId}-sum`}>
+                <h3 className="wc-qsum__title" id={`${tabsId}-sum`} tabIndex={-1} ref={(el) => void (headRef.current = el)}>
+                  {t("ws.chat.card.summaryTitle")}
+                </h3>
+                <dl className="wc-qsum__list">
+                  {info.questions.map((question, index) => {
+                    const ready = isAnswered(selections[index] ?? EMPTY);
+                    const picked = buildAnswers([question], [selections[index] ?? EMPTY])[question.question];
+                    return (
+                      <div key={`${index}:${question.question}`} className="wc-qsum__row">
+                        <dt>{tabName(index)}</dt>
+                        <dd data-missing={ready ? undefined : "true"}>{ready ? answerText(picked) : t("ws.chat.card.unanswered")}</dd>
+                        <button
+                          type="button"
+                          className="ws-btn ws-btn--small ws-btn--ghost"
+                          disabled={sending}
+                          aria-label={tf("ws.chat.card.changeOf", { name: tabName(index) })}
+                          onClick={() => change(index)}
+                        >
+                          {t("ws.chat.card.change")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
+            ) : (
+              current && (
+                <QuestionBlock
+                  key={step}
+                  question={current}
+                  value={selections[step] ?? EMPTY}
+                  disabled={sending}
+                  position={multiStep ? `${tf("ws.chat.card.step", { n: step + 1, total })} ` : undefined}
+                  legendRef={multiStep ? (el) => void (headRef.current = el) : undefined}
+                  onPicked={multiStep ? advance : undefined}
+                  onChange={(next) => setSelections((prev) => prev.map((sel, i) => (i === step ? next : sel)))}
+                />
+              )
+            )}
+          </div>
           <div className="wc-card__actions">
-            <button type="submit" className="ws-btn ws-btn--primary" disabled={!complete || sending} aria-describedby={progressId}>
-              {t(sending ? "ws.chat.card.sending" : "variant.ws.card.submit")}
-            </button>
+            {multiStep && (
+              <button type="button" className="ws-btn" disabled={sending || step === 0} onClick={() => go(step - 1, true)}>
+                {t("ws.chat.card.prev")}
+              </button>
+            )}
+            {multiStep && !summary && (
+              <button type="button" className="ws-btn ws-btn--primary" disabled={sending || !isAnswered(selections[step] ?? EMPTY)} onClick={advance}>
+                {t("ws.chat.card.next")}
+              </button>
+            )}
+            {(!multiStep || summary) && (
+              <button type="submit" className="ws-btn ws-btn--primary" disabled={!complete || sending} aria-describedby={progressId}>
+                {t(sending ? "ws.chat.card.sending" : "variant.ws.card.submit")}
+              </button>
+            )}
             <span className="wc-card__hint" id={progressId}>
-              {tf("variant.ws.card.progress", { n: done, total: info.questions.length })}
+              {tf("variant.ws.card.progress", { n: done, total })}
               <span aria-hidden="true"> · </span>
-              {t("variant.ws.card.keys")}
+              {multiStep && !summary ? t("ws.chat.card.stepKeys") : t("variant.ws.card.keys")}
             </span>
           </div>
           <SendError text={error} />
@@ -464,7 +645,7 @@ function PermissionResult({ info, state }: { info: PermissionView; state: CardSt
 }
 
 /** 권한 카드 — 무엇을(도구 · 명령 · 파일) · 어디서 → 이번만 허용 / 항상 허용(규칙이 있을 때) / 거부 / 다르게 하라고 말하기 */
-export function PermissionCard({ info, state, onRespond, first }: CardProps & { info: PermissionView }) {
+export function PermissionCard({ info, state, onRespond, first, more = 0 }: CardProps & { info: PermissionView; /** 이 카드 뒤에 기다리는 권한 요청 수 (0 이면 안 보임) */ more?: number }) {
   const { sending, error, submit } = useSubmit(onRespond, info.requestId);
   const [telling, setTelling] = useState(false);
   const [words, setWords] = useState("");
@@ -477,7 +658,7 @@ export function PermissionCard({ info, state, onRespond, first }: CardProps & { 
 
   return (
     <Article kind="permission" label={t("variant.ws.card.permission")} state={state} first={first}>
-      <CardHead label={t("variant.ws.card.permission")} icon="key" status={state.status} />
+      <CardHead label={t("variant.ws.card.permission")} icon="key" status={state.status} note={pending && more > 0 ? tf("ws.chat.card.moreRequests", { n: more }) : null} />
       <div className="wc-card__body">
         {info.description && info.description !== target && <p className="wc-card__text">{info.description}</p>}
         <div className="wc-perm">

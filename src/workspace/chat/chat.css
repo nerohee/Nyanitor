@@ -747,6 +747,114 @@
   overflow-wrap: anywhere;
 }
 
+/* 질문이 여럿 — 머리말 탭 줄 (작업 공간 탭 `.ws-wp__tab` 과 같은 결: 지금 칸은 형광펜 줄 + 굵게, 답한 칸은 ✓ + 글, 남은 칸은 흐리게) */
+.wc-qtabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: stretch;
+  border-bottom: var(--ui-line-w) solid var(--ui-line);
+}
+.wc-qtabs__list {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.wc-qtab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-round);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+.wc-qtab:hover:not(:disabled) {
+  color: var(--color-text);
+}
+.wc-qtab[data-done="true"] {
+  color: var(--color-text);
+}
+.wc-qtab[aria-selected="true"] {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  background: linear-gradient(transparent 60%, var(--accent) 60% 88%, transparent 88%);
+}
+.wc-qtab:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
+}
+.wc-qtabs__count {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-qpanel {
+  align-self: stretch;
+  min-width: 0;
+}
+.wc-q__prompt:focus-visible,
+.wc-qsum__title:focus-visible {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 마지막 요약 — 질문마다 고른 답 한 줄 + 바꾸기 */
+.wc-qsum__title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-round);
+  font-size: var(--text-md);
+  font-weight: 400;
+}
+.wc-qsum__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.wc-qsum__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.wc-qsum__row dt {
+  padding: 0 var(--space-2);
+  border: 1.5px solid var(--ui-line);
+  border-radius: 7px 5px 7px 4px / 5px 7px 4px 7px;
+  background: var(--ui-4);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.wc-qsum__row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-qsum__row dd[data-missing="true"] {
+  color: var(--color-text-muted);
+}
+
+/* 권한 카드 머리의 "남은 요청 n개" — 상태 알약 왼쪽 */
+.wc-card__more {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-card__more + .wc-card__state {
+  margin-left: 0;
+}
+
 /* 단계 승인 */
 .wc-appr {
   display: grid;

@@ -148,6 +148,8 @@ export function createFakeProjects() {
   let held: FakeFolder | null = null;
   let clock = 0;
   const files = new Map<number, FakeFile>();
+  /** 지금 가짜 세션이 돌고 있는 프로젝트 번호 (없으면 null). 가짜 세션(`fakeClaude.ts`)이 `bindSession` 으로 알려 준다 — 서로를 가져오면 돌고 도는 import 라 이쪽에서 받는다 */
+  let runningProject: () => number | null = () => null;
 
   /** 처음 부를 때(또는 `reset` 뒤) 쿼리의 모드로 목록을 채운다 */
   function state(): ProjectEntry[] {
@@ -254,6 +256,8 @@ export function createFakeProjects() {
     },
 
     project_remove: (args): null => {
+      // 진짜처럼 그 프로젝트의 세션이 돌고 있으면 (또는 시작 중이면) 맨 먼저 거절 — 아무것도 지우지 않는다
+      if (typeof args.id === "number" && runningProject() === args.id) throw new AppError("session_running", "a session is running in this project");
       checkDb(true);
       const project = find(args.id);
       projects = state().filter((candidate) => candidate !== project);
@@ -355,6 +359,10 @@ export function createFakeProjects() {
       } catch (raw) {
         return raw instanceof AppError ? raw.kind : "internal";
       }
+    },
+    /** 가짜 세션이 지금 어느 프로젝트에서 돌고 있는지 묻는 길을 이어 준다 (`project_remove` 가 `session_running` 으로 거절하려고). `reset` 으로 끊기지 않는다 */
+    bindSession(probe: () => number | null): void {
+      runningProject = probe;
     },
     /** 시험용: 쿼리 대신 값을 정하고 모든 가짜 기억(프로젝트 · 고른 폴더 · 파일)을 처음으로 되돌린다 (인자 없이 부르면 다시 쿼리를 읽는다) */
     reset(next?: Partial<FakeProjectsOptions>) {

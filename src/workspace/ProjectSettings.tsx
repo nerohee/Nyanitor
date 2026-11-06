@@ -7,6 +7,7 @@ import { PROJECT_NAME_MAX_CHARS, type ProjectEntry, type ProjectPatch, type Proj
 import { Icon } from "../variants/shared/icons";
 import { Dialog } from "./Dialog";
 import { errorKind, errorText } from "./errors";
+import { useSessionStore } from "./chat/sessionStore";
 import { SkillChoices } from "./SkillChoices";
 
 interface Props {
@@ -32,6 +33,9 @@ export function ProjectSettingsDialog({ project, readOnly, onClose, onChanged, o
   const ask = useRef<HTMLButtonElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const asked = useRef(false);
+  // 이 프로젝트에서 세션이 도는 중이면 미리 막는다 (그래도 Rust 의 거절은 아래에서 따로 처리 — 경합)
+  const sessionHere = useSessionStore((state) => state.session?.projectId === project.id);
+  const sessionHint = useId();
 
   // 확인 단계로 바뀌면 안전한 쪽(취소)으로, 돌아오면 처음 단추로 — 누른 단추가 사라져도 포커스가 body 로 빠지지 않게
   useEffect(() => {
@@ -68,7 +72,8 @@ export function ProjectSettingsDialog({ project, readOnly, onClose, onChanged, o
       await ipc.projectRemove(project.id);
       onRemoved(project.id);
     } catch (raw) {
-      setProblem(errorText(errorKind(raw)));
+      const kind = errorKind(raw);
+      setProblem(kind === "session_running" ? t("ws.settings.removeBusy") : errorText(kind));
       setBusy(false);
       setConfirming(false);
     }
@@ -134,11 +139,18 @@ export function ProjectSettingsDialog({ project, readOnly, onClose, onChanged, o
           ) : (
             <>
               <p>{t("ws.settings.removeBody")}</p>
+              {sessionHere && (
+                <p id={sessionHint} className="ws-note">
+                  <Icon name="info" size={14} />
+                  {t("ws.settings.removeBusy")}
+                </p>
+              )}
               <button
                 ref={ask}
                 type="button"
                 className="ws-btn"
-                disabled={readOnly || busy}
+                disabled={readOnly || busy || sessionHere}
+                aria-describedby={sessionHere ? sessionHint : undefined}
                 onClick={() => {
                   asked.current = true;
                   setConfirming(true);

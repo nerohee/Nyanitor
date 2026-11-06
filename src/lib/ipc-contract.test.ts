@@ -568,14 +568,14 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       project_pick_folder: ["app", "db", "state"],
       project_add: ["db", "state", "request"],
       project_update: ["db", "state", "id", "patch"],
-      project_remove: ["db", "state", "id"],
+      project_remove: ["db", "state", "sessions", "id"],
       project_touch: ["db", "id"],
-      project_requirements_read: ["db", "id"],
+      project_requirements_read: ["db", "state", "id"],
       project_requirements_version: ["db", "state", "id"],
       project_requirements_write: ["db", "state", "id", "text", "base_version"],
     };
     expect(signatures.map((m) => m[1]).sort()).toEqual(Object.keys(expected).sort());
-    // 화면이 보내는 값(앱이 채우는 app · db · state 를 뺀 것)의 이름 · 모양
+    // 화면이 보내는 값(앱이 채우는 app · db · state · sessions 를 뺀 것)의 이름 · 모양
     const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>" };
     for (const [, name, params] of signatures) {
       const list = (params as string)
@@ -589,7 +589,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       ).toEqual(expected[name as string]);
       for (const param of list) {
         const [paramName, paramType] = param.split(":").map((part) => part.trim()) as [string, string];
-        if (["app", "db", "state"].includes(paramName)) continue;
+        if (["app", "db", "state", "sessions"].includes(paramName)) continue;
         expect(paramType, `${name} 의 ${paramName}`).toBe(fromScreen[paramName]);
       }
     }

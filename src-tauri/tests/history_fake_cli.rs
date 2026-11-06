@@ -835,7 +835,7 @@ fn removing_a_project_removes_its_sessions_history_and_chure_but_not_the_folder_
     let marker = h.project.join("keep-me.txt");
     std::fs::write(&marker, "x").unwrap();
     let state = ProjectsState::new(h.root.join("data"));
-    projects::remove(&h.db, &state, 1).unwrap();
+    projects::remove(&h.db, &state, &h.manager, 1).unwrap();
     for table in ["sessions", "chat_items", "usage_turns"] {
         assert_eq!(count(&h, table, 1), 0, "{table}");
         assert_eq!(count(&h, table, 2), 1, "{table} of the other project");
@@ -1100,5 +1100,17 @@ fn an_error_tool_result_is_kept_but_a_successful_one_is_not() {
         .collect();
     assert_eq!(results.len(), 1, "{:?}", types(&page));
     assert_eq!(results[0]["isError"], true);
-    assert_eq!(results[0]["summary"], "boom");
+    assert_eq!(results[0]["toolUseId"], "t2");
+    // 실패한 결과도 글은 저장하지 않는다 (D-48) — 칸은 빈 글이다
+    assert_eq!(results[0]["summary"], "");
+    assert!(!format!("{:?}", page.entries).contains("boom"));
+    // 화면으로 간 실시간 이벤트에는 글이 있다
+    let live: Vec<Value> = h
+        .seen()
+        .iter()
+        .filter(|e| matches!(e, SessionEvent::ToolResult { is_error: true, .. }))
+        .map(to_json)
+        .collect();
+    assert_eq!(live.len(), 1);
+    assert_eq!(live[0]["summary"], "boom");
 }

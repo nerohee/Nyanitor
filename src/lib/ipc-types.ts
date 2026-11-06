@@ -217,6 +217,7 @@ export type ClaudeEvent =
   | { type: "turn_started"; sessionId: string; model: string | null; cliVersion: string | null; permissionMode: string | null; apiKeySource: string | null }
   | { type: "text"; text: string }
   | { type: "tool_use"; toolUseId: string; tool: string; summary: string }
+  /** 도구 결과. 실시간 이벤트는 결과 글(`summary`)을 가진다. **기록으로 저장된 실패한 결과는 `summary` 가 빈 글이다** (D-48 — 비밀값이 들어 있을 수 있어 글은 저장하지 않는다. "실패함" 표시와 `toolUseId` 만 남는다) */
   | { type: "tool_result"; toolUseId: string; isError: boolean; summary: string }
   | ({ type: "permission_request" } & PermissionRequestInfo)
   | ({ type: "question_request" } & QuestionRequestInfo)

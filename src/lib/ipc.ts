@@ -143,7 +143,7 @@ export const ipc = {
   projectAdd: (request: ProjectAddRequest = {}) => call<ProjectEntry>("project_add", { request }),
   /** 이름 · 스킬 고치기 (`skill: null` = 스킬 없음). 이름은 비면 거절 · 최대 `PROJECT_NAME_MAX_CHARS` 글자 */
   projectUpdate: (id: number, patch: ProjectPatch) => call<ProjectEntry>("project_update", { id, patch }),
-  /** 목록에서 빼기 — 등록만 지운다 (폴더 · 파일은 그대로) */
+  /** 목록에서 빼기 — 등록만 지운다 (폴더 · 파일은 그대로). 그 프로젝트의 세션이 시작 중이거나 돌고 있으면 `session_running` (끝낸 뒤에 뺀다 — 아무것도 지워지지 않는다) */
   projectRemove: (id: number) => call<void>("project_remove", { id }),
   /** 마지막으로 연 때를 지금으로 */
   projectTouch: (id: number) => call<void>("project_touch", { id }),

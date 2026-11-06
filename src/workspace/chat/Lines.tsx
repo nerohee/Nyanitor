@@ -77,11 +77,14 @@ export function ToolGroup({ lines }: { lines: Of<"tool">[] }) {
   );
 }
 
+/** 실시간으로 막 생긴 줄인가 — 기록에서 불러온 지난 일은 알림 역할(`alert` · `status`)을 달지 않는다 */
+export const isLive = (line: ChatLine): boolean => line.key.startsWith("l-");
+
 export function ToolErrorLine({ line }: { line: Of<"toolError"> }) {
   return (
-    <p className="wc-toolerr" role="status">
+    <p className="wc-toolerr" role={isLive(line) ? "status" : undefined}>
       <Icon name="alert" size={14} />
-      <span>{tf("ws.chat.tools.failed", { summary: line.summary })}</span>
+      <span>{line.summary.trim() === "" ? t("ws.chat.tools.failedBare") : tf("ws.chat.tools.failed", { summary: line.summary })}</span>
       {line.truncated && <span className="wc-msg__cut">{t("ws.chat.truncated")}</span>}
     </p>
   );
@@ -106,7 +109,7 @@ function Note({ tone, icon, title, body, role }: { tone: Tone; icon: IconName; t
 export function TurnEndLine({ line }: { line: Of<"turnEnd"> }) {
   if (line.outcome === "interrupted") return <Note tone="stopped" icon="stop" title={t("variant.ws.notice.stopped")} body={t("variant.ws.notice.stoppedBody")} />;
   if (line.outcome === "limit") return <Note tone="limit" icon="clock" title={t("ws.chat.turn.limit")} body={line.detail} />;
-  return <Note tone="error" icon="alert" title={t("ws.chat.turn.error")} body={line.detail} role="alert" />;
+  return <Note tone="error" icon="alert" title={t("ws.chat.turn.error")} body={line.detail} role={isLive(line) ? "alert" : undefined} />;
 }
 
 /** 초기화 시각 — 이 PC 의 시계로 */
@@ -116,13 +119,14 @@ function clockText(seconds: number): string {
 }
 
 export function NoticeLine({ line }: { line: Of<"notice"> }) {
+  const role = isLive(line) ? "alert" : undefined;
   switch (line.code) {
     case "api_key_in_use":
       return <Note tone="warn" icon="key" title={t("ws.chat.notice.apiKey")} body={t("ws.chat.notice.apiKeyBody")} />;
     case "planner_config":
       return <Note tone="warn" icon="settings" title={t("ws.chat.notice.planner")} body={t("ws.chat.notice.plannerBody")} />;
     case "history_write_failed":
-      return <Note tone="warn" icon="save" title={t("ws.chat.notice.history")} body={t("ws.chat.notice.historyBody")} role="alert" />;
+      return <Note tone="warn" icon="save" title={t("ws.chat.notice.history")} body={t("ws.chat.notice.historyBody")} role={role} />;
     case "rate_limit": {
       const window = line.detail === "seven_day" ? t("ws.chat.notice.window7d") : t("ws.chat.notice.window5h");
       const reached = line.limitStatus === "rejected";
@@ -139,6 +143,6 @@ export function NoticeLine({ line }: { line: Of<"notice"> }) {
     case "resume_not_found":
       return <Note tone="info" icon="info" title={t("ws.chat.notice.resumeNotFound")} body={t("ws.chat.notice.resumeNotFoundBody")} />;
     case "session_died":
-      return <Note tone="error" icon="unplug" title={t("ws.chat.notice.died")} body={line.detail ? line.detail.split("\n").slice(-2).join(" ") : t("ws.chat.notice.diedBody")} role="alert" />;
+      return <Note tone="error" icon="unplug" title={t("ws.chat.notice.died")} body={line.detail ? line.detail.split("\n").slice(-2).join(" ") : t("ws.chat.notice.diedBody")} role={role} />;
   }
 }

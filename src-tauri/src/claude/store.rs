@@ -1,10 +1,11 @@
 //! 프로젝트별 세션 ID (이어 하기용) — 앱 DB 의 `sessions` 표 (P6-03, D-20) + 옛 `claude-sessions.json` 가져오기.
 //!
 //! - 표: 프로젝트마다 CLI 세션 ID 여럿, 이어 하기는 `last_seen_at` 이 가장 늦은 것. 세션 ID 외에는 아무것도 저장하지 않는다 (대화 내용 · 계정 정보 없음).
-//! - 옛 JSON (P3~P5 가 앱 데이터 폴더에 쓰던 `{ "version": 1, "projects": { "<폴더 키>": { "sessionId", "updatedAt" } } }`)은 앱을 켤 때 **한 번** 가져온다:
-//!   등록된 프로젝트의 폴더 키(`project_key`)와 맞는 것만, 세션 ID 모양이 맞는 것만. 끝나면 파일 이름을 `.imported` 로 바꿔 다시 가져오지 않는다 (지우지 않는다).
-//!   그때 등록되지 않은 폴더의 항목은 가져오지 못한다 (이름을 바꾼 파일에는 그대로 남아 있다).
-//!   DB 를 못 써서 못 가져왔으면 파일을 그대로 두고 다음 실행에서 다시 한다 (이미 있는 항목은 건드리지 않아 몇 번을 해도 같다).
+//! - 옛 JSON (P3~P5 가 앱 데이터 폴더에 쓰던 `{ "version": 1, "projects": { "<폴더 키>": { "sessionId", "updatedAt" } } }`)은 앱을 켤 때 가져온다:
+//!   등록된 프로젝트의 폴더 키(`project_key`)와 맞는 것만, 세션 ID 모양이 맞는 것만. **모든 항목을 처리했을 때만** 파일 이름을 `.imported` 로 바꿔 다시 가져오지 않는다 (지우지 않는다).
+//!   아직 등록되지 않은 폴더의 항목이 하나라도 남아 있으면 파일을 그대로 둔다 — 앱을 처음 켠 때는 프로젝트가 0개라서, 그때 이름을 바꾸면 그 뒤에 등록한 폴더의 세션 ID 를 영영 못 찾는다.
+//!   그 폴더를 등록하면(`projects::add`) `import_legacy_for_project` 가 옛 파일에서, 이미 이름을 바꾼 `.imported*` 파일에서도 그 폴더의 항목만 찾아 가져온다 (먼저 이름을 바꿔 버린 PC 를 위해).
+//!   DB 를 못 써서 못 가져왔으면 파일을 그대로 두고 다음 실행에서 다시 한다 (이미 있는 (프로젝트, 세션 ID) 는 건드리지 않아 몇 번을 해도 같다).
 //!   이 앱보다 새 모양(`version` 이 큼)이거나 읽지 못한 파일은 건드리지 않는다. 깨진 파일은 `.corrupt` 로 옮겨 둔다.
 
 use std::collections::BTreeMap;
@@ -137,8 +138,14 @@ struct LegacyData {
 pub enum LegacyImport {
     /// 옛 파일이 없다 (처음 쓰는 PC · 이미 가져옴)
     NoFile,
-    /// 가져왔다. `imported`: 새로 들어간 항목 수 · `skipped`: 건너뛴 항목 수 (등록 안 된 폴더 · 모양이 이상한 세션 ID · 이미 있던 것)
+    /// 다 처리했고 파일 이름을 `.imported` 로 바꿨다. `imported`: 새로 들어간 항목 수 · `skipped`: 건너뛴 항목 수 (모양이 이상한 세션 ID · 이미 있던 것)
     Imported { imported: usize, skipped: usize },
+    /// 일부만 가져왔다 — 아직 등록되지 않은 폴더의 항목(`unmatched`)이 남아 있어 파일을 그대로 뒀다 (그 폴더를 등록하면 그때 가져온다)
+    Pending {
+        imported: usize,
+        skipped: usize,
+        unmatched: usize,
+    },
     /// 이 앱보다 새 모양이거나 읽지 못해 그대로 뒀다
     Left,
     /// 깨진 파일이라 `.corrupt` 로 옮겼다
@@ -181,7 +188,36 @@ fn imported_name(path: &Path, now: i64) -> PathBuf {
     }
 }
 
-/// 옛 `claude-sessions.json` 을 한 번 가져온다 (위 설명). 앱을 켤 때 부른다. 실패해도 앱은 뜬다 — 결과를 돌려줄 뿐이다.
+/// 옛 파일의 내용을 읽은 결과
+enum Parsed {
+    Data(LegacyData),
+    /// 이 앱보다 새 모양 — 건드리지 않는다
+    Newer,
+    /// 깨졌다
+    Corrupt,
+}
+
+fn parse_legacy(text: &str) -> Parsed {
+    // 새 버전 파일은 모양이 달라도 건드리지 않는다 — `version` 만 먼저 본다 (옛 앱이 새 앱의 파일을 깨진 것으로 옮겨 버리지 않게).
+    let newer = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64))
+        .is_some_and(|version| version > u64::from(LEGACY_VERSION));
+    if newer {
+        log::warn!("the old session file is newer than supported; leaving it untouched");
+        return Parsed::Newer;
+    }
+    match serde_json::from_str::<LegacyData>(text) {
+        Ok(data) if data.version <= LEGACY_VERSION => Parsed::Data(data),
+        Ok(_) => Parsed::Newer,
+        Err(err) => {
+            log::warn!("the old session file is corrupt ({err})");
+            Parsed::Corrupt
+        }
+    }
+}
+
+/// 옛 `claude-sessions.json` 을 가져온다 (위 설명). 앱을 켤 때 부른다. 실패해도 앱은 뜬다 — 결과를 돌려줄 뿐이다.
 pub fn import_legacy(db: &AppDb, path: &Path) -> LegacyImport {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -193,40 +229,119 @@ pub fn import_legacy(db: &AppDb, path: &Path) -> LegacyImport {
             return LegacyImport::Left;
         }
     };
-    // 새 버전 파일은 모양이 달라도 건드리지 않는다 — `version` 만 먼저 본다 (옛 앱이 새 앱의 파일을 깨진 것으로 옮겨 버리지 않게).
-    let newer = serde_json::from_str::<serde_json::Value>(&text)
-        .ok()
-        .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64))
-        .is_some_and(|version| version > u64::from(LEGACY_VERSION));
-    if newer {
-        log::warn!("the old session file is newer than supported; leaving it untouched");
-        return LegacyImport::Left;
-    }
-    let data = match serde_json::from_str::<LegacyData>(&text) {
-        Ok(data) if data.version <= LEGACY_VERSION => data,
-        Ok(_) => return LegacyImport::Left,
-        Err(err) => {
-            log::warn!("the old session file is corrupt ({err}); moving it aside");
+    let data = match parse_legacy(&text) {
+        Parsed::Data(data) => data,
+        Parsed::Newer => return LegacyImport::Left,
+        Parsed::Corrupt => {
+            log::warn!("moving the corrupt old session file aside");
             return move_corrupt(path);
         }
     };
-    match db.write(|conn| import_entries(conn, &data)) {
-        Ok((imported, skipped)) => {
+    match db.write(|conn| import_entries(conn, &data, None)) {
+        Ok(counts) if counts.unmatched > 0 => {
+            // 아직 등록되지 않은 폴더의 항목이 남아 있다 — 파일을 그대로 둔다 (그 폴더를 등록할 때 다시 찾는다)
+            log::info!(
+                "imported {} saved session(s) from the old file; {} entr(ies) of folders not registered yet stay in it",
+                counts.imported,
+                counts.unmatched
+            );
+            LegacyImport::Pending {
+                imported: counts.imported,
+                skipped: counts.skipped,
+                unmatched: counts.unmatched,
+            }
+        }
+        Ok(counts) => {
             let target = imported_name(path, now_secs());
             if let Err(err) = fs::rename(path, &target) {
                 // 이름을 못 바꿔도 다음 실행에서 다시 가져올 뿐이다 (이미 있는 항목은 그대로)
                 log::warn!("could not mark the old session file as imported: {err}");
             }
             log::info!(
-                "imported {imported} saved session(s) from the old file ({skipped} skipped)"
+                "imported {} saved session(s) from the old file ({} skipped)",
+                counts.imported,
+                counts.skipped
             );
-            LegacyImport::Imported { imported, skipped }
+            LegacyImport::Imported {
+                imported: counts.imported,
+                skipped: counts.skipped,
+            }
         }
         Err(err) => {
             log::warn!("could not import the old session file: {err}");
             LegacyImport::DbNotWritable
         }
     }
+}
+
+/// 이름을 바꾼 옛 파일을 읽는 최대 크기 (바이트) — 이 앱이 쓰던 파일은 이보다 훨씬 작다. 앱 데이터 폴더에 이상하게 큰 파일이 있어도 읽지 않는다
+const MAX_RENAMED_BYTES: u64 = 1024 * 1024;
+/// 이름을 바꾼 옛 파일을 최대 몇 개까지 볼까
+const MAX_RENAMED_FILES: usize = 16;
+
+/// 앱 데이터 폴더의 이름을 바꾼 옛 파일들 (`claude-sessions.json.imported` · `.imported-<시각>[-번호]`) — 이름순
+fn renamed_legacy_files(data_dir: &Path) -> Vec<PathBuf> {
+    let base = format!("{LEGACY_FILE}.imported");
+    let Ok(entries) = fs::read_dir(data_dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        // 링크는 따라가지 않는다 (`file_type` 은 링크를 파일로 세지 않는다)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name == base.as_str() || name.starts_with(&format!("{base}-"))
+        })
+        .map(|entry| entry.path())
+        .collect();
+    found.sort();
+    found.truncate(MAX_RENAMED_FILES);
+    found
+}
+
+/// 이름을 바꾼 파일 하나를 읽는다 (크기 · 모양이 맞지 않으면 `None` — 건드리지 않는다)
+fn read_renamed(path: &Path) -> Option<LegacyData> {
+    if fs::metadata(path).ok()?.len() > MAX_RENAMED_BYTES {
+        return None;
+    }
+    match parse_legacy(&fs::read_to_string(path).ok()?) {
+        Parsed::Data(data) => Some(data),
+        Parsed::Newer | Parsed::Corrupt => None,
+    }
+}
+
+/// 새로 등록한 프로젝트(폴더 키 `key`)의 옛 세션 ID 를 찾아 가져온다 — `projects::add` 가 부른다. 가져온 항목 수를 돌려준다. 못 가져와도 등록은 이미 된 것이라 오류를 내지 않는다.
+///
+/// - 옛 파일이 아직 있으면(등록 안 된 폴더의 항목이 남아 있던 것) 다시 가져온다 — 이제 다 맞으면 이름도 바꾼다.
+/// - 이미 이름이 바뀐 `.imported*` 파일에서 이 폴더의 항목만 가져온다 (앱을 처음 켠 때 프로젝트가 없어 이름이 바뀐 PC).
+///
+/// 이미 있는 (프로젝트, 세션 ID) 는 덮지 않는다. 파일은 지우지도 고치지도 않는다 (옛 파일의 이름 바꾸기만).
+pub fn import_legacy_for_project(db: &AppDb, data_dir: &Path, key: &str) -> usize {
+    let mut imported = 0;
+    match import_legacy(db, &data_dir.join(LEGACY_FILE)) {
+        LegacyImport::Imported { imported: n, .. } | LegacyImport::Pending { imported: n, .. } => {
+            imported += n;
+        }
+        LegacyImport::NoFile
+        | LegacyImport::Left
+        | LegacyImport::Corrupt
+        | LegacyImport::DbNotWritable => {}
+    }
+    for path in renamed_legacy_files(data_dir) {
+        let Some(data) = read_renamed(&path) else {
+            continue;
+        };
+        match db.write(|conn| import_entries(conn, &data, Some(key))) {
+            Ok(counts) => imported += counts.imported,
+            Err(err) => log::warn!("could not import from a renamed old session file: {err}"),
+        }
+    }
+    if imported > 0 {
+        log::info!("imported {imported} saved session(s) for a newly registered project");
+    }
+    imported
 }
 
 fn move_corrupt(path: &Path) -> LegacyImport {
@@ -240,13 +355,32 @@ fn move_corrupt(path: &Path) -> LegacyImport {
     }
 }
 
+/// `import_entries` 가 센 것
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EntryCounts {
+    /// 새로 들어간 항목
+    imported: usize,
+    /// 건너뛴 항목 (세션 ID 모양이 이상함 · 이미 있음) — 앞으로도 가져올 것이 없다
+    skipped: usize,
+    /// 폴더가 아직 등록되지 않아 못 맞춘 항목 — 그 폴더를 등록하면 가져올 수 있다
+    unmatched: usize,
+}
+
 /// 한 트랜잭션으로: 폴더 키가 등록된 프로젝트와 맞고 세션 ID 모양이 맞는 항목만 넣는다. 이미 있는 (프로젝트, 세션 ID) 는 그대로 둔다.
-fn import_entries(conn: &mut Connection, data: &LegacyData) -> Result<(usize, usize), AppError> {
+/// `only_key` 가 있으면 그 폴더 키의 항목만 본다 (다른 항목은 세지도 않는다).
+fn import_entries(
+    conn: &mut Connection,
+    data: &LegacyData,
+    only_key: Option<&str>,
+) -> Result<EntryCounts, AppError> {
     let tx = conn.transaction()?;
-    let (mut imported, mut skipped) = (0, 0);
+    let mut counts = EntryCounts::default();
     for (key, entry) in &data.projects {
+        if only_key.is_some_and(|only| only != key) {
+            continue;
+        }
         if !is_valid_session_id(&entry.session_id) {
-            skipped += 1;
+            counts.skipped += 1;
             continue;
         }
         let project_id: Option<i64> = tx
@@ -257,7 +391,7 @@ fn import_entries(conn: &mut Connection, data: &LegacyData) -> Result<(usize, us
             )
             .optional()?;
         let Some(project_id) = project_id else {
-            skipped += 1;
+            counts.unmatched += 1;
             continue;
         };
         let at = i64::try_from(entry.updated_at).unwrap_or(i64::MAX);
@@ -268,13 +402,13 @@ fn import_entries(conn: &mut Connection, data: &LegacyData) -> Result<(usize, us
             params![project_id, entry.session_id, at],
         )?;
         if added == 0 {
-            skipped += 1;
+            counts.skipped += 1;
         } else {
-            imported += 1;
+            counts.imported += 1;
         }
     }
     tx.commit()?;
-    Ok((imported, skipped))
+    Ok(counts)
 }
 
 #[cfg(test)]
@@ -459,11 +593,13 @@ mod tests {
             ]),
         )
         .unwrap();
+        // 모양이 이상한 ID 는 앞으로도 가져올 것이 없어 건너뛴 것으로 세지만, 등록 안 된 폴더의 항목은 "남은 것" — 파일을 그대로 둔다
         assert_eq!(
             import_legacy(&db, &path),
-            LegacyImport::Imported {
+            LegacyImport::Pending {
                 imported: 1,
-                skipped: 2
+                skipped: 1,
+                unmatched: 1
             }
         );
         assert_eq!(last(&db, 1).as_deref(), Some(ID_A));
@@ -471,6 +607,142 @@ mod tests {
             .read(|c| Ok(c.query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?))
             .unwrap();
         assert_eq!(total, 1);
+        assert!(path.exists());
+        assert!(!with_suffix(&path, ".imported").exists());
+    }
+
+    #[test]
+    fn with_no_projects_yet_the_file_is_left_untouched_and_nothing_is_imported() {
+        // 앱을 처음 켠 때처럼 프로젝트가 0개 — 옛 파일의 이름을 바꾸면 그 뒤에 등록한 폴더의 세션 ID 를 영영 못 찾는다
+        let dir = TempDir::new("legacy-noprojects");
+        let db = db_with_projects(&dir, &[]);
+        let path = legacy_path(&dir);
+        let body = legacy_json(&[("a", ID_A, 10), ("b", ID_B, 20)]);
+        fs::write(&path, &body).unwrap();
+        assert_eq!(
+            import_legacy(&db, &path),
+            LegacyImport::Pending {
+                imported: 0,
+                skipped: 0,
+                unmatched: 2
+            }
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), body);
+        assert!(!with_suffix(&path, ".imported").exists());
+        // 몇 번 켜도 같다
+        assert!(matches!(
+            import_legacy(&db, &path),
+            LegacyImport::Pending { .. }
+        ));
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn registering_later_imports_that_folders_entry_and_the_file_is_renamed_once_all_match() {
+        let dir = TempDir::new("legacy-later");
+        let db = db_with_projects(&dir, &[]);
+        let path = legacy_path(&dir);
+        fs::write(&path, legacy_json(&[("a", ID_A, 10), ("b", ID_B, 20)])).unwrap();
+        import_legacy(&db, &path);
+
+        db.write(|conn| projects_store::insert(conn, "a", "a", "a", None, 1))
+            .unwrap();
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 1);
+        assert_eq!(sessions_of(&db, 1), [(ID_A.into(), 10, 10)]);
+        assert!(path.exists(), "b 는 아직 못 맞췄다");
+
+        db.write(|conn| projects_store::insert(conn, "b", "b", "b", None, 1))
+            .unwrap();
+        assert_eq!(import_legacy_for_project(&db, &dir, "b"), 1);
+        assert_eq!(last(&db, 2).as_deref(), Some(ID_B));
+        assert!(!path.exists());
+        assert!(with_suffix(&path, ".imported").exists());
+        // 두 번 불러도 더 들어오지 않는다
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 0);
+        assert_eq!(sessions_of(&db, 1).len(), 1);
+    }
+
+    #[test]
+    fn a_file_already_renamed_by_the_old_behaviour_is_searched_for_the_registered_folder_only() {
+        let dir = TempDir::new("legacy-renamed");
+        let db = db_with_projects(&dir, &["a", "b"]);
+        let body = legacy_json(&[("a", ID_A, 10), ("b", ID_B, 20), ("c", ID_B, 30)]);
+        let renamed = with_suffix(&legacy_path(&dir), ".imported");
+        fs::write(&renamed, &body).unwrap();
+        // 이름이 겹쳐 시각이 붙은 것도 본다
+        let renamed_again = with_suffix(&legacy_path(&dir), ".imported-1700000000");
+        fs::write(&renamed_again, legacy_json(&[("a", ID_B, 99)])).unwrap();
+
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 2);
+        // 그 폴더의 항목만 — b · c 의 것은 들어오지 않았다
+        assert_eq!(
+            sessions_of(&db, 1),
+            [(ID_A.into(), 10, 10), (ID_B.into(), 99, 99)]
+        );
+        assert!(sessions_of(&db, 2).is_empty());
+        // 파일은 그대로
+        assert_eq!(fs::read_to_string(&renamed).unwrap(), body);
+        assert!(renamed_again.exists());
+    }
+
+    #[test]
+    fn a_session_id_the_project_already_has_is_not_overwritten_when_importing_on_register() {
+        let dir = TempDir::new("legacy-keep");
+        let db = db_with_projects(&dir, &["a"]);
+        db.write(|conn| remember(conn, 1, ID_A, 5_000)).unwrap();
+        fs::write(
+            with_suffix(&legacy_path(&dir), ".imported"),
+            legacy_json(&[("a", ID_A, 100)]),
+        )
+        .unwrap();
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 0);
+        assert_eq!(sessions_of(&db, 1), [(ID_A.into(), 5_000, 5_000)]);
+    }
+
+    #[test]
+    fn renamed_files_that_are_not_ours_or_not_readable_are_ignored() {
+        let dir = TempDir::new("legacy-renamed-odd");
+        let db = db_with_projects(&dir, &["a"]);
+        let base = legacy_path(&dir);
+        let good = legacy_json(&[("a", ID_A, 10)]);
+        // 이름이 비슷하지만 우리 것이 아닌 파일 · 새 모양 · 깨진 파일 · 너무 큰 파일 · 폴더
+        fs::write(with_suffix(&base, ".imported.bak"), &good).unwrap();
+        fs::write(with_suffix(&base, ".imported2"), &good).unwrap();
+        fs::write(with_suffix(&base, ".corrupt"), &good).unwrap();
+        fs::write(
+            with_suffix(&base, ".imported-1"),
+            r#"{"version":2,"projects":[]}"#,
+        )
+        .unwrap();
+        fs::write(with_suffix(&base, ".imported-2"), "{ not json").unwrap();
+        let big = format!("{good}{}", " ".repeat(MAX_RENAMED_BYTES as usize));
+        fs::write(with_suffix(&base, ".imported-3"), big).unwrap();
+        fs::create_dir(with_suffix(&base, ".imported-4")).unwrap();
+
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 0);
+        assert!(sessions_of(&db, 1).is_empty());
+        // 건드리지도 않았다 (깨진 파일도 옮기지 않는다)
+        assert_eq!(
+            fs::read_to_string(with_suffix(&base, ".imported-2")).unwrap(),
+            "{ not json"
+        );
+        assert!(with_suffix(&base, ".imported-4").is_dir());
+    }
+
+    #[test]
+    fn importing_on_register_never_fails_when_the_database_cannot_be_written() {
+        let dir = TempDir::new("legacy-register-nodb");
+        let blocker = dir.join("data");
+        fs::write(&blocker, b"i am a file").unwrap();
+        let db = AppDb::open(&blocker.join(DB_FILE));
+        fs::write(
+            with_suffix(&legacy_path(&dir), ".imported"),
+            legacy_json(&[("a", ID_A, 10)]),
+        )
+        .unwrap();
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 0);
+        // 데이터 폴더가 없어도 (읽을 폴더가 없다) 같다
+        assert_eq!(import_legacy_for_project(&db, &dir.join("nowhere"), "a"), 0);
     }
 
     #[test]

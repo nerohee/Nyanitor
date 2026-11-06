@@ -82,6 +82,21 @@ describe("가짜 세션 — 등록된 프로젝트로만 시작 (브라우저 �
     expect((await ipc.claudeSessionState()).projectId).toBe(1);
   });
 
+  it("세션이 돌고 있는 프로젝트는 뺄 수 없다 (session_running) — 아무것도 지워지지 않고, 세션이 끝나면 빠진다", async () => {
+    await ipc.claudeSessionStart({ projectId: 1 });
+    await expect(ipc.projectRemove(1)).rejects.toMatchObject({ kind: "session_running" });
+    expect((await ipc.projectsList()).projects.some((project) => project.id === 1)).toBe(true);
+    expect((await ipc.claudeSessionState()).running).toBe(true);
+    // 기록도 그대로
+    await expect(ipc.projectChatHistory(1, null, 10)).resolves.toMatchObject({ entries: expect.any(Array) });
+    // 다른 프로젝트는 세션이 돌아도 뺄 수 있다
+    await ipc.projectRemove(4);
+    expect((await ipc.projectsList()).projects.some((project) => project.id === 4)).toBe(false);
+    await ipc.claudeSessionStop();
+    await ipc.projectRemove(1);
+    expect((await ipc.projectsList()).projects.some((project) => project.id === 1)).toBe(false);
+  });
+
   it("시작하면 그 프로젝트가 '최근에 연' 으로 올라간다 (시작이 실패하면 그대로)", async () => {
     const before = (await ipc.projectsList()).projects.find((project) => project.id === 2)?.lastOpenedAt ?? 0;
     await expect(ipc.claudeSessionStart({ projectId: 2, resume: true })).rejects.toMatchObject({ kind: "no_saved_session" });

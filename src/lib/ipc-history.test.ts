@@ -101,6 +101,19 @@ describe("채팅 기록 ipc (브라우저 가짜 모드)", () => {
     expect(entries.some((entry) => entry.event.type === "user_message" && entry.event.deferred)).toBe(true);
   });
 
+  it("실패한 도구 결과는 글 없이 저장돼 있다 (D-48) — 줄 · 번호 · 실패 표시는 있고 글(summary)만 빈 글", async () => {
+    const entries = await readAll(1, 30);
+    const failed = entries.filter((entry) => entry.event.type === "tool_result");
+    expect(failed.length).toBeGreaterThan(0);
+    for (const entry of failed) {
+      if (entry.event.type !== "tool_result") continue;
+      expect(entry.event.isError).toBe(true);
+      expect(entry.event.toolUseId).not.toBe("");
+      expect(entry.event.summary).toBe("");
+      expect(entry.truncated).toBe(false);
+    }
+  });
+
   it("카드 상태가 모두 나온다 — 답함(답 종류 다섯 가지) · 취소됨 · 지나감, 그리고 카드가 아닌 항목에는 상태가 없다", async () => {
     const entries = await readAll(1, 30);
     const cards = entries.filter((entry) => entry.request !== null);

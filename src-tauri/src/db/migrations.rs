@@ -72,8 +72,25 @@ CREATE INDEX usage_turns_by_time ON usage_turns (at);
 CREATE INDEX usage_turns_by_project ON usage_turns (project_id, at);
 ";
 
+/// 3번 — 실패한 도구 결과의 글을 지운다 (P6-10, D-48 덧붙임).
+/// 도구 결과의 글(파일 내용 · 명령 출력)에는 비밀값이 들어 있을 수 있어 실패한 것도 글은 저장하지 않기로 했다. 앞 번호까지는 실패한 결과의 `summary`(결과 글 앞부분)를 저장했으므로
+/// 이미 쌓인 `tool_result` 줄에서 그 글만 비운다 — 줄 자체 · `toolUseId` · `isError` 는 그대로고, 기록을 읽는 화면은 빈 글로 읽는다. 구조는 바뀌지 않는다.
+/// JSON 이 아니거나 `summary` 가 없는 줄(손으로 고친 줄 · 너무 커서 종류만 남은 줄)은 건드리지 않는다. 다시 돌려도 같다.
+const V3_CLEAR_FAILED_TOOL_RESULT_TEXT: &str = "
+UPDATE chat_items
+   SET body = json_set(body, '$.summary', ''), truncated = 0
+ WHERE kind = 'tool_result'
+   AND json_valid(body)
+   AND json_type(body, '$.summary') = 'text'
+   AND json_extract(body, '$.summary') != '';
+";
+
 /// 번호 순서 (1번 = 0번째).
-pub const MIGRATIONS: &[&str] = &[V1_PROJECTS, V2_SESSION_RECORDS];
+pub const MIGRATIONS: &[&str] = &[
+    V1_PROJECTS,
+    V2_SESSION_RECORDS,
+    V3_CLEAR_FAILED_TOOL_RESULT_TEXT,
+];
 
 /// 이 앱이 아는 가장 새 번호.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -172,9 +189,8 @@ mod tests {
         )
         .unwrap();
 
-        apply(&mut conn, 1, MIGRATIONS).unwrap();
+        apply(&mut conn, 1, &MIGRATIONS[..2]).unwrap();
         assert_eq!(version(&conn), 2);
-        assert_eq!(SCHEMA_VERSION, 2);
         assert_eq!(
             tables(&conn),
             ["chat_items", "projects", "sessions", "usage_turns"]
@@ -196,8 +212,118 @@ mod tests {
         .unwrap();
     }
 
+    fn body_of(conn: &Connection, id: i64) -> (String, bool) {
+        conn.query_row(
+            "SELECT body, truncated FROM chat_items WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn a_new_database_gets_both_numbers_in_one_go() {
+    fn step_three_clears_the_text_of_stored_failed_tool_results_and_nothing_else() {
+        // 2번까지만 적용된 DB (앞 판이 만든 것) 에 실패한 도구 결과 줄들이 쌓여 있다
+        let mut conn = conn_with_foreign_keys();
+        apply(&mut conn, 0, &MIGRATIONS[..2]).unwrap();
+        assert_eq!(version(&conn), 2);
+        conn.execute(
+            "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES ('p', 'p', 'p', 1, 1)",
+            [],
+        )
+        .unwrap();
+        let put = |kind: &str, body: &str, truncated: i64| {
+            conn.execute(
+                "INSERT INTO chat_items (project_id, run_id, at, kind, body, truncated) VALUES (1, 1, 1, ?1, ?2, ?3)",
+                rusqlite::params![kind, body, truncated],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let failed = put(
+            "tool_result",
+            r#"{"type":"tool_result","toolUseId":"t1","isError":true,"summary":"cat .env: SECRET=abc"}"#,
+            0,
+        );
+        let cut = put(
+            "tool_result",
+            r#"{"type":"tool_result","toolUseId":"t2","isError":true,"summary":"긴 글…"}"#,
+            1,
+        );
+        let kept_use = put(
+            "tool_use",
+            r#"{"type":"tool_use","toolUseId":"t1","tool":"Bash","summary":"cat .env"}"#,
+            0,
+        );
+        let kept_text = put(
+            "text",
+            r#"{"type":"text","text":"summary stays in other kinds"}"#,
+            0,
+        );
+        let shrunk = put("tool_result", r#"{"type":"tool_result"}"#, 1);
+        let broken = put("tool_result", "{ not json", 0);
+        let blank = put(
+            "tool_result",
+            r#"{"type":"tool_result","toolUseId":"t3","isError":true,"summary":""}"#,
+            0,
+        );
+        let other_project_text = put(
+            "turn_ended",
+            r#"{"type":"turn_ended","summary":"not a tool result"}"#,
+            0,
+        );
+
+        apply(&mut conn, 2, MIGRATIONS).unwrap();
+        assert_eq!(version(&conn), 3);
+        assert_eq!(SCHEMA_VERSION, 3);
+
+        // 글만 비고, 나머지 칸 · 잘림 표시는 글이 없으니 풀린다
+        assert_eq!(
+            body_of(&conn, failed),
+            (
+                r#"{"type":"tool_result","toolUseId":"t1","isError":true,"summary":""}"#
+                    .to_string(),
+                false
+            )
+        );
+        assert_eq!(
+            body_of(&conn, cut),
+            (
+                r#"{"type":"tool_result","toolUseId":"t2","isError":true,"summary":""}"#
+                    .to_string(),
+                false
+            )
+        );
+        // 다른 종류 · 모양이 다른 줄은 그대로
+        assert!(body_of(&conn, kept_use).0.contains("cat .env"));
+        assert!(body_of(&conn, kept_text).0.contains("summary stays"));
+        assert_eq!(
+            body_of(&conn, shrunk),
+            (r#"{"type":"tool_result"}"#.to_string(), true)
+        );
+        assert_eq!(body_of(&conn, broken), ("{ not json".to_string(), false));
+        assert_eq!(
+            body_of(&conn, blank).0,
+            r#"{"type":"tool_result","toolUseId":"t3","isError":true,"summary":""}"#
+        );
+        assert!(
+            body_of(&conn, other_project_text)
+                .0
+                .contains("not a tool result")
+        );
+        // 줄 수 · 프로젝트는 그대로 (지우지 않았다)
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM chat_items", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 8);
+        // 다시 돌려도 같다
+        conn.execute_batch(V3_CLEAR_FAILED_TOOL_RESULT_TEXT)
+            .unwrap();
+        assert!(body_of(&conn, failed).0.ends_with(r#""summary":""}"#));
+    }
+
+    #[test]
+    fn a_new_database_gets_every_number_in_one_go() {
         let mut conn = Connection::open_in_memory().unwrap();
         apply(&mut conn, 0, MIGRATIONS).unwrap();
         assert_eq!(version(&conn), SCHEMA_VERSION);

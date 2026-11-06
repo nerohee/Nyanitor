@@ -7,7 +7,7 @@
 //! | `session_started` · `session_ended` | 예 | 세션 시작 · 끝 (끝은 `stderrTail` 포함) |
 //! | `user_message` · `text` | 예 | 사용자 메시지 · 오케스트레이터 글 (긴 글은 자름) |
 //! | `tool_use` | 예 | 도구 사용 요약 (이미 짧은 요약) |
-//! | `tool_result` | 오류만 | 성공한 결과는 저장하지 않는다 (원문 · 요약 모두) |
+//! | `tool_result` | 오류만 | 성공한 결과는 저장하지 않는다 (원문 · 요약 모두). 실패한 결과도 **글(`summary`)은 비워서** 저장한다 — "실패함" 표시와 `toolUseId` 만 (D-48). 화면으로 가는 실시간 이벤트는 글을 가진다 |
 //! | `permission_request` · `question_request` | 예 | 카드 그대로 (도구 입력은 표시용 복사본, 너무 크면 뺀다) |
 //! | `request_answered` · `request_cancelled` | 예 | 목록에는 따로 안 나오고 카드의 상태로 합쳐진다 (`chat::read_page`) |
 //! | `turn_ended` | 예 | 결과 · 사용량 요약 (성공이면 최종 글은 뺀다 — 같은 글이 `text` 로 이미 있다). 토큰 · 비용은 `usage_turns` 에도 쌓는다 |
@@ -144,8 +144,13 @@ pub fn draft(event: &SessionEvent, limits: &Limits) -> Option<Draft> {
         SessionEvent::UserMessage { .. } | SessionEvent::Text { .. } => {
             truncated |= cut_field(&mut value, "text", limits.max_text_chars);
         }
-        SessionEvent::ToolUse { .. } | SessionEvent::ToolResult { .. } => {
+        SessionEvent::ToolUse { .. } => {
             truncated |= cut_field(&mut value, "summary", CARD_TEXT_CHARS);
+        }
+        SessionEvent::ToolResult { .. } => {
+            // 도구 결과의 글(파일 내용 · 명령 출력)에는 비밀값이 들어 있을 수 있다 — 실패한 것도 글은 저장하지 않는다 (D-48).
+            // 칸은 빈 글로 남긴다 (기록을 읽는 화면이 실시간 이벤트와 같은 모양으로 읽는다). 뺀 것은 잘린 것이 아니다.
+            value["summary"] = Value::String(String::new());
         }
         SessionEvent::PermissionRequest(_) => {
             // 도구 입력(쓸 파일 내용 · 바꾸는 글)은 저장하지 않는다 — 비밀값이 들어 있을 수 있다 (2026-10-29 고객).
@@ -370,6 +375,38 @@ mod tests {
             assert!(!wants(event), "{event:?}");
             assert_eq!(draft(event, &limits()), None, "{event:?}");
         }
+    }
+
+    #[test]
+    fn a_failed_tool_result_is_stored_without_its_text() {
+        let event = SessionEvent::ToolResult {
+            tool_use_id: "toolu-9".into(),
+            is_error: true,
+            summary: "cat .env → SECRET=abc EACCES".into(),
+        };
+        let draft = draft(&event, &limits()).unwrap();
+        assert!(!draft.truncated, "뺀 것은 잘린 것이 아니다");
+        assert!(!draft.body.contains("SECRET"));
+        assert_eq!(
+            parsed(&draft),
+            json!({ "type": "tool_result", "toolUseId": "toolu-9", "isError": true, "summary": "" })
+        );
+        // 아주 긴 글이어도 같다 (자르지도 않고 비운다)
+        let long = SessionEvent::ToolResult {
+            tool_use_id: "t".into(),
+            is_error: true,
+            summary: "x".repeat(CARD_TEXT_CHARS * 3),
+        };
+        let draft = super::draft(&long, &limits()).unwrap();
+        assert!(!draft.truncated);
+        assert_eq!(parsed(&draft)["summary"], "");
+        // 실시간 이벤트(화면으로 가는 것)는 글을 가진다 — 저장용 복사본만 비운다
+        assert!(
+            serde_json::to_value(&event).unwrap()["summary"]
+                .as_str()
+                .unwrap()
+                .contains("SECRET")
+        );
     }
 
     #[test]

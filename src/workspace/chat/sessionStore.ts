@@ -64,9 +64,11 @@ interface State {
   queueError: AppErrorKind | null;
   /** 세션이 끝나 못 보낸 말 — 입력줄이 되돌려 받는다 */
   draftBack: QueuedMessage | null;
+  /** 먹물이 답을 끝낸(성공한) 턴 수 — 화면 읽기 프로그램에 "답했어요" 를 알리는 신호 (실시간만, 기록 읽기로는 오르지 않는다) */
+  answeredTurns: number;
 }
 
-const initial = (): State => ({ restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, draftBack: null });
+const initial = (): State => ({ restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, draftBack: null, answeredTurns: 0 });
 
 export const useSessionStore = create<State>()(() => initial());
 
@@ -143,7 +145,7 @@ function apply(event: ClaudeEvent): void {
       set({ session: { ...session, busy: true } });
       break;
     case "turn_ended":
-      set({ session: { ...session, busy: false } });
+      set({ session: { ...session, busy: false }, answeredTurns: event.outcome === "success" ? get().answeredTurns + 1 : get().answeredTurns });
       void refreshChurros();
       // 일하는 중에 보낸 말은 이번 턴이 끝난 뒤 (같은 턴 끝에 Rust 가 다르게 말하기를 먼저 보낼 수 있어 한 박자 뒤)
       setTimeout(() => void flushQueued(), 0);

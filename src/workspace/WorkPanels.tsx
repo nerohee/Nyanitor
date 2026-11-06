@@ -90,8 +90,9 @@ export function WorkPanels({ panels, active, onActive, className, tabStart }: Pr
                   </span>
                 ) : null}
                 {panel.badge ? (
-                  <span className="ws-wp__badge" aria-label={tf("variant.ws.badge", { n: panel.badge })}>
-                    {panel.badge}
+                  <span className="ws-wp__badge">
+                    <span aria-hidden="true">{panel.badge}</span>
+                    <span className="ws-sr">{tf("variant.ws.badge", { n: panel.badge })}</span>
                   </span>
                 ) : null}
               </button>

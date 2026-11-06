@@ -17,6 +17,7 @@ use super::{
     touch, update,
 };
 use crate::claude::commands::blocking;
+use crate::claude::session::SessionManager;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::strings;
@@ -81,14 +82,20 @@ pub async fn project_update(
     blocking(move || update(&db, &state.view_env(), id, patch)).await
 }
 
+/// 등록만 지운다. 그 프로젝트의 세션이 시작 중이거나 돌고 있으면 `session_running` (끝낸 뒤에 뺀다).
 #[tauri::command]
 pub async fn project_remove(
     db: State<'_, AppDb>,
     state: State<'_, ProjectsState>,
+    sessions: State<'_, SessionManager>,
     id: i64,
 ) -> Result<(), AppError> {
-    let (db, state) = (db.inner().clone(), state.inner().clone());
-    blocking(move || remove(&db, &state, id)).await
+    let (db, state, sessions) = (
+        db.inner().clone(),
+        state.inner().clone(),
+        sessions.inner().clone(),
+    );
+    blocking(move || remove(&db, &state, &sessions, id)).await
 }
 
 #[tauri::command]
@@ -100,10 +107,11 @@ pub async fn project_touch(db: State<'_, AppDb>, id: i64) -> Result<(), AppError
 #[tauri::command]
 pub async fn project_requirements_read(
     db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
     id: i64,
 ) -> Result<ReadResult, AppError> {
-    let db = db.inner().clone();
-    blocking(move || requirements_read(&db, id)).await
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || requirements_read(&db, &state.env(), id)).await
 }
 
 #[tauri::command]
@@ -113,7 +121,7 @@ pub async fn project_requirements_version(
     id: i64,
 ) -> Result<VersionResult, AppError> {
     let (db, state) = (db.inner().clone(), state.inner().clone());
-    blocking(move || requirements_version(&db, &state, id)).await
+    blocking(move || requirements_version(&db, &state, &state.env(), id)).await
 }
 
 #[tauri::command]
@@ -125,7 +133,16 @@ pub async fn project_requirements_write(
     base_version: Option<String>,
 ) -> Result<WriteResult, AppError> {
     let (db, state) = (db.inner().clone(), state.inner().clone());
-    blocking(move || requirements_write(&db, &state, id, &text, base_version.as_deref()))
-        .await
-        .map_err(AppError::logged)
+    blocking(move || {
+        requirements_write(
+            &db,
+            &state,
+            &state.env(),
+            id,
+            &text,
+            base_version.as_deref(),
+        )
+    })
+    .await
+    .map_err(AppError::logged)
 }

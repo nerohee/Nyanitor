@@ -231,8 +231,8 @@ impl Session {
 #[derive(Default)]
 struct Slot {
     session: Option<Arc<Session>>,
-    /// 시작하는 중 (한 번에 하나 — 두 번째 시작은 `session_running`)
-    starting: bool,
+    /// 시작하는 중인 프로젝트 번호 (한 번에 하나 — 두 번째 시작은 `session_running`). 프로젝트를 빼는 쪽도 이 번호를 본다 (`while_project_idle`)
+    starting: Option<i64>,
     /// 시작하는 중에 끝내기가 들어왔다 — 시작은 프로세스를 띄우지 않고 물러난다
     cancelled: bool,
 }
@@ -394,6 +394,18 @@ impl SessionManager {
     /// 세션을 시작한다. 이미 돌고 있으면 오류 (D-12). 계획(`StartPlan`)은 Rust 가 만든다 — 화면이 보낸 것은 프로젝트 번호뿐이고
     /// 폴더 · 모델 · 수준은 `launch` 가 정한다. 여기서도 폴더 · 모델 · 수준의 모양을 다시 확인한다 (인자로 들어가므로).
     pub fn start(&self, plan: StartPlan, command: ClaudeCommand) -> Result<StartInfo, AppError> {
+        self.start_checked(plan, command, || Ok(()))
+    }
+
+    /// `start` 에, 시작 자리를 잡는 **같은 잠금 안에서** 한 번 더 확인하는 일(`still_ok`)을 끼운 것 — 계획을 세운 뒤 그 프로젝트가 빠졌는지를
+    /// `while_project_idle`(프로젝트를 빼는 쪽)과 겹치지 않게 본다. `still_ok` 가 오류를 내면 시작 자리를 잡지 않고 그 오류를 돌려준다.
+    /// 잠금 안에서 불리므로 짧게 끝나야 한다 (DB 읽기 정도).
+    pub fn start_checked(
+        &self,
+        plan: StartPlan,
+        command: ClaudeCommand,
+        still_ok: impl FnOnce() -> Result<(), AppError>,
+    ) -> Result<StartInfo, AppError> {
         let project_dir = plan
             .project_dir
             .to_str()
@@ -406,10 +418,11 @@ impl SessionManager {
         // 아래의 `--version` 확인은 최대 20초 걸릴 수 있어서, 그 동안 잠그면 앱 종료 · 상태 조회가 같이 기다린다.
         {
             let mut slot = lock(&self.shared.slot);
-            if slot.starting || slot.session.as_ref().is_some_and(|s| !s.has_exited()) {
+            if slot.starting.is_some() || slot.session.as_ref().is_some_and(|s| !s.has_exited()) {
                 return Err(AppError::SessionRunning);
             }
-            slot.starting = true;
+            still_ok()?;
+            slot.starting = Some(plan.project_id);
             slot.cancelled = false;
         }
         let result = self.start_claimed(
@@ -420,8 +433,30 @@ impl SessionManager {
             effort.as_deref(),
         );
         let mut slot = lock(&self.shared.slot);
-        slot.starting = false;
+        slot.starting = None;
         slot.cancelled = false;
+        result
+    }
+
+    /// 이 프로젝트의 세션이 시작 중이거나 돌고 있지 않을 때만 `work` 를 한다 (아니면 `session_running`). 프로젝트를 빼는 일이 쓴다.
+    /// `work` 는 세션 자리 잠금을 쥔 채 돈다 — 확인한 뒤 그 사이 세션이 시작되는 틈이 없다 (시작 쪽은 같은 잠금 안에서 자리를 잡는다).
+    /// 그래서 `work` 는 짧아야 하고 세션 관리자를 다시 부르면 안 된다 (잠금 순서: 세션 자리 → DB).
+    pub fn while_project_idle<T>(
+        &self,
+        project_id: i64,
+        work: impl FnOnce() -> Result<T, AppError>,
+    ) -> Result<T, AppError> {
+        let slot = lock(&self.shared.slot);
+        let busy_here = slot.starting == Some(project_id)
+            || slot
+                .session
+                .as_ref()
+                .is_some_and(|s| s.project_id == project_id && !s.has_exited());
+        if busy_here {
+            return Err(AppError::SessionRunning);
+        }
+        let result = work();
+        drop(slot);
         result
     }
 
@@ -815,7 +850,7 @@ impl SessionManager {
         {
             // 시작하는 중이면 그 시작이 프로세스를 띄우지 못하게 한다 (띄운 뒤라면 아래에서 보통대로 끈다).
             let mut slot = lock(&self.shared.slot);
-            if slot.starting {
+            if slot.starting.is_some() {
                 slot.cancelled = true;
             }
         }

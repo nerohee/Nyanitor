@@ -123,7 +123,8 @@ function recentConversation(): Fixed[] {
     { event: permission("fake-hist-p1", "Bash", "npm install exifr", null, "Bash(npm install:*)"), request: { status: "answered", answer: ANSWERED("fake-hist-p1", { kind: "always_allow" }) } },
     { event: permission("fake-hist-p2", "Write", null, "C:\\dev\\cat-album\\src\\gallery.ts", "Edit(/src/**)"), request: { status: "answered", answer: ANSWERED("fake-hist-p2", { kind: "allow" }) } },
     { event: permission("fake-hist-p3", "Write", null, "C:\\dev\\cat-album\\.env", null), request: { status: "answered", answer: ANSWERED("fake-hist-p3", { kind: "deny", text: "그 파일은 건드리지 마" }) } },
-    { event: { type: "tool_result", toolUseId: "toolu-2", isError: true, summary: "EACCES: permission denied" } },
+    // 실패한 도구 결과는 기록에 글 없이 저장된다 (D-48) — 진짜 `history/record.rs` 와 같은 모양
+    { event: { type: "tool_result", toolUseId: "toolu-2", isError: true, summary: "" } },
     { event: permission("fake-hist-p4", "Bash", "git push origin main", null, null), request: { status: "answered", answer: ANSWERED("fake-hist-p4", { kind: "tell", text: "푸시는 내가 할게, 커밋까지만 해 줘" }) } },
     { event: turnEnded("interrupted") },
     { event: { type: "user_message", text: "푸시는 내가 할게, 커밋까지만 해 줘", deferred: true } },

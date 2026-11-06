@@ -394,6 +394,8 @@ export function createFakeClaude() {
 }
 
 export const fakeClaude = createFakeClaude();
+// 프로젝트 빼기(`fakeProjects.ts`)가 "그 프로젝트의 세션이 돌고 있나" 를 물을 수 있게 이어 준다 (진짜 `projects::remove` → `SessionManager::while_project_idle`)
+fakeProjects.bindSession(() => fakeClaude.liveRun()?.projectId ?? null);
 
 /** 브라우저 가짜 모드가 `ipc.ts` 대신 명령을 돌려주는 자리 — 앱 정보 가짜도 여기 둔다 (출시 빌드 번들에 안 들어가게 이 파일 안에만). */
 export async function fakeCall(command: string, args: Record<string, unknown>): Promise<unknown> {

@@ -165,7 +165,9 @@ pub fn start_session(
     command: ClaudeCommand,
 ) -> Result<StartInfo, AppError> {
     let plan = plan_start(db, env, planner, request)?;
-    let info = manager.start(plan, command)?;
+    // 계획을 세운 뒤 그 프로젝트가 빠졌을 수 있다 — 시작 자리를 잡는 잠금 안에서 한 번 더 본다 (빼는 쪽 `projects::remove` 와 겹치지 않게)
+    let id = plan.project_id;
+    let info = manager.start_checked(plan, command, || projects::project_dir(db, id).map(drop))?;
     touch_started(db, manager, info.project_id);
     Ok(info)
 }

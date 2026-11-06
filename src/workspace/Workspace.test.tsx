@@ -2,7 +2,7 @@
 // 새 프로젝트 대화상자(폴더 고르기 → 살펴본 결과 · 이름 · 스킬 → 추가 / 고를 수 없음 / 이미 있음 / 취소 / 오류 / 포커스) ·
 // 프로젝트 설정(이름 · 스킬 · 빼기).
 import { EditorView } from "@codemirror/view";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../lib/fakeClaude";
@@ -11,7 +11,7 @@ import { fakeProjects, type FakeProjectsOptions } from "../lib/fakeProjects";
 import { fakeSkills } from "../lib/fakeSkills";
 import { ipc } from "../lib/ipc";
 import { AppError } from "../lib/ipc-types";
-import { resetSessionStore } from "./chat/sessionStore";
+import { resetSessionStore, stopSession } from "./chat/sessionStore";
 import Workspace from "./Workspace";
 
 /** 앱(App)이 하듯 고른 프로젝트를 들고 있는 틀 */
@@ -576,6 +576,42 @@ describe("프로젝트 설정", () => {
     expect(screen.getByRole("heading", { level: 2, name: "레시피 상자" })).toBeInTheDocument();
   });
 
+  it("이 프로젝트에서 세션이 도는 중이면 빼기가 꺼지고 이유가 보인다 — 세션을 끝내면 다시 빼진다", async () => {
+    fakeHistory.reset("empty");
+    await mount();
+    const panel = () => screen.getByRole("tabpanel", { name: /^채팅/ });
+    fireEvent.click(await within(panel()).findByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
+    await within(panel()).findByRole("article", { name: "권한 요청" });
+
+    const { dialog } = await openSettings();
+    const ask = within(dialog).getByRole("button", { name: "목록에서 빼기…" });
+    expect(ask).toBeDisabled();
+    expect(within(dialog).getByText("먹물이 이 프로젝트에서 일하는 중이라 뺄 수 없어요. 세션을 끝낸 뒤 다시 빼 주세요.")).toBeInTheDocument();
+    expect(ask).toHaveAccessibleDescription(/세션을 끝낸 뒤/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+
+    await act(async () => {
+      await stopSession();
+    });
+    const again = await openSettings();
+    const go = within(again.dialog).getByRole("button", { name: "목록에서 빼기…" });
+    expect(go).toBeEnabled();
+    fireEvent.click(go);
+    fireEvent.click(within(again.dialog).getByRole("button", { name: "빼기" }));
+    await waitFor(() => expect(names()).not.toContain("고양이 앨범"));
+  });
+
+  it("Rust 가 session_running 으로 거절하면(경합) 이유와 할 일 한 줄 — 프로젝트는 그대로", async () => {
+    await mount();
+    vi.spyOn(ipc, "projectRemove").mockRejectedValueOnce(new AppError("session_running", "x"));
+    const { dialog } = await openSettings();
+    fireEvent.click(within(dialog).getByRole("button", { name: "목록에서 빼기…" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "빼기" }));
+    expect(await within(dialog).findByText("먹물이 이 프로젝트에서 일하는 중이라 뺄 수 없어요. 세션을 끝낸 뒤 다시 빼 주세요.", { selector: ".ws-dlg__error" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(names()).toContain("고양이 앨범");
+  });
+
   it("프로젝트를 모두 빼면 '아직 프로젝트가 없어요'", async () => {
     await mount();
     for (let left = 4; left > 0; left -= 1) {
@@ -626,12 +662,31 @@ describe("채팅 판", () => {
     const panel = screen.getByRole("tabpanel", { name: "채팅" });
     fireEvent.click(await within(panel).findByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
     await within(panel).findByRole("article", { name: "권한 요청" });
-    expect(within(chatTab!).getByLabelText("기다리는 카드 1개")).toHaveTextContent("1");
+    // 수는 숨긴 글로 이름이 된다 (역할 없는 span 의 aria-label 은 읽히지 않는다)
+    expect(within(chatTab!).getByText("기다리는 카드 1개", { selector: ".ws-sr" })).toBeInTheDocument();
+    expect(chatTab!.querySelector(".ws-wp__badge [aria-label]")).toBeNull();
     expect(screen.getByText("답을 기다리는 카드가 있어요 (1)", { selector: "[role='status']" })).toBeInTheDocument();
     expect(document.activeElement?.closest("article")).toBeNull();
     // 답하면 수가 사라진다
     fireEvent.click(within(panel).getByRole("button", { name: "이번만 허용" }));
-    await waitFor(() => expect(within(chatTab!).queryByLabelText(/기다리는 카드/)).not.toBeInTheDocument());
+    await waitFor(() => expect(within(chatTab!).queryByText(/기다리는 카드 \d개/)).not.toBeInTheDocument());
+  });
+
+  it("턴이 끝나면 알림 자리에 \"먹물이 답했어요\" — 기록을 불러올 때는 알리지 않는다", async () => {
+    fakeHistory.reset("full");
+    await mount();
+    await waitFor(() => expect(chatPanel()).toHaveTextContent("계획을 정리했어요"));
+    expect(screen.queryByText("먹물이 답했어요")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".wc-note[role], .wc-toolerr[role]")).toHaveLength(0);
+
+    fakeHistory.reset("empty");
+    cleanup();
+    resetSessionStore();
+    fakeClaude.reset();
+    await mount();
+    fireEvent.click(await within(chatPanel()).findByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
+    fireEvent.click(await within(chatPanel()).findByRole("button", { name: "이번만 허용" }));
+    expect(await screen.findByText("먹물이 답했어요", { selector: "[role='status']" })).toBeInTheDocument();
   });
 
   it("탭을 바꿔도 편집 중인 글 · 채팅 입력줄 글이 남는다 (둘 다 마운트된 채)", async () => {

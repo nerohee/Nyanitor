@@ -370,7 +370,14 @@ describe("기록", () => {
     expect(screen.getByText("이어 할 대화를 찾지 못했어요")).toBeInTheDocument();
     expect(screen.getByText(/5시간 사용 한도가 가까워요 \(86%\)/)).toBeInTheDocument();
     expect(screen.getAllByText("먹물이 갑자기 멈췄어요").length).toBeGreaterThan(0);
-    expect(screen.getByText(/EACCES: permission denied/)).toBeInTheDocument();
+    // 실패한 도구 결과는 기록에 글 없이 저장된다 (D-48) — 줄은 남고 글만 비어 있다
+    const failed = screen.getByText(/도구가 실패했어요/);
+    expect(failed).toBeInTheDocument();
+    // 글이 비었으니 끝 대시 없이 "도구가 실패했어요" 만
+    expect(failed.textContent).toBe("도구가 실패했어요");
+    // 지난 일을 지금 일처럼 읽지 않는다 — 기록에서 그린 줄에는 alert · status 역할이 없다
+    expect(failed.closest(".wc-toolerr")).not.toHaveAttribute("role");
+    expect(document.querySelectorAll(".wc-note[role], .wc-toolerr[role]")).toHaveLength(0);
     expect(screen.getAllByText("중단했어요").length).toBeGreaterThan(0);
     expect(screen.getByText("사용 한도에 닿아 멈췄어요")).toBeInTheDocument();
   });
@@ -486,6 +493,25 @@ describe("목록", () => {
     fireEvent.click(button);
     expect(top).toBe(1000);
     expect(screen.queryByRole("button", { name: /새 글 \d/ })).not.toBeInTheDocument();
+  });
+
+  it("실시간 줄 — 실패한 도구는 글이 있으면 그대로 · 없으면 대시 없이, 알림 역할을 단다", async () => {
+    let emit: (event: ClaudeEvent) => void = () => undefined;
+    vi.spyOn(ipc, "onClaudeEvent").mockImplementation((handler) => {
+      emit = handler;
+      return Promise.resolve(() => undefined);
+    });
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    act(() => {
+      emit({ type: "session_started", projectId: 1, projectDir: "C:\\dev\\cat-album", pid: 1, resumed: false, resumeSessionId: null, cliVersion: null, model: null, effort: null });
+      emit({ type: "tool_result", toolUseId: "a", isError: true, summary: "권한이 없어요" });
+      emit({ type: "tool_result", toolUseId: "b", isError: true, summary: "" });
+    });
+    const withText = await screen.findByText("도구가 실패했어요 — 권한이 없어요");
+    expect(withText.closest(".wc-toolerr")).toHaveAttribute("role", "status");
+    const bare = screen.getByText("도구가 실패했어요");
+    expect(bare.closest(".wc-toolerr")).toHaveAttribute("role", "status");
   });
 
   it("도구 사용이 이어지면 접는다 — 펼쳐서 볼 수 있다", async () => {

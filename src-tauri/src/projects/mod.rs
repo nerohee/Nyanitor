@@ -23,7 +23,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::claude::store::project_key;
+use crate::claude::session::SessionManager;
+use crate::claude::store::{import_legacy_for_project, project_key};
 use crate::db::{AppDb, DbStatus};
 use crate::error::AppError;
 use crate::harness::locate::strip_verbatim;
@@ -428,7 +429,10 @@ pub fn add(
             let text = path
                 .to_str()
                 .ok_or_else(|| invalid("folder path is not valid UTF-8"))?;
-            db.write(|conn| store::insert(conn, text, &key, &name, skill, now_secs()))?
+            let row = db.write(|conn| store::insert(conn, text, &key, &name, skill, now_secs()))?;
+            // 옛 `claude-sessions.json` (또는 이미 이름을 바꾼 `.imported*`) 에 이 폴더의 세션 ID 가 있으면 가져온다 — 못 가져와도 등록은 된 것이다
+            import_legacy_for_project(db, &state.inner.app_data, &key);
+            row
         }
     };
     Ok(entry_of(row, env))
@@ -451,9 +455,21 @@ pub fn update(
     Ok(entry_of(row, env))
 }
 
-/// 등록만 지운다 — 폴더 · 파일은 건드리지 않는다.
-pub fn remove(db: &AppDb, state: &ProjectsState, id: i64) -> Result<(), AppError> {
-    db.write(|conn| store::remove(conn, id))?;
+/// 이미 끝난 세션의 남은 채팅 기록 쓰기를 기다리는 최대 시간 (뺀 뒤에 쓰려다 버려지지 않게)
+const REMOVE_FLUSH_WAIT: Duration = Duration::from_secs(2);
+
+/// 등록만 지운다 — 폴더 · 파일은 건드리지 않는다. 그 프로젝트의 세션이 시작 중이거나 돌고 있으면 `session_running` 으로 거절한다
+/// (돌고 있는 세션의 기록이 갈 곳을 없애지 않게 — 끝낸 뒤에 뺀다). 확인과 지우기는 세션 관리자의 자리 잠금 안에서 같이 해서,
+/// 확인한 뒤 그 사이 세션이 시작되는 틈이 없다 (`SessionManager::while_project_idle` · 시작 쪽 `launch::start_session`).
+pub fn remove(
+    db: &AppDb,
+    state: &ProjectsState,
+    sessions: &SessionManager,
+    id: i64,
+) -> Result<(), AppError> {
+    // 끝난 세션의 마지막 기록(세션 끝 알림 등)이 큐에 남아 있을 수 있다 — 지우기 전에 쓰이게 한다 (잠금 밖에서)
+    sessions.flush_history(REMOVE_FLUSH_WAIT);
+    sessions.while_project_idle(id, || db.write(|conn| store::remove(conn, id)))?;
     lock(&state.inner.versions).remove(&id);
     Ok(())
 }
@@ -478,27 +494,46 @@ pub fn existing_dir(db: &AppDb, id: i64) -> Result<PathBuf, AppError> {
     normalize_folder(&dir).map_err(|_| AppError::ProjectFolderMissing(id))
 }
 
+/// 고를 수 없는 폴더면 `project_folder_forbidden` — 등록한 뒤 폴더를 지우고 `~/.claude` 등으로 가는 정션으로 바꿨거나 위치 설정이 바뀌었을 수 있다.
+fn refuse_forbidden(env: &Env, id: i64, dir: &Path) -> Result<(), AppError> {
+    match env.forbidden.reason(dir) {
+        Some(_) => Err(AppError::ProjectFolderForbidden(id)),
+        None => Ok(()),
+    }
+}
+
 /// 세션을 시작할 폴더 (D-47: 화면은 경로가 아니라 프로젝트 번호만 보낸다). 등록된 프로젝트이고, 폴더가 지금 있고,
 /// 고를 수 없는 폴더가 아니어야 한다 — 등록한 뒤 폴더가 사라졌거나 위치 설정이 바뀌었을 수 있어 시작 때마다 다시 확인한다.
 pub fn session_dir(db: &AppDb, env: &Env, id: i64) -> Result<PathBuf, AppError> {
     let dir = existing_dir(db, id)?;
-    if env.forbidden.reason(&dir).is_some() {
-        return Err(AppError::ProjectFolderForbidden(id));
-    }
+    refuse_forbidden(env, id, &dir)?;
     Ok(dir)
 }
 
-pub fn requirements_read(db: &AppDb, id: i64) -> Result<requirements::ReadResult, AppError> {
+/// `requirements.md` 를 읽고 쓸 폴더 — 등록된 프로젝트의 폴더이고 **고를 수 없는 폴더가 아니어야** 한다 (`session_dir` 와 같은 판별).
+/// 폴더가 없어진 것은 여기서 거절하지 않는다 (`requirements` 가 "폴더 없음" 결과로 알린다 — 화면이 그 안내를 보인다).
+fn requirements_dir(db: &AppDb, env: &Env, id: i64) -> Result<PathBuf, AppError> {
     let dir = project_dir(db, id)?;
+    refuse_forbidden(env, id, &dir)?;
+    Ok(dir)
+}
+
+pub fn requirements_read(
+    db: &AppDb,
+    env: &Env,
+    id: i64,
+) -> Result<requirements::ReadResult, AppError> {
+    let dir = requirements_dir(db, env, id)?;
     Ok(requirements::read(&dir))
 }
 
 pub fn requirements_version(
     db: &AppDb,
     state: &ProjectsState,
+    env: &Env,
     id: i64,
 ) -> Result<requirements::VersionResult, AppError> {
-    let dir = project_dir(db, id)?;
+    let dir = requirements_dir(db, env, id)?;
     let mut cache = lock(&state.inner.versions).get(&id).cloned();
     let result = requirements::version(&dir, &mut cache, std::time::SystemTime::now());
     let mut versions = lock(&state.inner.versions);
@@ -512,11 +547,12 @@ pub fn requirements_version(
 pub fn requirements_write(
     db: &AppDb,
     state: &ProjectsState,
+    env: &Env,
     id: i64,
     text: &str,
     base_version: Option<&str>,
 ) -> Result<requirements::WriteResult, AppError> {
-    let dir = project_dir(db, id)?;
+    let dir = requirements_dir(db, env, id)?;
     // 지금 파일을 보고 쓰기까지 한 번에 하나 (앱 안에서 두 번 저장이 겹치지 않게)
     let _guard = lock(&state.inner.file_lock);
     let result = requirements::write(&dir, text, base_version);
@@ -528,14 +564,29 @@ pub fn requirements_write(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::claude::events::SessionEvent;
+    use crate::claude::session::{EventSink, ManagerConfig};
+    use crate::claude::store::{LEGACY_FILE, import_legacy, last_for_project};
     use crate::claude::test_util::TempDir;
     use crate::db::DB_FILE;
     use std::fs;
+
+    /// 이벤트를 버리는 자리 — 세션을 띄우지 않는 시험의 세션 관리자용
+    struct NullSink;
+
+    impl EventSink for NullSink {
+        fn emit(&self, _event: SessionEvent) {}
+    }
+
+    fn idle_sessions(db: &AppDb) -> SessionManager {
+        SessionManager::new(Arc::new(NullSink), db.clone(), ManagerConfig::default())
+    }
 
     struct Fixture {
         _dir: TempDir,
         root: PathBuf,
         db: AppDb,
+        sessions: SessionManager,
         state: ProjectsState,
         env: Env,
     }
@@ -555,13 +606,20 @@ mod tests {
                 docs_dir: "docs".into(),
                 inspect_deadline: Duration::from_secs(5),
             };
+            let sessions = idle_sessions(&db);
             Self {
                 _dir: dir,
                 root,
                 db,
+                sessions,
                 state,
                 env,
             }
+        }
+
+        /// 앱 데이터 폴더 (옛 세션 파일이 있는 곳)
+        fn data_dir(&self) -> PathBuf {
+            self._dir.join("data")
         }
 
         fn folder(&self, name: &str) -> PathBuf {
@@ -918,7 +976,7 @@ mod tests {
         fs::write(folder.join("requirements.md"), "my requirements").unwrap();
         fs::write(folder.join("notes.txt"), "notes").unwrap();
         let entry = fx.add(&folder);
-        remove(&fx.db, &fx.state, entry.id).unwrap();
+        remove(&fx.db, &fx.state, &fx.sessions, entry.id).unwrap();
         assert!(fx.list().projects.is_empty());
         assert_eq!(
             fs::read_to_string(folder.join("requirements.md")).unwrap(),
@@ -929,7 +987,9 @@ mod tests {
             "notes"
         );
         assert_eq!(
-            remove(&fx.db, &fx.state, entry.id).unwrap_err().kind(),
+            remove(&fx.db, &fx.state, &fx.sessions, entry.id)
+                .unwrap_err()
+                .kind(),
             "project_not_found"
         );
         // 다시 등록할 수 있고 번호는 새것
@@ -937,7 +997,9 @@ mod tests {
         assert_ne!(again.id, entry.id);
         // 빼고 난 번호로는 파일 명령도 안 된다
         assert_eq!(
-            requirements_read(&fx.db, entry.id).unwrap_err().kind(),
+            requirements_read(&fx.db, &fx.env, entry.id)
+                .unwrap_err()
+                .kind(),
             "project_not_found"
         );
     }
@@ -966,17 +1028,17 @@ mod tests {
         let fx = Fixture::new("proj-req-ids");
         for id in [0, 1, -5, i64::MAX] {
             assert_eq!(
-                requirements_read(&fx.db, id).unwrap_err().kind(),
+                requirements_read(&fx.db, &fx.env, id).unwrap_err().kind(),
                 "project_not_found"
             );
             assert_eq!(
-                requirements_version(&fx.db, &fx.state, id)
+                requirements_version(&fx.db, &fx.state, &fx.env, id)
                     .unwrap_err()
                     .kind(),
                 "project_not_found"
             );
             assert_eq!(
-                requirements_write(&fx.db, &fx.state, id, "x", None)
+                requirements_write(&fx.db, &fx.state, &fx.env, id, "x", None)
                     .unwrap_err()
                     .kind(),
                 "project_not_found"
@@ -990,17 +1052,17 @@ mod tests {
         let folder = fx.folder("book");
         let id = fx.add(&folder).id;
         assert_eq!(
-            requirements_read(&fx.db, id).unwrap(),
+            requirements_read(&fx.db, &fx.env, id).unwrap(),
             requirements::ReadResult::Absent
         );
         assert_eq!(
-            requirements_version(&fx.db, &fx.state, id).unwrap(),
+            requirements_version(&fx.db, &fx.state, &fx.env, id).unwrap(),
             requirements::VersionResult::Absent
         );
 
         // 없던 파일 새로 쓰기
         let requirements::WriteResult::Ok(first) =
-            requirements_write(&fx.db, &fx.state, id, "# 책\n", None).unwrap()
+            requirements_write(&fx.db, &fx.state, &fx.env, id, "# 책\n", None).unwrap()
         else {
             panic!("expected ok");
         };
@@ -1009,15 +1071,20 @@ mod tests {
             "# 책\n"
         );
         assert_eq!(
-            requirements_version(&fx.db, &fx.state, id).unwrap(),
+            requirements_version(&fx.db, &fx.state, &fx.env, id).unwrap(),
             requirements::VersionResult::Ok(first.clone())
         );
 
         // 이어서 쓰기 → 새 version
-        let requirements::WriteResult::Ok(second) =
-            requirements_write(&fx.db, &fx.state, id, "# 책\n둘째\n", Some(&first.version))
-                .unwrap()
-        else {
+        let requirements::WriteResult::Ok(second) = requirements_write(
+            &fx.db,
+            &fx.state,
+            &fx.env,
+            id,
+            "# 책\n둘째\n",
+            Some(&first.version),
+        )
+        .unwrap() else {
             panic!("expected ok");
         };
         assert_ne!(first.version, second.version);
@@ -1025,13 +1092,21 @@ mod tests {
         // 바깥(터미널)에서 바뀜 → version 이 바뀌고, 옛 version 으로 쓰면 충돌
         fs::write(folder.join("requirements.md"), "터미널에서 고침").unwrap();
         let requirements::VersionResult::Ok(outside) =
-            requirements_version(&fx.db, &fx.state, id).unwrap()
+            requirements_version(&fx.db, &fx.state, &fx.env, id).unwrap()
         else {
             panic!("expected ok");
         };
         assert_ne!(outside.version, second.version);
         assert_eq!(
-            requirements_write(&fx.db, &fx.state, id, "내 글", Some(&second.version)).unwrap(),
+            requirements_write(
+                &fx.db,
+                &fx.state,
+                &fx.env,
+                id,
+                "내 글",
+                Some(&second.version)
+            )
+            .unwrap(),
             requirements::WriteResult::Conflict(requirements::ConflictInfo {
                 version: Some(outside.version)
             })
@@ -1049,16 +1124,246 @@ mod tests {
         let id = fx.add(&folder).id;
         fs::remove_dir(&folder).unwrap();
         assert_eq!(
-            requirements_read(&fx.db, id).unwrap(),
+            requirements_read(&fx.db, &fx.env, id).unwrap(),
             requirements::ReadResult::Unreadable(requirements::ProblemInfo {
                 reason: requirements::Problem::FolderMissing
             })
         );
         assert!(matches!(
-            requirements_write(&fx.db, &fx.state, id, "x", None).unwrap(),
+            requirements_write(&fx.db, &fx.state, &fx.env, id, "x", None).unwrap(),
             requirements::WriteResult::Refused(_)
         ));
         assert!(!folder.exists(), "the folder is not recreated");
+    }
+
+    /// 폴더 링크를 만든다 — Windows 는 정션(관리자 권한이 필요 없다), 그 밖은 심볼릭 링크. 못 만들면 시험이 실패한다 (조용히 통과하지 않는다).
+    fn link_dir(link: &Path, target: &Path) {
+        #[cfg(windows)]
+        let made = {
+            use std::os::windows::process::CommandExt;
+            std::process::Command::new("cmd")
+                .raw_arg(format!(
+                    "/C mklink /J \"{}\" \"{}\"",
+                    link.display(),
+                    target.display()
+                ))
+                .output()
+                .is_ok_and(|out| out.status.success())
+        };
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link).is_ok();
+        assert!(
+            made,
+            "could not create a directory link, so this test checked nothing"
+        );
+    }
+
+    #[test]
+    fn requirements_commands_refuse_a_folder_that_became_forbidden_after_registering() {
+        let fx = Fixture::new("proj-req-forbidden");
+        let folder = fx.folder("later-forbidden");
+        fs::write(folder.join("requirements.md"), "mine").unwrap();
+        let id = fx.add(&folder).id;
+        let version = match requirements_version(&fx.db, &fx.state, &fx.env, id).unwrap() {
+            requirements::VersionResult::Ok(info) => info.version,
+            other => panic!("expected a version, got {other:?}"),
+        };
+
+        // 등록한 뒤 위치 설정이 바뀌어 이 폴더가 막힌 곳이 됐다 — 읽기 · 버전 · 쓰기 모두 거절하고 파일은 그대로
+        let strict = Env {
+            forbidden: ForbiddenSet::new().with_inside(ForbiddenReason::ClaudeDir, &folder),
+            ..fx.env.clone()
+        };
+        assert_eq!(
+            requirements_read(&fx.db, &strict, id).unwrap_err().kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            requirements_version(&fx.db, &fx.state, &strict, id)
+                .unwrap_err()
+                .kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            requirements_write(&fx.db, &fx.state, &strict, id, "changed", Some(&version))
+                .unwrap_err()
+                .kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            fs::read_to_string(folder.join("requirements.md")).unwrap(),
+            "mine"
+        );
+        // 세션 시작과 같은 판별이다
+        assert_eq!(
+            session_dir(&fx.db, &strict, id).unwrap_err().kind(),
+            "project_folder_forbidden"
+        );
+        // 막히지 않은 환경에서는 그대로 된다
+        assert!(requirements_read(&fx.db, &fx.env, id).is_ok());
+    }
+
+    #[test]
+    fn a_registered_folder_swapped_for_a_link_to_a_forbidden_place_is_refused_for_requirements() {
+        let fx = Fixture::new("proj-req-junction");
+        // 막힌 곳 (`~/.claude` 를 흉내) 에 이미 `requirements.md` 가 있다
+        let claude = fx.folder("fake-claude-dir");
+        fs::write(claude.join("requirements.md"), "do not touch").unwrap();
+        let env = Env {
+            forbidden: ForbiddenSet::new().with_inside(ForbiddenReason::ClaudeDir, &claude),
+            ..fx.env.clone()
+        };
+        // 등록할 때는 평범한 폴더
+        let folder = fx.folder("looks-fine");
+        let id = fx.add(&folder).id;
+        assert!(requirements_read(&fx.db, &env, id).is_ok());
+        // 그 뒤 폴더를 지우고 같은 자리를 막힌 곳으로 가는 링크로 바꿨다
+        fs::remove_dir(&folder).unwrap();
+        link_dir(&folder, &claude);
+
+        assert_eq!(
+            requirements_read(&fx.db, &env, id).unwrap_err().kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            requirements_version(&fx.db, &fx.state, &env, id)
+                .unwrap_err()
+                .kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            requirements_write(&fx.db, &fx.state, &env, id, "overwrite", None)
+                .unwrap_err()
+                .kind(),
+            "project_folder_forbidden"
+        );
+        assert_eq!(
+            session_dir(&fx.db, &env, id).unwrap_err().kind(),
+            "project_folder_forbidden"
+        );
+        // 막힌 곳의 파일은 읽히지도 고쳐지지도 않았다
+        assert_eq!(
+            fs::read_to_string(claude.join("requirements.md")).unwrap(),
+            "do not touch"
+        );
+        assert_eq!(fs::read_dir(&claude).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn registering_a_folder_brings_in_its_old_session_id_from_a_renamed_file() {
+        // 고객 PC 처럼: 앱을 처음 켠 때 프로젝트가 없어 옛 파일이 이미 `.imported` 로 바뀌었다
+        let fx = Fixture::new("proj-legacy-renamed");
+        let folder = fx.folder("old-project");
+        let other = fx.folder("other-project");
+        let (id_a, id_b) = (
+            "00000000-0000-4000-8000-0000000000a1",
+            "00000000-0000-4000-8000-0000000000b2",
+        );
+        let body = format!(
+            r#"{{"version":1,"projects":{{{}:{{"sessionId":"{id_a}","updatedAt":1700000000}},{}:{{"sessionId":"{id_b}","updatedAt":1700000500}}}}}}"#,
+            serde_json::to_string(&project_key(&folder)).unwrap(),
+            serde_json::to_string(&project_key(&other)).unwrap(),
+        );
+        let renamed = fx.data_dir().join(format!("{LEGACY_FILE}.imported"));
+        fs::write(&renamed, &body).unwrap();
+
+        let entry = fx.add(&folder);
+        // 이 폴더의 것만 들어오고, 다른 폴더의 것은 그 폴더를 등록할 때까지 그대로
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, entry.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_a)
+        );
+        let total: i64 = fx
+            .db
+            .read(|conn| Ok(conn.query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(total, 1);
+        // 옛 파일은 지우지도 고치지도 않았다
+        assert_eq!(fs::read_to_string(&renamed).unwrap(), body);
+        let other_entry = fx.add(&other);
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, other_entry.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_b)
+        );
+    }
+
+    #[test]
+    fn an_old_file_with_unmatched_folders_stays_until_every_folder_is_registered() {
+        // 프로젝트가 0개일 때 앱을 켰다 (`lib.rs` 가 하는 일) — 옛 파일이 이름 바뀌지 않아야 한다
+        let fx = Fixture::new("proj-legacy-pending");
+        let (a, b) = (fx.folder("a"), fx.folder("b"));
+        let (id_a, id_b) = (
+            "00000000-0000-4000-8000-0000000000a1",
+            "00000000-0000-4000-8000-0000000000b2",
+        );
+        let live = fx.data_dir().join(LEGACY_FILE);
+        fs::write(
+            &live,
+            format!(
+                r#"{{"version":1,"projects":{{{}:{{"sessionId":"{id_a}","updatedAt":1}},{}:{{"sessionId":"{id_b}","updatedAt":2}}}}}}"#,
+                serde_json::to_string(&project_key(&a)).unwrap(),
+                serde_json::to_string(&project_key(&b)).unwrap(),
+            ),
+        )
+        .unwrap();
+        assert!(matches!(
+            import_legacy(&fx.db, &live),
+            crate::claude::store::LegacyImport::Pending { unmatched: 2, .. }
+        ));
+        assert!(live.exists());
+
+        let entry_a = fx.add(&a);
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, entry_a.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_a)
+        );
+        assert!(live.exists(), "b 는 아직 등록 안 됨 — 파일이 남는다");
+        let entry_b = fx.add(&b);
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, entry_b.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_b)
+        );
+        // 이제 다 맞췄다 — 그때서야 이름이 바뀐다 (지우지 않는다)
+        assert!(!live.exists());
+        assert!(
+            fx.data_dir()
+                .join(format!("{LEGACY_FILE}.imported"))
+                .exists()
+        );
+    }
+
+    #[test]
+    fn registering_an_already_registered_folder_does_not_look_in_the_old_files() {
+        let fx = Fixture::new("proj-legacy-twice");
+        let folder = fx.folder("same");
+        let entry = fx.add(&folder);
+        // 등록한 뒤에 옛 파일이 생겼다 (또는 이름이 바뀐 파일을 누가 가져다 둠) — 이미 있는 프로젝트를 다시 "추가" 해도 읽지 않는다
+        let renamed = fx.data_dir().join(format!("{LEGACY_FILE}.imported"));
+        fs::write(
+            &renamed,
+            format!(
+                r#"{{"version":1,"projects":{{{}:{{"sessionId":"00000000-0000-4000-8000-0000000000a1","updatedAt":1}}}}}}"#,
+                serde_json::to_string(&project_key(&folder)).unwrap()
+            ),
+        )
+        .unwrap();
+        assert_eq!(fx.add(&folder).id, entry.id);
+        assert_eq!(
+            fx.db.read(|conn| last_for_project(conn, entry.id)).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -1105,7 +1410,9 @@ mod tests {
             "db_read_only"
         );
         assert_eq!(
-            remove(&newer_db, &fx.state, known.id).unwrap_err().kind(),
+            remove(&newer_db, &fx.state, &fx.sessions, known.id)
+                .unwrap_err()
+                .kind(),
             "db_read_only"
         );
         assert_eq!(
@@ -1113,7 +1420,7 @@ mod tests {
             "db_read_only"
         );
         // 파일 읽기는 된다
-        assert!(requirements_read(&newer_db, known.id).is_ok());
+        assert!(requirements_read(&newer_db, &fx.env, known.id).is_ok());
     }
 
     #[test]
@@ -1150,18 +1457,22 @@ mod tests {
             kind(update(&db, &env, 1, ProjectPatch::default()).unwrap_err()),
             "db_unavailable"
         );
-        assert_eq!(kind(remove(&db, &state, 1).unwrap_err()), "db_unavailable");
+        let sessions = idle_sessions(&db);
+        assert_eq!(
+            kind(remove(&db, &state, &sessions, 1).unwrap_err()),
+            "db_unavailable"
+        );
         assert_eq!(kind(touch(&db, 1).unwrap_err()), "db_unavailable");
         assert_eq!(
-            kind(requirements_read(&db, 1).unwrap_err()),
+            kind(requirements_read(&db, &env, 1).unwrap_err()),
             "db_unavailable"
         );
         assert_eq!(
-            kind(requirements_version(&db, &state, 1).unwrap_err()),
+            kind(requirements_version(&db, &state, &env, 1).unwrap_err()),
             "db_unavailable"
         );
         assert_eq!(
-            kind(requirements_write(&db, &state, 1, "x", None).unwrap_err()),
+            kind(requirements_write(&db, &state, &env, 1, "x", None).unwrap_err()),
             "db_unavailable"
         );
     }

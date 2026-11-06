@@ -3,7 +3,7 @@
 //! - 큐는 끝이 없는 채널이지만 쌓인 수가 `Limits::max_queued` 를 넘으면 새 항목을 버리고 로그에 남긴다 (DB 가 오래 막혀도 메모리가 불어나지 않게).
 //! - 쓰는 스레드는 쌓인 것을 한꺼번에(최대 `MAX_BATCH` 개) 꺼내 **한 트랜잭션**으로 쓴다 — 항목마다 디스크에 내리는 것보다 훨씬 싸다 (`synchronous=FULL`).
 //!   한 트랜잭션 안에서 프로젝트마다 한도를 넘은 오래된 것을 지운다.
-//! - 프로젝트가 이미 빠졌으면(`FOREIGN KEY`) 그 항목만 건너뛴다 — 빠진 프로젝트의 기록이 되살아나지 않는다.
+//! - 프로젝트가 이미 빠졌으면(`FOREIGN KEY`) 그 항목만 건너뛴다 — 빠진 프로젝트의 기록이 되살아나지 않는다. 건너뛴 것이 있으면 한 묶음에 한 번 로그에 남긴다 (조용히 버리지 않는다).
 //! - DB 를 못 써서 한 묶음을 버렸으면 그 사실을 한 번 기억한다 (`take_failure`) — 쓰기가 계속 실패하는 동안은 되풀이하지 않고, 한 번 성공한 뒤 다시 실패하면 또 알린다.
 //! - `flush` 는 지금까지 넣은 것이 모두 쓰일 때까지 기다린다 (기록을 읽기 전에 · 시험). `shutdown` 은 남은 것을 쓰고 스레드를 끝낸다 (앱을 끌 때).
 
@@ -204,21 +204,26 @@ fn wrote(result: rusqlite::Result<()>) -> rusqlite::Result<bool> {
     }
 }
 
-/// 한 묶음을 한 트랜잭션으로 쓴다. 실패하면 아무것도 남지 않는다.
-fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<(), AppError> {
+/// 한 묶음을 한 트랜잭션으로 쓴다. 실패하면 아무것도 남지 않는다. 돌려주는 것: 제약 위반(프로젝트가 그 사이 빠짐 등)으로 건너뛴 항목 수.
+fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<usize, AppError> {
     db.write(|conn| {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut touched = BTreeSet::new();
+        let mut skipped = 0_usize;
         for op in ops {
             match op {
                 Op::Item(item) => {
-                    if let Some(draft) = record::draft(&item.event, limits)
-                        && wrote(chat::insert(&tx, &item.ctx, &draft))?
-                    {
-                        touched.insert(item.ctx.project_id);
+                    if let Some(draft) = record::draft(&item.event, limits) {
+                        if wrote(chat::insert(&tx, &item.ctx, &draft))? {
+                            touched.insert(item.ctx.project_id);
+                        } else {
+                            skipped += 1;
+                        }
                     }
-                    if let SessionEvent::TurnEnded(summary) = &item.event {
-                        wrote(usage::insert(&tx, &item.ctx, summary))?;
+                    if let SessionEvent::TurnEnded(summary) = &item.event
+                        && !wrote(usage::insert(&tx, &item.ctx, summary))?
+                    {
+                        skipped += 1;
                     }
                 }
                 Op::Bind {
@@ -232,7 +237,7 @@ fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<(), AppError> {
             chat::trim(&tx, project_id, limits.max_items_per_project)?;
         }
         tx.commit()?;
-        Ok(())
+        Ok(skipped)
     })
 }
 
@@ -272,7 +277,15 @@ fn run(rx: Receiver<Msg>, db: &AppDb, limits: &Limits, counters: &Counters) {
         }
         if !ops.is_empty() {
             match write_ops(db, limits, &ops) {
-                Ok(()) => lock(&counters.failure).ongoing = false,
+                Ok(skipped) => {
+                    if skipped > 0 {
+                        // 프로젝트가 그 사이 빠졌다 (외래 키 위반) — 그 기록은 버렸다. 조용히 사라지지 않게 한 묶음에 한 번 남긴다.
+                        log::warn!(
+                            "{skipped} chat history item(s) were not stored because their project is gone (database constraint)"
+                        );
+                    }
+                    lock(&counters.failure).ongoing = false;
+                }
                 Err(err) => {
                     let mut failure = lock(&counters.failure);
                     if !failure.ongoing {
@@ -501,6 +514,31 @@ mod tests {
             "빠진 프로젝트는 실패가 아니다"
         );
         recorder.shutdown(WAIT);
+    }
+
+    #[test]
+    fn write_ops_reports_how_many_items_a_removed_project_made_it_skip() {
+        // 로그에 한 번 남기는 값 — 건너뛴 항목 수 (채팅 한 줄 + 츄르 한 줄 = 둘)
+        let (_dir, db) = setup("rec-gone-count");
+        db.write(|conn| projects_store::remove(conn, 2)).unwrap();
+        let item = |project_id: i64, event: SessionEvent| {
+            Op::Item(Box::new(Item {
+                ctx: ctx(project_id),
+                event,
+            }))
+        };
+        let limits = Limits::default();
+        let ops = [
+            item(1, say(1)),
+            item(2, say(2)),
+            item(2, turn_ended()),
+            item(1, say(3)),
+        ];
+        assert_eq!(write_ops(&db, &limits, &ops).unwrap(), 3);
+        assert_eq!(texts(&db, 1), ["t1", "t3"]);
+        // 빠진 프로젝트가 없으면 0 (경고를 남기지 않는다)
+        let fine = [item(1, say(4))];
+        assert_eq!(write_ops(&db, &limits, &fine).unwrap(), 0);
     }
 
     #[test]

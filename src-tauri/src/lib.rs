@@ -58,7 +58,8 @@ pub fn run() {
             // 앱 DB (프로젝트 목록 · 세션 ID · 채팅 기록 · 츄르): 앱 데이터 폴더의 SQLite 하나. 못 열어도 앱은 뜨고, DB 를 쓰는 명령만 오류를 돌려준다 (P6-01).
             let app_data = app.path().app_data_dir()?;
             let app_db = db::AppDb::open(&app_data.join(db::DB_FILE));
-            // 옛 `claude-sessions.json` 의 세션 ID 를 한 번 가져온다 (등록된 프로젝트의 것만, 끝나면 파일 이름을 바꾼다). 실패해도 앱은 뜬다.
+            // 옛 `claude-sessions.json` 의 세션 ID 를 가져온다 (등록된 프로젝트의 것만). 못 맞춘(아직 등록 안 된 폴더) 항목이 남으면 파일을 그대로 두고,
+            // 그 폴더를 등록할 때 다시 찾는다 (`projects::add`). 다 맞췄을 때만 파일 이름을 바꾼다. 실패해도 앱은 뜬다.
             claude::store::import_legacy(&app_db, &app_data.join(claude::store::LEGACY_FILE));
             // 세션 관리자 (Claude 연결): 이어 하기 세션 ID · 채팅 기록 · 츄르를 같은 DB 에 쓴다 (P6-03).
             app.manage(claude::session::SessionManager::new(

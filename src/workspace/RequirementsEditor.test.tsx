@@ -194,6 +194,19 @@ describe("저장", () => {
     await waitFor(() => expect(screen.queryByText("저장 중…")).not.toBeInTheDocument());
   });
 
+  it("등록한 폴더가 금지 폴더로 바뀌었으면 — 읽기 · 저장 실패 모두 이유 한 줄로 보인다", async () => {
+    vi.spyOn(ipc, "projectRequirementsRead").mockRejectedValueOnce(new AppError("project_folder_forbidden", "x"));
+    const view = render(<RequirementsEditor projectId={1} />);
+    expect(await screen.findByText(/requirements\.md 를 읽지 못했어요.*프로젝트로 고를 수 없는 폴더예요/)).toBeInTheDocument();
+    view.unmount();
+
+    await mount();
+    vi.spyOn(ipc, "projectRequirementsWrite").mockRejectedValueOnce(new AppError("project_folder_forbidden", "x"));
+    type("금지 폴더 시험");
+    fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "s", ctrlKey: true });
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장하지 못했어요. 프로젝트로 고를 수 없는 폴더예요");
+  });
+
   it("저장 실패 — 이유 한 줄과 다시 저장, 눌러 다시 하면 저장된다", async () => {
     await mount();
     const write = vi.spyOn(ipc, "projectRequirementsWrite").mockRejectedValueOnce(new AppError("file_write_failed", "x"));

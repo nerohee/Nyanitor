@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(read_ok(&dir).version, written);
     }
 
-    /// 링크를 만든다 (권한이 없는 PC 면 `false` — 그 시험은 건너뛴다)
+    /// 폴더 링크를 만든다 (Windows 는 정션 — 관리자 권한이 필요 없다). 못 만들면 `false`. 링크 시험은 못 만들었을 때 **실패한다** (조용히 통과하지 않는다 — `must_link`).
     fn make_dir_link(target: &Path, link: &Path) -> bool {
         #[cfg(windows)]
         {
@@ -793,6 +793,8 @@ mod tests {
         }
     }
 
+    /// 파일 심볼릭 링크를 만든다. Windows 는 개발자 모드나 관리자 권한이 있어야 만들 수 있다 — 못 만들면 `false`.
+    /// 이 링크가 필요한 시험은 Windows 에서 `#[ignore]` 로 따로 두고(`cargo test -- --ignored link` 로 돌린다), 돌렸는데 못 만들면 `must_link` 가 실패시킨다.
     fn make_file_link(target: &Path, link: &Path) -> bool {
         #[cfg(windows)]
         {
@@ -804,16 +806,28 @@ mod tests {
         }
     }
 
+    /// 링크를 못 만들었으면 시험을 **실패시킨다** — 링크 시험이 "통과" 로 보이면서 아무것도 확인하지 않는 일이 없게.
+    fn must_link(made: bool, what: &str) {
+        assert!(
+            made,
+            "could not create {what} here, so this test checked nothing. For file symlinks on Windows turn on Developer Mode or run as administrator"
+        );
+    }
+
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "needs file symlink privilege (Windows Developer Mode or admin); run: cargo test -- --ignored link"
+    )]
     fn a_file_link_pointing_outside_the_folder_is_refused_both_ways() {
         let outside = TempDir::new("req-outside-target");
         let secret = outside.join("secret.txt");
         fs::write(&secret, "top secret").unwrap();
         let dir = TempDir::new("req-outside");
-        if !make_file_link(&secret, &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create file symlinks here (needs privilege)");
-            return;
-        }
+        must_link(
+            make_file_link(&secret, &dir.join(FILE_NAME)),
+            "a file symlink",
+        );
         assert_eq!(read(&dir), unreadable(Problem::OutsideFolder));
         let mut cache = None;
         assert_eq!(
@@ -830,13 +844,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "needs file symlink privilege (Windows Developer Mode or admin); run: cargo test -- --ignored link"
+    )]
     fn a_file_link_inside_the_folder_reads_but_is_not_written() {
         let dir = TempDir::new("req-inside");
         fs::write(dir.join("real.md"), "real").unwrap();
-        if !make_file_link(&dir.join("real.md"), &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create file symlinks here (needs privilege)");
-            return;
-        }
+        must_link(
+            make_file_link(&dir.join("real.md"), &dir.join(FILE_NAME)),
+            "a file symlink",
+        );
         let read = read_ok(&dir);
         assert_eq!(read.text, "real");
         assert_eq!(
@@ -847,12 +865,16 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "needs file symlink privilege (Windows Developer Mode or admin); run: cargo test -- --ignored link"
+    )]
     fn a_broken_link_is_not_followed() {
         let dir = TempDir::new("req-broken");
-        if !make_file_link(&dir.join("nothing-here.md"), &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create file symlinks here (needs privilege)");
-            return;
-        }
+        must_link(
+            make_file_link(&dir.join("nothing-here.md"), &dir.join(FILE_NAME)),
+            "a file symlink",
+        );
         assert_eq!(read(&dir), unreadable(Problem::Link));
         assert_eq!(write(&dir, "x", None).unwrap(), refused(Problem::Link));
         assert!(!dir.join("nothing-here.md").exists());
@@ -864,10 +886,7 @@ mod tests {
         let real = TempDir::new("req-junction-real");
         let holder = TempDir::new("req-junction-holder");
         let link = holder.join("proj");
-        if !make_dir_link(&real, &link) {
-            eprintln!("skipped: cannot create directory links here");
-            return;
-        }
+        must_link(make_dir_link(&real, &link), "a directory link (junction)");
         let version = written_version(write(&link, "via link", None));
         assert_eq!(on_disk(&real), b"via link");
         assert_eq!(read_ok(&link).version, version);
@@ -878,10 +897,10 @@ mod tests {
         // 파일 링크를 못 만드는 PC(권한)에서도 링크 판단을 확인한다 — 정션 · 폴더 심볼릭 링크는 폴더를 가리킨다
         let dir = TempDir::new("req-dirlink-inside");
         fs::create_dir(dir.join("sub")).unwrap();
-        if !make_dir_link(&dir.join("sub"), &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create directory links here");
-            return;
-        }
+        must_link(
+            make_dir_link(&dir.join("sub"), &dir.join(FILE_NAME)),
+            "a directory link (junction)",
+        );
         assert_eq!(read(&dir), unreadable(Problem::NotAFile));
         assert_eq!(
             write(&dir, "x", Some("any")).unwrap(),
@@ -895,10 +914,10 @@ mod tests {
         let dir = TempDir::new("req-dirlink-dangling");
         let target = dir.join("will-vanish");
         fs::create_dir(&target).unwrap();
-        if !make_dir_link(&target, &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create directory links here");
-            return;
-        }
+        must_link(
+            make_dir_link(&target, &dir.join(FILE_NAME)),
+            "a directory link (junction)",
+        );
         fs::remove_dir(&target).unwrap();
         assert_eq!(read(&dir), unreadable(Problem::Link));
         assert_eq!(write(&dir, "x", None).unwrap(), refused(Problem::Link));
@@ -910,10 +929,10 @@ mod tests {
         // 폴더 링크(정션)가 `requirements.md` 자리에 있으면 파일이 아니라 폴더를 가리킨다 — 밖이면 거절
         let outside = TempDir::new("req-junction-out");
         let dir = TempDir::new("req-junction-file");
-        if !make_dir_link(&outside, &dir.join(FILE_NAME)) {
-            eprintln!("skipped: cannot create directory links here");
-            return;
-        }
+        must_link(
+            make_dir_link(&outside, &dir.join(FILE_NAME)),
+            "a directory link (junction)",
+        );
         assert_eq!(read(&dir), unreadable(Problem::OutsideFolder));
         assert_eq!(
             write(&dir, "x", Some("any")).unwrap(),

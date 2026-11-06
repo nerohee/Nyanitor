@@ -1,4 +1,5 @@
 // 고양이 고르기 · 정보 패널 열고 닫기. Enter(버튼) 로 열고, Esc 로 닫으면 그 고양이 버튼으로 포커스가 돌아간다.
+// 패널 바깥(장면 빈 곳 · 카드 · 다른 곳)을 누르면 닫히고 포커스는 누른 곳으로 간다. 고양이 단추 · 패널 안을 누르면 그대로 (고양이는 단추가 알아서 바꾼다).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CAT_IDS, type CatId } from "../cat/catalog";
 
@@ -37,8 +38,20 @@ export function useCatPanel() {
         setOpenCat(null);
       }
     };
+    // 눌렀을 때(pointerdown) 닫는다 — 누른 것이 카드 단추여도 그 단추는 평소대로 눌린다 (닫는 건 장면 층의 정보 패널뿐)
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(".hs-bubble")) return;
+      for (const button of buttons.current.values()) if (button.contains(target)) return;
+      setOpenCat(null);
+    };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
   }, [openCat]);
 
   return { openCat, register, toggle, close };

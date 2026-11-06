@@ -20,6 +20,10 @@ export function ReadyLine({ readiness }: { readiness: ReadinessState }) {
         <Icon name="clock" size={18} />
         <span className="hm-ready__text">
           <strong>{t("home.ready.checking")}</strong>
+          {/* 세부 줄 자리를 비워 둔다 — 확인이 끝나 "준비 완료 n/4" 가 돼도 카드 높이가 그대로 (P6-08 고객) */}
+          <span className="hm-ready__detail" aria-hidden="true">
+            &nbsp;
+          </span>
         </span>
       </p>
     );

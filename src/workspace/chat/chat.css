@@ -936,7 +936,6 @@
   font-size: var(--text-sm);
 }
 .wc-composer__send {
-  height: var(--control-h-md);
   padding: 0 var(--space-4);
 }
 .wc-queued {

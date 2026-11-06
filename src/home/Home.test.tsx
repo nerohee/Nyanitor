@@ -419,6 +419,43 @@ describe("고양이 집 — 에이전트가 깨지거나 없을 때", () => {
   });
 });
 
+describe("고양이 집 — 정보 패널 상태 칩", () => {
+  // jsdom 은 폭을 재지 못한다 — 패널 안쪽 폭 · 칩 조각 폭을 흉내 낸다
+  function fakeWidths(panelWidth: number) {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("hm-info") ? panelWidth : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("hm-dot")) return 8;
+      if (this.classList.contains("hm-info__state")) return 44;
+      if (this.classList.contains("hm-info__doing")) return 150;
+      return 0;
+    });
+  }
+
+  it("한 줄에 다 들어가면 '쉬는 중 — 하는 일' 을 다 보인다", async () => {
+    fakeWidths(400);
+    render(<Home {...NAV} />);
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+    const status = screen.getByRole("region", { name: "나비" }).querySelector(".hm-info__status");
+    expect(status).not.toHaveAttribute("data-short");
+    expect(status?.querySelector(".hm-info__doing")).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("패널이 좁아 안 들어가면 '쉬는 중' 만 남기고 뒤 설명은 숨긴다 — 화면 읽기 프로그램 · 풍선말에는 남는다", async () => {
+    fakeWidths(180);
+    render(<Home {...NAV} />);
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+    const status = screen.getByRole("region", { name: "나비" }).querySelector(".hm-info__status");
+    expect(status).toHaveAttribute("data-short", "true");
+    expect(status?.querySelector(".hm-info__doing")).toHaveAttribute("aria-hidden", "true");
+    expect(status?.querySelector(".hm-sr")).toHaveTextContent(/^— .+ 중$/);
+    expect(status).toHaveAttribute("title", expect.stringMatching(/^쉬는 중 — .+ 중$/));
+  });
+});
+
 describe("고양이 집 — 정보 패널 키보드 흐름", () => {
   it("Enter(클릭) 로 열면 제목으로 포커스, 실제 필드가 나오고, Esc 로 닫으면 그 고양이로 포커스가 돌아온다", async () => {
     render(<Home {...NAV} />);
@@ -435,7 +472,9 @@ describe("고양이 집 — 정보 패널 키보드 흐름", () => {
     expect(within(panel).getByRole("heading", { name: "나비" })).toHaveFocus();
     expect(within(panel).getByText("시스템 구현")).toBeInTheDocument();
     expect(within(panel).getByText("harness-builder-system", { selector: "code" })).toBeInTheDocument();
-    expect(within(panel).getByText(/쉬는 중/)).toBeInTheDocument();
+    // 상태 칩은 "쉬는 중" + 뒤 설명 (좁은 패널에서는 뒤 설명이 숨는다 — 시험 환경은 폭을 못 재 늘 다 보인다)
+    expect(within(panel).getByText("쉬는 중")).toBeInTheDocument();
+    expect(within(panel).getByText(/^— .+ 중$/)).toBeInTheDocument();
     expect(within(panel).getByText("Sonnet")).toBeInTheDocument();
     expect(within(panel).getByText("높음")).toBeInTheDocument();
     expect(within(panel).getByText(/의심이 많아요/)).toBeInTheDocument();

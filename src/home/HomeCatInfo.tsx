@@ -1,6 +1,6 @@
 // 고양이 정보 패널 (실제 화면) — 이름 · 에이전트 · 역할 · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일.
 // 읽기 전용: 고치기 · 고양이 바꾸기 단추는 없다 (내 수정 · 고양이 고르기는 P9). 시제품 `variants/shared/CatInfo.tsx` 를 바탕으로 새로 썼다.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { PANEL_ID } from "../components/house/useCatPanel";
 import { activityTextKey, type Activity } from "../components/house/spots";
 import { isTextKey, t, type TextKey } from "../i18n/ko";
@@ -88,9 +88,41 @@ function ReadableBody({ info, cat }: { info: AgentInfo; cat: HomeCat["cat"] }) {
   );
 }
 
+/** 상태 칩("쉬는 중 — 상자 안에서 쉬는 중")이 패널 한 줄에 다 들어가는가 — 안 들어가면 뒤 설명을 숨기고 "쉬는 중" 만 (P6-08 고객).
+ *  칩 조각(점 · 상태 · 설명)의 제 폭을 더해 패널 안쪽 폭과 견준다. 숨긴 설명도 자리만 빠지고 폭은 잴 수 있게 둔다 (home.css) */
+function useStatusFits(activity: Activity) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [short, setShort] = useState(false);
+  useLayoutEffect(() => {
+    const pill = ref.current;
+    const panel = pill?.parentElement;
+    if (!pill || !panel) return;
+    const check = () => {
+      const parts = Array.from(pill.querySelectorAll<HTMLElement>(":scope > .hm-dot, :scope > .hm-info__state, :scope > .hm-info__doing"));
+      if (parts.length === 0) return;
+      const ps = getComputedStyle(pill);
+      const px = (value: string) => parseFloat(value) || 0;
+      const gap = px(ps.columnGap);
+      const chrome = px(ps.paddingLeft) + px(ps.paddingRight) + px(ps.borderLeftWidth) + px(ps.borderRightWidth);
+      const needed = chrome + parts.reduce((sum, el) => sum + el.offsetWidth + px(getComputedStyle(el).marginLeft), 0) + gap * (parts.length - 1);
+      const cs = getComputedStyle(panel);
+      const available = panel.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);
+      // 폭을 못 재는 곳(시험 환경)에서는 늘 다 보인다
+      setShort(available > 0 && needed > available + 0.5);
+    };
+    check();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(check) : null;
+    observer?.observe(panel);
+    return () => observer?.disconnect();
+  }, [activity]);
+  return { ref, short };
+}
+
 export function HomeCatInfo({ home, activity, onClose, className }: HomeCatInfoProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const { cat, entry } = home;
+  const { ref: statusRef, short: statusShort } = useStatusFits(activity);
+  const doing = t(`cat.activity.${activityTextKey(activity)}` as TextKey);
 
   // 열리면 제목으로 포커스 — 화면 읽기 프로그램이 바로 읽고, Tab 이 패널 안으로 이어진다
   useEffect(() => {
@@ -125,11 +157,14 @@ export function HomeCatInfo({ home, activity, onClose, className }: HomeCatInfoP
         </button>
       </header>
 
-      <p className="hm-info__status">
+      <p className="hm-info__status" ref={statusRef} data-short={statusShort ? "true" : undefined} title={statusShort ? `${t("cat.info.resting")} — ${doing}` : undefined}>
         <span className="hm-dot" aria-hidden="true" />
-        <span>
-          {t("cat.info.resting")} — {t(`cat.activity.${activityTextKey(activity)}` as TextKey)}
+        <span className="hm-info__state">{t("cat.info.resting")}</span>
+        {/* 뒤 설명은 한 줄에 다 들어갈 때만 — 좁은 패널에서 넘치면 통째로 숨긴다. 숨겨도 화면 읽기 프로그램에는 따로 남긴다 */}
+        <span className="hm-info__doing" aria-hidden={statusShort ? "true" : undefined}>
+          — {doing}
         </span>
+        {statusShort && <span className="hm-sr">— {doing}</span>}
       </p>
 
       {entry?.state === "unreadable" ? (

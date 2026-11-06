@@ -135,6 +135,7 @@ const ko = {
   "variant.ws.tabs": "작업 공간 보기",
   "variant.ws.tab.editor": "요구사항",
   "variant.ws.tab.chat": "채팅",
+  "ws.tab.conflict": "충돌",
   "variant.ws.tab.progress": "진행",
   "variant.ws.projects": "프로젝트",
   "variant.ws.newProject": "새 프로젝트",

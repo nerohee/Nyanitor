@@ -133,7 +133,6 @@ body:has(.ws) {
 .ws-switch__btn,
 .ws-proj__item,
 .ws-wp__tab,
-.ws-wp__strip,
 .ws-ed__mode button {
   font: inherit;
   cursor: default;
@@ -174,8 +173,8 @@ body:has(.ws) {
   color: var(--color-text-subtle);
   box-shadow: none;
 }
+/* 강조 단추는 높이를 키우지 않는다 — 같은 줄의 보통 · 점선 · 위험 단추와 높이가 같아야 한다 (P2-15, P6-08). 노랑 · 굵은 그림자 · 넓은 가로 여백으로 강조 */
 .ws-btn--primary {
-  height: var(--control-h-lg);
   padding: 0 var(--space-5);
   background: var(--accent);
   color: var(--on-accent);
@@ -646,19 +645,13 @@ body:has(.ws) {
   white-space: nowrap;
 }
 
-/* ── 칸 틀: 나란히 / 탭 ── */
+/* ── 칸 틀: 탭 [채팅] [요구사항] (모든 창 크기) ── */
 .ws-wp {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-}
-.ws-wp--wide {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 0;
 }
 .ws-wp__panel {
   display: flex;
@@ -669,10 +662,6 @@ body:has(.ws) {
 }
 .ws-wp--tabs > .ws-wp__panel {
   flex: 1;
-}
-.ws-wp--wide > .ws-wp__panel + .ws-wp__panel,
-.ws-wp--wide > .ws-wp__strip + .ws-wp__panel + .ws-wp__panel {
-  border-left: var(--ui-line-w) dashed var(--color-border-strong);
 }
 .ws-wp__bar {
   display: flex;
@@ -726,34 +715,14 @@ body:has(.ws) {
   line-height: 15px;
   text-align: center;
 }
-/* 접은 칸 = 수첩 옆에 꽂힌 하늘색 인덱스 띠 */
-.ws-wp__strip {
-  display: flex;
-  flex-direction: column;
+/* 탭에 붙는 "충돌" 표시 — 아이콘 + 글 */
+.ws-wp__flag {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 0;
-  padding: var(--space-3) 0;
-  border: 0;
-  border-right: var(--ui-line-w) dashed var(--ui-line);
-  background:
-    var(--grid-paper),
-    var(--ui-3);
-  color: var(--color-text);
-}
-.ws-wp__strip:hover {
-  background:
-    var(--grid-paper),
-    var(--ui-4);
-}
-.ws-wp__strip:focus-visible {
-  outline-offset: -4px;
-}
-.ws-wp__strip-text {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.1em;
-  font-family: var(--font-round);
-  font-size: 15px;
+  gap: var(--space-1);
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
 }
 
 /* ── 요구사항 편집기 ── */

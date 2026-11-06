@@ -70,13 +70,13 @@ export interface EditorGuard {
 
 interface Props {
   projectId: number;
-  /** 넓은 창에서 칸 접기 */
-  onCollapse?: () => void;
+  /** 충돌 띠가 떴다 · 걷혔다 — 다른 탭에 가 있어도 탭에 표시하도록 */
+  onConflict?: (conflicting: boolean) => void;
   /** 저장을 멈춘 동안(충돌 띠)만 채워진다. 아니면 null */
   guardRef?: MutableRefObject<EditorGuard | null>;
 }
 
-export function RequirementsEditor({ projectId, onCollapse, guardRef }: Props) {
+export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
   const handle = useRef<MarkdownEditorHandle>(null);
   const composing = useRef<() => boolean>(() => false);
   useEffect(() => {
@@ -99,6 +99,13 @@ export function RequirementsEditor({ projectId, onCollapse, guardRef }: Props) {
       guardRef.current = null;
     };
   }, [guardRef, conflict, overwrite]);
+
+  const conflicting = conflict !== null;
+  useEffect(() => {
+    if (!onConflict) return;
+    onConflict(conflicting);
+    return () => onConflict(false);
+  }, [onConflict, conflicting]);
 
   // 미리보기에서 쓰기로 돌아오면 편집기로 포커스
   useEffect(() => {
@@ -149,11 +156,6 @@ export function RequirementsEditor({ projectId, onCollapse, guardRef }: Props) {
             {t("variant.ws.editor.preview")}
           </button>
         </div>
-        {onCollapse && (
-          <button type="button" className="ws-icon-btn" onClick={onCollapse} aria-label={t("variant.ws.collapse.editor")} title={t("variant.ws.collapse.editor")}>
-            <Icon name="collapse" size={16} />
-          </button>
-        )}
       </div>
 
       {conflict && (

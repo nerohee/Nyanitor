@@ -1,5 +1,5 @@
 // 실제 작업 공간 — 시안 a 「들여다보는 창」 (D-30 · ③ 스티커 수첩, D-43). 뒤로 물러난 마당 장면 위 종이(`ws-paper`)에
-// 넓은 창은 프로젝트 목록 | 요구사항(접을 수 있음) | 채팅, 좁은 창은 프로젝트 바꾸기 단추 + 탭.
+// 넓은 창은 프로젝트 목록 | 탭 판, 좁은 창은 프로젝트 바꾸기 단추 + 탭 판. 탭은 [채팅] [요구사항] (처음 채팅, P6-08).
 // 프로젝트 · 새 프로젝트 · 프로젝트 설정 · 요구사항 편집기 (P6-04) + 채팅 (P6-05, `chat/`). 진행 보기 · 둥근 창문 · 일하는 고양이는 P7.
 // 고른 프로젝트(`projectId`)는 앱(App)이 들고 있다 — 고양이 집에서 프로젝트를 눌러 들어와도 같다. 고른 것이 없으면 가장 최근에 연 프로젝트.
 import { useEffect, useRef, useState } from "react";
@@ -103,7 +103,7 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   const wide = useWide();
   const { state, reload } = useProjects();
   const [dialog, setDialog] = useState<Dialog>(openNew ? "new" : null);
-  const [active, setActive] = useState("editor");
+  const [active, setActive] = useState("chat");
   const paper = useRef<HTMLDivElement>(null);
   /** 편집기가 충돌 띠로 저장을 멈춘 동안만 채워진다 */
   const guard = useRef<EditorGuard | null>(null);
@@ -115,6 +115,8 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   const readOnly = ready && state.db === "read_only";
   const selected = projects.find((project) => project.id === projectId) ?? projects[0] ?? null;
   const selectedId = selected?.id ?? null;
+  /** 요구사항 탭에 붙는 "충돌" 표시 — 저장을 멈춘 채 다른 탭에 있어도 알 수 있게 */
+  const [editorConflict, setEditorConflict] = useState(false);
   /** 채팅 탭에 붙는, 답을 기다리는 카드 수 */
   const waitingCards = useSessionStore(selectPending(selectedId));
 
@@ -138,12 +140,12 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   };
   const pick = (id: number) => {
     if (id === selectedId) {
-      setActive("editor");
+      setActive("chat");
       return;
     }
     leave(() => {
       onSelect(id);
-      setActive("editor");
+      setActive("chat");
     });
   };
   const go = (place: NavPlace) => {
@@ -200,7 +202,6 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
               <div className="ws-work">
                 <ProjectHead project={selected} onSettings={() => setDialog("settings")} />
                 <WorkPanels
-                  wide={wide}
                   active={active}
                   onActive={setActive}
                   className="ws-panels"
@@ -217,23 +218,21 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
                   }
                   panels={[
                     {
+                      id: "chat",
+                      label: t("variant.ws.tab.chat"),
+                      badge: waitingCards,
+                      content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} />,
+                    },
+                    {
                       id: "editor",
                       label: t("variant.ws.tab.editor"),
-                      size: "minmax(0, 1fr)",
-                      collapsible: true,
-                      content: (collapse) =>
+                      flag: editorConflict ? t("ws.tab.conflict") : undefined,
+                      content:
                         selected.folder === "missing" ? (
                           <FolderMissing project={selected} onSettings={() => setDialog("settings")} />
                         ) : (
-                          <RequirementsEditor key={selected.id} projectId={selected.id} onCollapse={collapse} guardRef={guard} />
+                          <RequirementsEditor key={selected.id} projectId={selected.id} guardRef={guard} onConflict={setEditorConflict} />
                         ),
-                    },
-                    {
-                      id: "chat",
-                      label: t("variant.ws.tab.chat"),
-                      size: "minmax(0, 1.25fr)",
-                      badge: waitingCards,
-                      content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} />,
                     },
                   ]}
                 />

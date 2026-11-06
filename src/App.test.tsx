@@ -1,11 +1,16 @@
 import { EditorView } from "@codemirror/view";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fakeProjects } from "./lib/fakeProjects";
 import { fakeClaude } from "./lib/fakeClaude";
 import { ipc } from "./lib/ipc";
 import { resetSessionStore } from "./workspace/chat/sessionStore";
+
+// 작업 공간은 따로 불러온다(lazy) — 전체 시험으로 바쁠 때 처음 불러오기(CodeMirror 포함)가 기다림 1초를 넘길 수 있어 미리 한 번 불러 둔다
+beforeAll(async () => {
+  await import("./workspace/Workspace");
+}, 30_000);
 
 beforeEach(() => {
   fakeProjects.reset();

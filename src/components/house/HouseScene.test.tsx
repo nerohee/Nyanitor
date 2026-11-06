@@ -111,4 +111,61 @@ describe("고양이 집 장면", () => {
     fireEvent.click(nabi);
     expect(screen.queryByText("패널 nabi")).not.toBeInTheDocument();
   });
+
+  describe("정보 패널 바깥 클릭", () => {
+    function Harness() {
+      const panel = useCatPanel();
+      const [layer, setLayer] = useState<HTMLDivElement | null>(null);
+      return (
+        <div>
+          <button type="button">카드 단추</button>
+          <HouseScene
+            time="day"
+            label="고양이들"
+            placements={staticPlacements(FAKE_PLANS[0])}
+            interaction={{ panel, bubbleLayer: layer, renderPanel: (cat) => <button type="button">패널 {cat}</button> }}
+          />
+          <div data-testid="layer" ref={setLayer} />
+        </div>
+      );
+    }
+
+    it("바깥(장면 · 카드)을 누르면 닫히고 포커스를 억지로 옮기지 않는다", () => {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+      expect(screen.getByText("패널 nabi")).toBeInTheDocument();
+      const card = screen.getByRole("button", { name: "카드 단추" });
+      card.focus();
+      fireEvent.pointerDown(card);
+      expect(screen.queryByText("패널 nabi")).not.toBeInTheDocument();
+      expect(card).toHaveFocus();
+      // 장면 빈 곳
+      fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+      fireEvent.pointerDown(screen.getByRole("region", { name: "고양이들" }));
+      expect(screen.queryByText("패널 nabi")).not.toBeInTheDocument();
+    });
+
+    it("패널 안을 누르면 그대로, 다른 고양이를 누르면 그 고양이로 바뀐다", () => {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+      fireEvent.pointerDown(screen.getByText("패널 nabi"));
+      expect(screen.getByText("패널 nabi")).toBeInTheDocument();
+
+      const other = screen.getByRole("button", { name: /^먹물,/ });
+      fireEvent.pointerDown(other);
+      expect(screen.getByText("패널 nabi")).toBeInTheDocument();
+      fireEvent.click(other);
+      expect(screen.queryByText("패널 nabi")).not.toBeInTheDocument();
+      expect(screen.getByText("패널 mukmul")).toBeInTheDocument();
+    });
+
+    it("Esc 는 전처럼 닫고 그 고양이 단추로 포커스를 돌려 준다", () => {
+      render(<Harness />);
+      const nabi = screen.getByRole("button", { name: /^나비,/ });
+      fireEvent.click(nabi);
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByText("패널 nabi")).not.toBeInTheDocument();
+      expect(nabi).toHaveFocus();
+    });
+  });
 });

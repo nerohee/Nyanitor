@@ -1,10 +1,10 @@
-// 작업 공간의 칸 틀 — 넓은 창(1280px 이상)이면 칸을 나란히(접을 수 있는 칸은 띠로), 좁은 창이면 탭. 시제품 `variants/shared/workspace.tsx` 의 `WorkPanels` · `useWide` 를 바탕으로.
-// 탭은 ←/→ · Home/End 로 옮긴다 (WAI-ARIA tabs). 칸 너비는 칸마다 정한다 (시안과 같게).
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+// 작업 공간의 칸 틀 — 창 크기와 상관없이 판 하나에 탭 [채팅] [요구사항] (P6-08). 시제품 `variants/shared/workspace.tsx` 의 `WorkPanels` · `useWide` 를 바탕으로.
+// 탭은 ←/→ · Home/End 로 옮긴다 (WAI-ARIA tabs). 안 보이는 탭도 마운트된 채로 숨긴다. `useWide` 는 프로젝트 목록을 옆에 둘지 정하는 데 쓴다.
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { t, tf } from "../i18n/ko";
 import { Icon } from "../variants/shared/icons";
 
-/** 넓은 창(1280px 이상)이면 나란히, 아니면 탭 (plan §5) */
+/** 넓은 창(1280px 이상)이면 프로젝트 목록을 옆에 둔다, 아니면 탭 줄의 프로젝트 바꾸기 (plan §5) */
 export function useWide(query = "(min-width: 1280px)"): boolean {
   const read = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(query).matches;
   const [wide, setWide] = useState(read);
@@ -23,16 +23,13 @@ export interface WorkPanel {
   label: string;
   /** 기다리는 카드 수 (좁은 창의 탭에 붙는다, D-25) */
   badge?: number;
-  /** 넓은 창에서 칸 너비 (grid 값). 접으면 띠 */
-  size: string;
-  /** 넓은 창에서 접을 수 있나 */
-  collapsible?: boolean;
-  content: ReactNode | ((collapse: (() => void) | undefined) => ReactNode);
+  /** 탭에 붙는 짧은 알림 글 (예: "충돌") — 색만이 아니라 글 · 아이콘으로. 이름표에도 붙는다 */
+  flag?: string;
+  content: ReactNode;
 }
 
 interface Props {
   panels: WorkPanel[];
-  wide: boolean;
   active: string;
   onActive: (id: string) => void;
   className?: string;
@@ -40,40 +37,8 @@ interface Props {
   tabStart?: ReactNode;
 }
 
-export function WorkPanels({ panels, wide, active, onActive, className, tabStart }: Props) {
-  const [collapsed, setCollapsed] = useState<string[]>([]);
+export function WorkPanels({ panels, active, onActive, className, tabStart }: Props) {
   const tabs = useRef(new Map<string, HTMLButtonElement>());
-  const render = (panel: WorkPanel, collapse?: () => void) => (typeof panel.content === "function" ? panel.content(collapse) : panel.content);
-
-  if (wide) {
-    const columns = panels.map((panel) => (collapsed.includes(panel.id) ? "44px" : panel.size)).join(" ");
-    return (
-      <div className={`ws-wp ws-wp--wide${className ? ` ${className}` : ""}`} style={{ gridTemplateColumns: columns }}>
-        {panels.map((panel) => {
-          const folded = collapsed.includes(panel.id);
-          return (
-            <Fragment key={panel.id}>
-              {folded && (
-                <button
-                  type="button"
-                  className="ws-wp__strip"
-                  aria-label={tf("variant.ws.expand", { name: panel.label })}
-                  onClick={() => setCollapsed((prev) => prev.filter((id) => id !== panel.id))}
-                >
-                  <Icon name="expand" size={16} />
-                  <span className="ws-wp__strip-text">{panel.label}</span>
-                </button>
-              )}
-              {/* 접어도 칸은 그대로 두고 숨긴다 — 편집기의 글 · 저장이 끊기지 않게 */}
-              <section className={`ws-wp__panel ws-wp__panel--${panel.id}`} aria-label={panel.label} hidden={folded}>
-                {render(panel, panel.collapsible ? () => setCollapsed((prev) => [...prev, panel.id]) : undefined)}
-              </section>
-            </Fragment>
-          );
-        })}
-      </div>
-    );
-  }
 
   const index = Math.max(
     0,
@@ -118,6 +83,12 @@ export function WorkPanels({ panels, wide, active, onActive, className, tabStart
                 }}
               >
                 {panel.label}
+                {panel.flag ? (
+                  <span className="ws-wp__flag">
+                    <Icon name="alert" size={12} />
+                    {panel.flag}
+                  </span>
+                ) : null}
                 {panel.badge ? (
                   <span className="ws-wp__badge" aria-label={tf("variant.ws.badge", { n: panel.badge })}>
                     {panel.badge}
@@ -138,7 +109,7 @@ export function WorkPanels({ panels, wide, active, onActive, className, tabStart
           className={`ws-wp__panel ws-wp__panel--${panel.id}`}
           hidden={panel.id !== current.id}
         >
-          {render(panel)}
+          {panel.content}
         </section>
       ))}
     </div>

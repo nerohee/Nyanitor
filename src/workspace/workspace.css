@@ -1127,6 +1127,51 @@ body:has(.ws) {
   border: 0;
   border-top: var(--ui-line-w) dashed var(--color-border-strong);
 }
+/* 표 (GFM) — 넓으면 이 칸 안에서만 가로로 민다. 칸 안 글은 줄을 바꾸되 낱말은 자르지 않는다 */
+.ws-md__table {
+  max-width: 100%;
+  margin: var(--space-2) 0;
+  overflow-x: auto;
+  border-radius: var(--wobble-sm);
+}
+.ws-md__table:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+.ws-md table {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.ws-md th,
+.ws-md td {
+  padding: var(--space-1) var(--space-2);
+  border: 1.5px solid var(--ui-line);
+  text-align: left;
+  vertical-align: top;
+  min-width: 4em;
+  overflow-wrap: normal;
+}
+.ws-md th {
+  background: var(--color-surface-sunken);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ws-md tbody tr:nth-child(even) td {
+  background: rgb(var(--shadow-color) / 0.03);
+}
+/* 체크 목록 (GFM) — 읽기 전용 칸 */
+.ws-md li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: calc(-1 * var(--space-4));
+}
+.ws-md input[type="checkbox"] {
+  margin: 0 var(--space-1) 0 0;
+  vertical-align: middle;
+}
+.ws-md del {
+  color: var(--color-text-muted);
+}
 /* 이미지는 불러오지 않는다 · 링크는 이동하지 않는다 — 글자 표시만 */
 .ws-md__img {
   padding: 0 var(--space-2);

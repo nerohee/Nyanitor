@@ -66,6 +66,55 @@ function answerQuestions(req, pick) {
   return { behavior: "allow", updatedInput: { questions: req.input.questions, answers } };
 }
 
+// ---------------------------------------------------------------- 작업자(서브에이전트) 도우미 (P7-02)
+
+const AGENT_TOOL_NAMES = new Set(["Agent", "Task"]); // 옛 이름 Task · 새 이름 Agent — 녹화로 확인한다
+
+/** 임시 프로젝트 폴더에 실험용 작업자 정의와 읽을 파일을 둔다. 작업자는 haiku · 도구 하나 정도. */
+function setupAgentProject(ctx, label, { writer = false } = {}) {
+  const dir = ctx.scratch(label);
+  const agentsDir = path.join(dir, ".claude", "agents");
+  fs.mkdirSync(agentsDir, { recursive: true });
+  const def = (name, description, tools, body) =>
+    fs.writeFileSync(
+      path.join(agentsDir, `${name}.md`),
+      ["---", `name: ${name}`, `description: ${description}`, `tools: ${tools}`, "model: haiku", "---", "", body, ""].join("\n"),
+      { encoding: "utf8" },
+    );
+  def("probe-helper", "Probe helper for tests. Reads one file and answers in one short line.", "Read", "You are a probe helper. Do exactly what the task says, then answer in one short line.");
+  if (writer) {
+    def("probe-writer", "Probe writer for tests. Writes one small file and answers in one short line.", "Write", "You are a probe writer. Do exactly what the task says, then answer in one short line.");
+  }
+  fs.writeFileSync(path.join(dir, "note.txt"), "banana split\n", { encoding: "utf8" });
+  return dir;
+}
+
+/** 받은 메시지에서 작업자를 부르는 도구 호출(assistant 의 tool_use) 목록. */
+function agentCalls(s) {
+  return s.recv
+    .filter((m) => m.type === "assistant" && Array.isArray(m.message?.content))
+    .flatMap((m) => m.message.content.filter((c) => c.type === "tool_use" && AGENT_TOOL_NAMES.has(c.name)).map((c) => ({ ...c, parent: m.parent_tool_use_id ?? null })));
+}
+
+const kindOf = (m) => `${m.type}${m.subtype ? "/" + m.subtype : m.request ? "/" + m.request.subtype : ""}`;
+
+/** 작업자 안쪽 메시지(parent_tool_use_id 가 있는 줄)와 작업자 관련 system 메시지를 녹화 요약으로 남긴다. */
+function describeAgentTraffic(ctx, s, tag = "") {
+  const t = tag ? `[${tag}] ` : "";
+  const calls = agentCalls(s);
+  ctx.info(`${t}작업자 호출 도구 이름 · 입력 필드`, JSON.stringify(calls.map((c) => ({ name: c.name, keys: Object.keys(c.input || {}), subagent_type: c.input?.subagent_type, background: c.input?.run_in_background }))));
+  const inner = s.recv.filter((m) => m.parent_tool_use_id);
+  const innerKinds = {};
+  for (const m of inner) innerKinds[kindOf(m)] = (innerKinds[kindOf(m)] || 0) + 1;
+  ctx.info(`${t}parent_tool_use_id 가 있는 줄 종류별 수`, JSON.stringify(innerKinds));
+  ctx.info(`${t}받은 줄 종류 순서`, s.recv.map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+  const sys = s.recv.filter((m) => m.type === "system" && !["init", "thinking_tokens"].includes(m.subtype));
+  ctx.info(`${t}system 줄(init 뺀)의 subtype · 키`, JSON.stringify(sys.map((m) => ({ subtype: m.subtype, keys: Object.keys(m) }))));
+  const results = toolResultsOf(s).filter((c) => calls.some((a) => a.id === c.tool_use_id));
+  ctx.info(`${t}작업자 호출에 대한 tool_result 개수 · 모양`, JSON.stringify(results.map((c) => ({ is_error: c.is_error, contentType: typeof c.content, head: String(typeof c.content === "string" ? c.content : JSON.stringify(c.content)).slice(0, 120) }))));
+  return { calls, inner, sys };
+}
+
 // ---------------------------------------------------------------- 시나리오
 
 export const scenarios = {
@@ -873,6 +922,225 @@ export const scenarios = {
       ctx.info("--effort high 일 때 모델", initOf(e)?.model);
       e.note(`[도구 메모] --effort high: result ${r2?.subtype} · ${r2?.result} · stderr ${errs.length}줄`);
       await e.shutdown();
+    },
+  },
+
+  agent: {
+    describe: "11 작업자 호출 — 앞에서 기다리는 작업자: 도구 이름 · 입력 필드 · 안쪽 메시지의 표시(parent_tool_use_id) · 끝 알림 (P7-02, D-49)",
+    cost: "턴 1 (haiku 메인 + haiku 작업자 1회)",
+    async run(ctx) {
+      const dir = setupAgentProject(ctx, "main");
+      const s = ctx.newSession({ cwd: dir, maxTurns: 6 });
+      watch(s, allow);
+      const r = await turn(
+        s,
+        "Delegate this to the subagent named probe-helper in the FOREGROUND (use the tool that launches subagents with run_in_background set to false, and wait for its answer; give it a short description 'read note'): ask it to read the file note.txt and reply with only the first word. After it answers, reply with only that word.",
+        120000,
+      );
+      const { calls, inner } = describeAgentTraffic(ctx, s);
+      ctx.check("작업자 호출 도구가 옴 (Agent 또는 Task)", calls.length >= 1, calls.map((c) => c.name).join(","));
+      ctx.check("subagent_type 이 probe-helper", calls[0]?.input?.subagent_type === "probe-helper", JSON.stringify(calls[0]?.input));
+      ctx.check("작업자 안쪽 줄에 parent_tool_use_id 가 있고 그 값이 호출의 id", inner.length > 0 && inner.every((m) => m.parent_tool_use_id === calls[0]?.id), `안쪽 ${inner.length}줄`);
+      ctx.check("result success · 모델이 banana 를 답함", r?.subtype === "success" && /banana/i.test(r?.result || ""), r?.result);
+      const endNote = s.recv.find((m) => m.type === "system" && m.subtype === "task_notification" && m.tool_use_id === calls[0]?.id);
+      ctx.check("끝에 system/task_notification(status completed) 이 호출의 tool_use_id 와 함께 옴", endNote?.status === "completed", JSON.stringify(endNote && { status: endNote.status, keys: Object.keys(endNote) }));
+      const started = s.recv.find((m) => m.type === "system" && m.subtype === "task_started");
+      ctx.check("앞에서 기다리는 작업자는 task_started.is_backgrounded 가 false", started?.is_backgrounded === false, JSON.stringify(started?.is_backgrounded));
+      await s.shutdown();
+
+      // 같은 일을 "앞 · 뒤" 말 없이 시키면 — 이 CLI 는 작업자를 기본으로 백그라운드로 돌리는가
+      const d = ctx.newSession({ label: "default", cwd: dir, maxTurns: 8 });
+      watch(d, allow);
+      const rd = await turn(
+        d,
+        "Delegate this to the subagent named probe-helper (use the tool that launches subagents; give it a short description 'read note'): ask it to read the file note.txt and reply with only the first word. After it answers, reply with only that word.",
+        120000,
+      );
+      ctx.info("[default] 첫 result", JSON.stringify({ subtype: rd?.subtype, result: rd?.result }));
+      const startedD = d.recv.find((m) => m.type === "system" && m.subtype === "task_started");
+      ctx.info("[default] task_started.is_backgrounded (run_in_background 를 안 줬을 때)", JSON.stringify(startedD?.is_backgrounded));
+      if (!d.exited && startedD?.is_backgrounded) {
+        const mark = d.recv.length;
+        const r2 = await d.next(isResult, 60000); // 끝 알림 뒤 CLI 가 스스로 시작하는 턴
+        ctx.info("[default] 두 번째 result 가 스스로 옴", r2 ? JSON.stringify({ subtype: r2.subtype, result: r2.result }) : "오지 않음");
+        ctx.info("[default] 첫 result 뒤 받은 줄 종류", d.recv.slice(mark - 1).map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+      }
+      describeAgentTraffic(ctx, d, "default");
+      await d.shutdown();
+    },
+  },
+
+  "agent-background": {
+    describe: "11 작업자 호출 — 백그라운드(run_in_background): 시작 알림 · 끝 알림이 어떻게 오는가 (P7-02, D-49)",
+    cost: "턴 1~2 (haiku)",
+    async run(ctx) {
+      const dir = setupAgentProject(ctx, "main");
+      const s = ctx.newSession({ cwd: dir, maxTurns: 8 });
+      watch(s, allow);
+      const r = await turn(
+        s,
+        "Launch the subagent probe-helper IN THE BACKGROUND (set run_in_background to true; description 'read note'): ask it to read the file note.txt and reply with only the first word. Do not wait for it. After launching, reply with only: launched. When it later reports back, reply with only the word it found.",
+        120000,
+      );
+      ctx.info("첫 result", JSON.stringify({ subtype: r?.subtype, result: r?.result, num_turns: r?.num_turns }));
+      const firstEnd = s.recv.length;
+      // 백그라운드 작업자의 끝 알림이 오는지 기다린다 (두 번째 result 까지, 최대 90초)
+      const r2 = await s.next(isResult, 90000);
+      ctx.info("첫 result 뒤에 두 번째 result 가 왔는가", r2 ? JSON.stringify({ subtype: r2.subtype, result: r2.result }) : "오지 않음 (90초)");
+      ctx.info("첫 result 뒤에 받은 줄 종류", s.recv.slice(firstEnd).map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+      const { calls } = describeAgentTraffic(ctx, s);
+      ctx.check("작업자 호출 도구가 옴", calls.length >= 1, calls.map((c) => c.name).join(","));
+      ctx.check("run_in_background 가 true 로 감", calls[0]?.input?.run_in_background === true, JSON.stringify(calls[0]?.input));
+      const notif = s.recv.filter((m) => m.type === "system" && /task|notif/i.test(m.subtype || ""));
+      ctx.info("작업 관련 system 줄", JSON.stringify(notif.map((m) => ({ subtype: m.subtype, keys: Object.keys(m), status: m.status, task_type: m.task_type }))));
+      s.note(`[도구 메모] 첫 result 뒤 두 번째 result: ${r2 ? "옴" : "안 옴"}`);
+      await s.shutdown();
+      ctx.info("정상 종료 정보", JSON.stringify(s.exited));
+    },
+  },
+
+  "agent-two": {
+    describe: "11 작업자 호출 — 작업자 둘을 한 번에 (같은 메시지에서 두 번 호출) (P7-02, D-49)",
+    cost: "턴 1 (haiku 메인 + haiku 작업자 2회)",
+    async run(ctx) {
+      const dir = setupAgentProject(ctx, "main");
+      fs.writeFileSync(path.join(dir, "note2.txt"), "cherry pie\n", { encoding: "utf8" });
+      const s = ctx.newSession({ cwd: dir, maxTurns: 8 });
+      watch(s, allow);
+      const r = await turn(
+        s,
+        "Launch TWO probe-helper subagents in parallel IN THE FOREGROUND (run_in_background false), in a single message with two tool calls (descriptions 'read note one' and 'read note two'): the first reads note.txt, the second reads note2.txt; each replies with only the first word. Then reply with the two words separated by a comma.",
+        150000,
+      );
+      const { calls, inner } = describeAgentTraffic(ctx, s);
+      ctx.check("작업자 호출이 둘", calls.length === 2, String(calls.length));
+      ctx.check("두 호출의 id 가 다름", calls.length === 2 && calls[0].id !== calls[1].id);
+      const parents = new Set(inner.map((m) => m.parent_tool_use_id));
+      ctx.info("안쪽 줄의 parent_tool_use_id 가짓수", String(parents.size));
+      ctx.check("result success · 두 단어 모두 답에 있음", r?.subtype === "success" && /banana/i.test(r?.result || "") && /cherry/i.test(r?.result || ""), r?.result);
+      const order = s.recv
+        .filter((m) => m.type === "assistant" && Array.isArray(m.message?.content) && m.message.content.some((c) => c.type === "tool_use" && AGENT_TOOL_NAMES.has(c.name)))
+        .map((m) => m.message.content.filter((c) => c.type === "tool_use").length);
+      ctx.info("작업자 호출 assistant 줄마다 tool_use 개수", JSON.stringify(order));
+      await s.shutdown();
+    },
+  },
+
+  "agent-permission": {
+    describe: "11 작업자 호출 — 작업자가 권한이 필요한 도구(Write)를 쓸 때 can_use_tool 요청에 어느 작업자인지 알 값이 있는가 (P7-02, D-49)",
+    cost: "턴 1 (haiku 메인 + haiku 작업자 1회)",
+    async run(ctx) {
+      const dir = setupAgentProject(ctx, "main", { writer: true });
+      const s = ctx.newSession({ cwd: dir, maxTurns: 8 });
+      watch(s, allow);
+      const r = await turn(
+        s,
+        "Delegate to the subagent probe-writer in the FOREGROUND (run_in_background false; description 'write file'): ask it to create a file named out.txt containing exactly: hi. After it finishes, reply with only: done.",
+        150000,
+      );
+      const { calls } = describeAgentTraffic(ctx, s);
+      const reqs = s.toolRequests;
+      ctx.check("작업자 호출이 옴", calls.length >= 1, calls.map((c) => c.name).join(","));
+      ctx.check("Write 권한 요청이 옴", reqs.some((q) => q.tool_name === "Write"), reqs.map((q) => q.tool_name).join(","));
+      const raw = s.recv.filter((m) => canUse(m));
+      ctx.info("can_use_tool 줄의 최상위 키", JSON.stringify(raw.map((m) => Object.keys(m))));
+      ctx.info("can_use_tool 요청 본문 키", JSON.stringify(raw.map((m) => Object.keys(m.request))));
+      ctx.info("작업자 표시 후보(agent_id · parent_tool_use_id · agent_type 등)", JSON.stringify(raw.map((m) => ({ top: Object.fromEntries(Object.entries(m).filter(([k]) => /agent|parent/i.test(k))), req: Object.fromEntries(Object.entries(m.request).filter(([k]) => /agent|parent/i.test(k))) }))));
+      const wreq = raw.find((m) => m.request?.tool_name === "Write");
+      const startedW = s.recv.find((m) => m.type === "system" && m.subtype === "task_started" && m.subagent_type === "probe-writer");
+      ctx.check("권한 요청 본문에 agent_id 가 있고 task_started.task_id 와 같음 (어느 작업자인지 알 수 있음)", !!wreq && typeof wreq.request.agent_id === "string" && wreq.request.agent_id === startedW?.task_id, `agent_id ${wreq?.request?.agent_id} / task_id ${startedW?.task_id}`);
+      ctx.check("권한 요청의 tool_use_id 는 작업자 안쪽 도구 호출의 id (작업자 호출의 id 가 아님)", !!wreq && wreq.request.tool_use_id !== startedW?.tool_use_id, `${wreq?.request?.tool_use_id} / ${startedW?.tool_use_id}`);
+      ctx.check("허용하면 파일이 만들어지고 result success", exists(s, "out.txt") && r?.subtype === "success", r?.subtype);
+      await s.shutdown();
+
+      // 백그라운드 작업자가 권한이 필요한 도구를 쓸 때도 물어 오는가 (아니면 묻지 않고 거부되는가)
+      const b = ctx.newSession({ label: "background", cwd: dir, maxTurns: 8 });
+      watch(b, allow);
+      const rb = await turn(
+        b,
+        "Delegate to the subagent probe-writer IN THE BACKGROUND (run_in_background true; description 'write file two'): ask it to create a file named out2.txt containing exactly: hi. After launching reply only: launched. When it reports back, reply only: done.",
+        120000,
+      );
+      ctx.info("[background] 첫 result", JSON.stringify({ subtype: rb?.subtype, result: rb?.result }));
+      if (!b.exited) {
+        const r2 = await b.next(isResult, 60000);
+        ctx.info("[background] 두 번째 result", r2 ? JSON.stringify({ subtype: r2.subtype, result: r2.result }) : "오지 않음");
+      }
+      const rawB = b.recv.filter((m) => canUse(m));
+      ctx.info("[background] can_use_tool 요청 수 · 본문 키", JSON.stringify(rawB.map((m) => ({ tool: m.request.tool_name, keys: Object.keys(m.request), top: Object.keys(m) }))));
+      ctx.info("[background] out2.txt 가 만들어졌는가", String(exists(b, "out2.txt")));
+      describeAgentTraffic(ctx, b, "background");
+      await b.shutdown();
+    },
+  },
+
+  "agent-interrupt": {
+    describe: "11 작업자 호출 — 작업자가 일하는 중 interrupt: 무엇이 오는가 · 작업자 끝 알림이 오는가 (P7-02, D-49)",
+    cost: "턴 2 (haiku)",
+    async run(ctx) {
+      const dir = setupAgentProject(ctx, "main");
+      // 오래 걸리는 일을 하도록 Bash 를 가진 작업자를 더 둔다
+      fs.writeFileSync(
+        path.join(dir, ".claude", "agents", "probe-slow.md"),
+        ["---", "name: probe-slow", "description: Probe slow worker for tests. Runs one slow shell command.", "tools: Bash", "model: haiku", "---", "", "You are a probe worker. Do exactly what the task says.", ""].join("\n"),
+        { encoding: "utf8" },
+      );
+      const s = ctx.newSession({ cwd: dir, maxTurns: 8 });
+      watch(s, allow);
+      s.send(
+        userMessage(
+          'Delegate to the subagent probe-slow (description \'slow job\'): ask it to run this exact command in the foreground (run_in_background false for both the subagent and the command): node -e "setTimeout(()=>console.log(\'finished\'),40000)". After it answers, reply with only: done.',
+        ),
+      );
+      // 작업자 안쪽 권한 요청이 오면 일하는 중이다
+      const req = await s.next((m) => canUse(m), 90000);
+      ctx.check("작업자 안에서 권한 요청이 옴 (일하는 중)", !!req, req ? req.request?.tool_name : "안 옴");
+      await sleep(3000);
+      const mark = s.recv.length;
+      s.send(controlRequest("probe-int-1", { subtype: "interrupt" }));
+      const r = await s.next(isResult, 40000);
+      ctx.info("중단 result", r ? JSON.stringify({ subtype: r.subtype, is_error: r.is_error, terminal_reason: r.terminal_reason, duration_ms: r.duration_ms }) : "result 없음");
+      ctx.check("중단하면 result 로 끝남 (40초를 기다리지 않음)", !!r && (r.duration_ms ?? 0) < 35000, r ? `${r.subtype} / ${r.duration_ms}` : "");
+      ctx.info("interrupt 뒤 받은 줄 종류", s.recv.slice(mark).map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+      const { calls } = describeAgentTraffic(ctx, s);
+      const call = calls[0];
+      const endResult = toolResultsOf(s).find((c) => c.tool_use_id === call?.id);
+      ctx.info("중단 때 작업자 호출의 tool_result", endResult ? JSON.stringify({ is_error: endResult.is_error, head: String(typeof endResult.content === "string" ? endResult.content : JSON.stringify(endResult.content)).slice(0, 160) }) : "(없음 — 끝 알림이 오지 않음)");
+      const stopNote = s.recv.find((m) => m.type === "system" && m.subtype === "task_notification");
+      const stopUpd = s.recv.find((m) => m.type === "system" && m.subtype === "task_updated");
+      ctx.check("중단하면 system/task_notification(status stopped) 이 result 앞에 옴", stopNote?.status === "stopped" && s.recv.indexOf(stopNote) < s.recv.indexOf(r), JSON.stringify(stopNote && { status: stopNote.status }));
+      ctx.info("중단 때 task_updated.patch", JSON.stringify(stopUpd?.patch));
+      ctx.check("프로세스가 살아 있음", !s.exited);
+      if (!s.exited) {
+        const mark2 = s.recv.length;
+        const again = await turn(s, "Say only: alive", 60000);
+        ctx.info("중단 뒤 다음 턴", JSON.stringify({ subtype: again?.subtype, result: again?.result }));
+        ctx.info("중단 뒤 다음 턴에 받은 줄 종류", s.recv.slice(mark2).map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+      }
+      await s.shutdown();
+
+      // 백그라운드 작업자가 도는 중 — 앞 턴은 이미 끝났다. 이때 interrupt 하면 작업자는 어떻게 되는가
+      const b = ctx.newSession({ label: "background", cwd: dir, maxTurns: 8 });
+      watch(b, allow);
+      const rb = await turn(
+        b,
+        "Launch the subagent probe-slow IN THE BACKGROUND (run_in_background true; description 'slow job two'): ask it to run this exact command: node -e \"setTimeout(()=>console.log('finished'),40000)\". Do not wait. Reply with only: launched.",
+        120000,
+      );
+      ctx.info("[background] 첫 result", JSON.stringify({ subtype: rb?.subtype, result: rb?.result }));
+      const asked = await b.next((m) => canUse(m), 60000);
+      ctx.check("[background] 백그라운드 작업자 안에서 권한 요청이 옴 (일하는 중)", !!asked, asked ? asked.request?.tool_name : "안 옴");
+      await sleep(3000);
+      const markB = b.recv.length;
+      b.send(controlRequest("probe-int-2", { subtype: "interrupt" }));
+      await sleep(8000);
+      ctx.info("[background] interrupt 뒤 8초 동안 받은 줄 종류", b.recv.slice(markB).map((m) => kindOf(m) + (m.parent_tool_use_id ? "*" : "")).join(" "));
+      const stopB = b.recv.slice(markB).find((m) => m.type === "system" && m.subtype === "task_notification");
+      ctx.info("[background] interrupt 뒤 task_notification", stopB ? JSON.stringify({ status: stopB.status }) : "오지 않음 (작업자는 계속 도는 중일 수 있음)");
+      const bgNow = b.recv.filter((m) => m.type === "system" && m.subtype === "background_tasks_changed").pop();
+      ctx.info("[background] 마지막 background_tasks_changed 의 tasks 수", String(bgNow?.tasks?.length));
+      await b.shutdown();
+      ctx.info("[background] 정상 종료 정보 (작업자가 도는 채로 stdin 닫기)", JSON.stringify(b.exited));
     },
   },
 

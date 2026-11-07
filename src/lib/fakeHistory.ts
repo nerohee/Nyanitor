@@ -4,8 +4,10 @@
 //     취소된 카드 · 답 없이 지나간(expired) 카드가 있다. 앞쪽에는 쪽 나누기를 볼 수 있게 옛 대화가 길게 있다. 나머지 프로젝트는 비어 있다.
 //   ?history=empty — 모든 프로젝트가 비어 있고 츄르도 0
 //   ?history=apikey — `full` 과 같되 츄르가 키로 과금된 턴 (비용이 "참고용 추정" 이 아니다)
+//   주소 쿼리 `?workers=one|two|background|permission` (P7-02, `fakeWorkers.ts`) 이 있으면 `full` 기록에 작업자 항목이 더해진다 — 마침 · 실패 · 멈춤(끝 알림 없이 앱이 다시 켜짐). 기본에는 없다.
 // 가짜 세션(`fakeClaude.ts`)이 돌고 있으면 그 턴들이 츄르의 "지금 세션" 에 더해진다. 시험은 `reset({...})` 로 쿼리 대신 값을 정한다.
-import { AppError, CHAT_PAGE_MAX, type ChatEntry, type ChatListEvent, type ChatPage, type ClaudeEvent, type ProjectUsage, type UsageSum, type UsageSummary } from "./ipc-types";
+import { AppError, CHAT_PAGE_MAX, type ChatEntry, type ChatListEvent, type ChatPage, type ChatWorkerState, type ClaudeEvent, type ProjectUsage, type UsageSum, type UsageSummary } from "./ipc-types";
+import { FAKE_WORKERS, parseFakeWorkersQuery, type FakeWorkerSpec } from "./fakeWorkers";
 import { fakeProjects } from "./fakeProjects";
 
 type Handler = (args: Record<string, unknown>) => unknown;
@@ -74,10 +76,28 @@ function olderConversation(): ChatListEvent[] {
   return events;
 }
 
-type Fixed = { event: ChatListEvent; request?: ChatEntry["request"]; truncated?: boolean };
+type Fixed = { event: ChatListEvent; request?: ChatEntry["request"]; truncated?: boolean; worker?: ChatWorkerState };
+
+/** 기록에 있는 작업자 한 번: 메인의 `Agent` 호출 줄 + 작업자 시작 항목 (끝은 항목의 `worker` 로 합쳐져 있다) */
+function workerRows(id: string, spec: FakeWorkerSpec, background: boolean, worker: ChatWorkerState, startedAtMs: number): Fixed[] {
+  return [
+    { event: { type: "tool_use", toolUseId: id, tool: "Agent", summary: spec.description } },
+    { event: { type: "worker_started", toolUseId: id, agentId: `agent-${id}`, name: spec.name, description: spec.description, background, depth: 1, atMs: startedAtMs }, worker },
+  ];
+}
+
+/** 작업자 항목들 — 마침 · 실패 · 멈춤 (앱이 꺼진 사이에 끝 알림을 못 받아 "멈춤" 이 된 것) */
+function recentWorkers(): Fixed[] {
+  const at = (secondsAgo: number) => (NOW - secondsAgo) * 1000;
+  return [
+    ...workerRows("toolu-agent-h1", FAKE_WORKERS.tester, false, { status: "done", endedAtMs: at(1500) }, at(1560)),
+    ...workerRows("toolu-agent-h2", FAKE_WORKERS.ui, true, { status: "failed", endedAtMs: at(1400) }, at(1530)),
+    ...workerRows("toolu-agent-h3", FAKE_WORKERS.system, true, { status: "stopped", endedAtMs: null }, at(1500)),
+  ];
+}
 
 /** 시제품(`variants/fixtures-workspace.ts`)의 채팅 항목 종류가 모두 나오는 대화 */
-function recentConversation(): Fixed[] {
+function recentConversation(withWorkers: boolean): Fixed[] {
   const permission = (requestId: string, tool: string, command: string | null, path: string | null, rule: string | null): ChatListEvent => ({
     type: "permission_request",
     requestId,
@@ -120,6 +140,7 @@ function recentConversation(): Fixed[] {
     { event: question("fake-hist-q1", "범위", "사진은 어디에서 가져올까요?"), request: { status: "answered", answer: ANSWERED("fake-hist-q1", { kind: "answer", answers: { "사진은 어디에서 가져올까요?": "A" } }) } },
     { event: { type: "text", text: "알겠어요. 폴더에서 읽는 걸로 할게요." } },
     { event: { type: "tool_use", toolUseId: "toolu-1", tool: "Read", summary: "requirements.md" } },
+    ...(withWorkers ? recentWorkers() : []),
     { event: permission("fake-hist-p1", "Bash", "npm install exifr", null, "Bash(npm install:*)"), request: { status: "answered", answer: ANSWERED("fake-hist-p1", { kind: "always_allow" }) } },
     { event: permission("fake-hist-p2", "Write", null, "C:\\dev\\cat-album\\src\\gallery.ts", "Edit(/src/**)"), request: { status: "answered", answer: ANSWERED("fake-hist-p2", { kind: "allow" }) } },
     { event: permission("fake-hist-p3", "Write", null, "C:\\dev\\cat-album\\.env", null), request: { status: "answered", answer: ANSWERED("fake-hist-p3", { kind: "deny", text: "그 파일은 건드리지 마" }) } },
@@ -139,8 +160,8 @@ function recentConversation(): Fixed[] {
   ];
 }
 
-function buildEntries(): ChatEntry[] {
-  const all: Fixed[] = [...olderConversation().map((event) => ({ event })), ...recentConversation()];
+function buildEntries(withWorkers: boolean): ChatEntry[] {
+  const all: Fixed[] = [...olderConversation().map((event) => ({ event })), ...recentConversation(withWorkers)];
   return all.map((fixed, index) => ({
     id: index + 1,
     at: NOW - (all.length - index) * 90,
@@ -148,6 +169,8 @@ function buildEntries(): ChatEntry[] {
     truncated: fixed.truncated ?? false,
     event: fixed.event,
     request: fixed.request ?? (fixed.event.type === "permission_request" || fixed.event.type === "question_request" ? { status: "expired", answer: null } : null),
+    // 작업자 시작 항목에만 (진짜 `chat::read_page` 처럼 끝은 여기로 합쳐지고 `worker_ended` 항목은 따로 나오지 않는다)
+    ...(fixed.worker ? { worker: fixed.worker } : {}),
   }));
 }
 
@@ -236,8 +259,11 @@ export function createFakeHistory() {
   /** 시험이 정한 값. 없으면 부를 때마다 주소 쿼리를 읽는다 */
   let override: FakeHistoryMode | null = null;
   const mode = (): FakeHistoryMode => override ?? parseFakeHistoryQuery(typeof window === "undefined" ? "" : window.location.search);
+  /** 시험이 정한 "작업자 항목이 있는가". 없으면 주소 쿼리 `?workers=` 가 있는지 본다 */
+  let workersOverride: boolean | null = null;
+  const withWorkers = (): boolean => workersOverride ?? parseFakeWorkersQuery(typeof window === "undefined" ? "" : window.location.search) !== "none";
 
-  const entriesOf = (projectId: number): ChatEntry[] => (mode() === "empty" || projectId !== 1 ? [] : buildEntries());
+  const entriesOf = (projectId: number): ChatEntry[] => (mode() === "empty" || projectId !== 1 ? [] : buildEntries(withWorkers()));
 
   /** 번호가 숫자(정수)가 아니면 거절 — Rust 의 `i64` 해석과 같은 쪽 */
   const integer = (value: unknown, what: string): number => {
@@ -286,8 +312,9 @@ export function createFakeHistory() {
   return {
     handlersFor,
     /** 시험용: 쿼리 대신 값을 정한다 (인자 없이 부르면 다시 쿼리를 읽는다) */
-    reset(next?: FakeHistoryMode) {
+    reset(next?: FakeHistoryMode, options?: { workers?: boolean }) {
       override = next ?? null;
+      workersOverride = options?.workers ?? null;
     },
   };
 }

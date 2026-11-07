@@ -3,6 +3,8 @@
 //! 읽기 모양: 항목마다 `event`(저장한 이벤트 JSON — 실시간 이벤트와 같은 모양)가 있고, 권한 · 질문 요청 카드에는 `request`(상태 · 답)가 붙는다.
 //! `request_answered` · `request_cancelled` 항목은 목록에 따로 나오지 않고 그 카드의 `request` 로 합쳐진다.
 //! 카드 상태: `answered`(답함) · `cancelled`(취소됨) · `pending`(지금 살아 있는 세션이 기다리는 중) · `expired`(답 없이 지나감 — 앱을 다시 켰거나 세션이 끝난 뒤라 답할 수 없다).
+//! 작업자(P7-02): `worker_ended` 항목도 목록에 따로 나오지 않고 `worker_started` 항목의 `worker` 로 합쳐진다.
+//! 작업자 상태: `running`(지금 살아 있는 세션이 일하는 중) · `done` · `failed` · `stopped`(멈춤 — 끝 알림이 없다: 앱을 다시 켰거나 앱이 죽은 뒤라 끝이 안 남았다).
 
 use rusqlite::{Connection, params};
 use serde::Serialize;
@@ -13,8 +15,8 @@ use super::RecordCtx;
 use super::record::Draft;
 use crate::error::AppError;
 
-/// 목록에 따로 나오지 않는 종류 — 요청 카드의 상태로 합쳐진다
-const RESOLUTION_KINDS: [&str; 2] = ["request_answered", "request_cancelled"];
+/// 목록에 따로 나오지 않는 종류 — 요청 카드(작업자 시작 항목)의 상태로 합쳐진다
+const RESOLUTION_KINDS: [&str; 3] = ["request_answered", "request_cancelled", "worker_ended"];
 
 /// 한 줄 쓴다. 프로젝트가 이미 없으면(`FOREIGN KEY`) 오류 — 쓰는 쪽이 건너뛴다.
 pub fn insert(conn: &Connection, ctx: &RecordCtx, draft: &Draft) -> rusqlite::Result<()> {
@@ -60,12 +62,14 @@ pub fn trim(conn: &Connection, project_id: i64, max: usize) -> rusqlite::Result<
     .execute(params![project_id, i64::try_from(max).unwrap_or(i64::MAX)])
 }
 
-/// 지금 살아 있는 세션이 답을 기다리는 요청들 — 이것만 `pending` 으로 보인다
+/// 지금 살아 있는 세션이 답을 기다리는 요청들 · 일하는 작업자들 — 이것만 `pending` · `running` 으로 보인다
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveRequests {
     pub project_id: i64,
     pub run_id: i64,
     pub request_ids: Vec<String>,
+    /// 일하는 작업자를 부른 도구 호출 ID
+    pub worker_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -90,6 +94,26 @@ pub struct RequestState {
     pub answer: Option<Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerStatus {
+    /// 지금 살아 있는 세션에서 일하는 중
+    Running,
+    Done,
+    Failed,
+    /// 멈춤 — 중단 · 세션 끝 · 끝 알림이 없다 (앱을 다시 켰거나 앱이 죽었다)
+    Stopped,
+}
+
+/// 작업자 시작 항목(`worker_started`)에 붙는 상태
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerState {
+    pub status: WorkerStatus,
+    /// 끝난 때(유닉스 밀리초) — 끝 알림이 온 것만. 일하는 중이거나 끝 알림이 없으면 `None`
+    pub ended_at_ms: Option<i64>,
+}
+
 /// 기록의 항목 하나
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +129,8 @@ pub struct ChatEntry {
     pub event: Value,
     /// 권한 · 질문 카드에만
     pub request: Option<RequestState>,
+    /// 작업자 시작 항목(`worker_started`)에만
+    pub worker: Option<WorkerState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -180,6 +206,58 @@ fn resolve(
     })
 }
 
+/// 이 작업자가 어떻게 되었나 — 시작 뒤에 온 `worker_ended` 를 찾고, 없으면 지금 살아 있는 세션이 일하는 중인지 본다. 둘 다 아니면 `stopped` (끝이 안 남았다).
+fn resolve_worker(
+    conn: &Connection,
+    project_id: i64,
+    row: &Row,
+    live: Option<&LiveRequests>,
+) -> Result<WorkerState, AppError> {
+    let Some(tool_use_id) = row.request_id.as_deref() else {
+        return Ok(WorkerState {
+            status: WorkerStatus::Stopped,
+            ended_at_ms: None,
+        });
+    };
+    let ended: Option<String> = conn
+        .prepare_cached(
+            "SELECT body FROM chat_items
+             WHERE project_id = ?1 AND run_id = ?2 AND request_id = ?3 AND id > ?4
+               AND kind = 'worker_ended'
+             ORDER BY id LIMIT 1",
+        )?
+        .query_map(params![project_id, row.run_id, tool_use_id, row.id], |r| {
+            r.get(0)
+        })?
+        .next()
+        .transpose()?;
+    if let Some(body) = ended {
+        let event: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+        let status = match event["outcome"].as_str() {
+            Some("done") => WorkerStatus::Done,
+            Some("failed") => WorkerStatus::Failed,
+            _ => WorkerStatus::Stopped,
+        };
+        return Ok(WorkerState {
+            status,
+            ended_at_ms: event["atMs"].as_i64(),
+        });
+    }
+    let running = live.is_some_and(|live| {
+        live.project_id == project_id
+            && live.run_id == row.run_id
+            && live.worker_ids.iter().any(|id| id == tool_use_id)
+    });
+    Ok(WorkerState {
+        status: if running {
+            WorkerStatus::Running
+        } else {
+            WorkerStatus::Stopped
+        },
+        ended_at_ms: None,
+    })
+}
+
 /// 프로젝트의 채팅 기록 한 쪽 — `before` 보다 앞선(번호가 작은) 것 중 가장 최근 `limit` 개를, 오래된 것이 앞이 되게.
 pub fn read_page(
     conn: &Connection,
@@ -192,8 +270,8 @@ pub fn read_page(
     let want = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
     let mut statement = conn.prepare_cached(
         "SELECT id, at, session_id, run_id, kind, request_id, body, truncated FROM chat_items
-         WHERE project_id = ?1 AND id < ?2 AND kind NOT IN (?3, ?4)
-         ORDER BY id DESC LIMIT ?5",
+         WHERE project_id = ?1 AND id < ?2 AND kind NOT IN (?3, ?4, ?5)
+         ORDER BY id DESC LIMIT ?6",
     )?;
     let mut rows = statement
         .query_map(
@@ -202,6 +280,7 @@ pub fn read_page(
                 before,
                 RESOLUTION_KINDS[0],
                 RESOLUTION_KINDS[1],
+                RESOLUTION_KINDS[2],
                 want
             ],
             |r| {
@@ -233,6 +312,11 @@ pub fn read_page(
         } else {
             None
         };
+        let worker = if row.kind == "worker_started" {
+            Some(resolve_worker(conn, project_id, &row, live)?)
+        } else {
+            None
+        };
         entries.push(ChatEntry {
             id: row.id,
             at: row.at,
@@ -240,6 +324,7 @@ pub fn read_page(
             truncated: row.truncated,
             event,
             request,
+            worker,
         });
     }
     Ok(ChatPage { entries, has_more })
@@ -468,6 +553,7 @@ mod tests {
             project_id: 1,
             run_id: 8,
             request_ids: vec!["old".into()],
+            worker_ids: vec![],
         };
         let page = read_page(&conn, 1, None, 10, Some(&live)).unwrap();
         let status = |n: usize| page.entries[n].request.clone().unwrap().status;
@@ -490,6 +576,159 @@ mod tests {
                 .iter()
                 .all(|e| e.request.as_ref().unwrap().status == RequestStatus::Expired)
         );
+    }
+
+    fn worker_started_body(id: &str) -> Value {
+        json!({ "type": "worker_started", "toolUseId": id, "agentId": "a", "name": "n", "description": "d", "background": false, "depth": 1, "atMs": 1 })
+    }
+
+    fn worker_ended_body(id: &str, outcome: &str) -> Value {
+        json!({ "type": "worker_ended", "toolUseId": id, "outcome": outcome, "atMs": 5000 })
+    }
+
+    fn worker_states(page: &ChatPage) -> Vec<Option<WorkerState>> {
+        page.entries.iter().map(|e| e.worker.clone()).collect()
+    }
+
+    #[test]
+    fn a_worker_start_carries_how_it_ended_and_the_end_rows_are_not_listed() {
+        let conn = conn();
+        for (id, outcome) in [("w1", "done"), ("w2", "failed"), ("w3", "stopped")] {
+            put(
+                &conn,
+                1,
+                7,
+                "worker_started",
+                Some(id),
+                worker_started_body(id),
+            );
+            put(
+                &conn,
+                1,
+                7,
+                "worker_ended",
+                Some(id),
+                worker_ended_body(id, outcome),
+            );
+        }
+        let page = read_page(&conn, 1, None, 10, None).unwrap();
+        assert_eq!(page.entries.len(), 3, "끝 항목은 따로 나오지 않는다");
+        let states = worker_states(&page);
+        let status = |n: usize| states[n].as_ref().unwrap().status;
+        assert_eq!(status(0), WorkerStatus::Done);
+        assert_eq!(status(1), WorkerStatus::Failed);
+        assert_eq!(status(2), WorkerStatus::Stopped);
+        assert_eq!(states[0].as_ref().unwrap().ended_at_ms, Some(5000));
+        // 작업자가 아닌 항목에는 `worker` 가 없다
+        text(&conn, 1, 1);
+        let page = read_page(&conn, 1, None, 10, None).unwrap();
+        assert!(page.entries.last().unwrap().worker.is_none());
+    }
+
+    #[test]
+    fn a_worker_without_an_end_is_running_only_for_the_live_session_else_stopped() {
+        let conn = conn();
+        // 앞 실행(7)과 지금 실행(8)에 같은 호출 ID 가 있어도 섞이지 않는다
+        put(
+            &conn,
+            1,
+            7,
+            "worker_started",
+            Some("w"),
+            worker_started_body("w"),
+        );
+        put(
+            &conn,
+            1,
+            8,
+            "worker_started",
+            Some("w"),
+            worker_started_body("w"),
+        );
+        put(
+            &conn,
+            1,
+            8,
+            "worker_started",
+            Some("done-later"),
+            worker_started_body("done-later"),
+        );
+        put(
+            &conn,
+            1,
+            8,
+            "worker_ended",
+            Some("done-later"),
+            worker_ended_body("done-later", "done"),
+        );
+        // 지금 실행에서 이 호출만 일하는 중이다
+        let live = LiveRequests {
+            project_id: 1,
+            run_id: 8,
+            request_ids: vec![],
+            worker_ids: vec!["w".into()],
+        };
+        let page = read_page(&conn, 1, None, 10, Some(&live)).unwrap();
+        let states = worker_states(&page);
+        assert_eq!(
+            states[0].as_ref().unwrap().status,
+            WorkerStatus::Stopped,
+            "앞 실행의 끝 없는 작업자 — 앱을 다시 켰다"
+        );
+        assert_eq!(states[1].as_ref().unwrap().status, WorkerStatus::Running);
+        assert_eq!(states[1].as_ref().unwrap().ended_at_ms, None);
+        assert_eq!(states[2].as_ref().unwrap().status, WorkerStatus::Done);
+        // 살아 있는 세션이 없으면 (앱을 다시 켰다) 끝 없는 것은 모두 멈춤
+        let page = read_page(&conn, 1, None, 10, None).unwrap();
+        let states = worker_states(&page);
+        assert_eq!(states[0].as_ref().unwrap().status, WorkerStatus::Stopped);
+        assert_eq!(states[1].as_ref().unwrap().status, WorkerStatus::Stopped);
+        assert_eq!(states[2].as_ref().unwrap().status, WorkerStatus::Done);
+        // 다른 프로젝트의 세션이 살아 있어도 이 프로젝트의 작업자는 일하는 중이 아니다
+        let elsewhere = LiveRequests {
+            project_id: 2,
+            ..live
+        };
+        let page = read_page(&conn, 1, None, 10, Some(&elsewhere)).unwrap();
+        assert!(
+            worker_states(&page)
+                .iter()
+                .take(2)
+                .all(|s| s.as_ref().unwrap().status == WorkerStatus::Stopped)
+        );
+    }
+
+    #[test]
+    fn a_worker_row_without_a_key_or_with_a_broken_end_does_not_fail_the_page() {
+        let conn = conn();
+        put(
+            &conn,
+            1,
+            7,
+            "worker_started",
+            None,
+            worker_started_body("x"),
+        );
+        put(
+            &conn,
+            1,
+            7,
+            "worker_started",
+            Some("w"),
+            worker_started_body("w"),
+        );
+        conn.execute(
+            "INSERT INTO chat_items (project_id, run_id, at, kind, request_id, body) VALUES (1, 7, 1, 'worker_ended', 'w', 'not json {')",
+            [],
+        )
+        .unwrap();
+        let page = read_page(&conn, 1, None, 10, None).unwrap();
+        let states = worker_states(&page);
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[0].as_ref().unwrap().status, WorkerStatus::Stopped);
+        // 끝 줄이 깨져 있어도 "끝 알림은 왔다" — 일하는 중으로 남기지 않는다
+        assert_eq!(states[1].as_ref().unwrap().status, WorkerStatus::Stopped);
+        assert_eq!(states[1].as_ref().unwrap().ended_at_ms, None);
     }
 
     #[test]

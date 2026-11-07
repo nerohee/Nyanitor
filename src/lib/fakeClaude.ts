@@ -3,13 +3,17 @@
 //  · "질문4" 는 질문 넷짜리 카드(차례로 보이는지) · "권한3" 은 권한 요청 셋이 동시에(맨 앞 하나만 보이는지)
 //  · 보낸 말에 "쓰기" 가 있으면 파일 쓰기 권한 요청 · "질문" 이 있으면 질문 카드 · "승인" 이 있으면 단계 승인 질문(하네스 약속 §7-2 의 글 모양) · 그 밖에는 명령 권한 요청
 //  · 허용 / 항상 허용 / 거부 / 다르게 말하기 / 질문 답 / 중단 / 끝내기 / 이어 하기
+//  · 주소 쿼리 `?workers=one|two|background|permission` (P7-02) — 메시지를 보내면 작업자(서브에이전트) 시작 · 하는 일 · 끝 이벤트가 흐른다 (`fakeWorkers.ts`).
+//    중단 · 끝내기는 일하는 작업자를 `stopped` 로 끝낸다 (진짜 세션 관리자와 같다)
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
 import { fakeHarness } from "./fakeHarness";
 import { FAKE_TURN_COST, FAKE_TURN_USAGE, fakeHistory } from "./fakeHistory";
 import { fakeHouse } from "./fakeHouse";
+import { fakeProgress } from "./fakeProgress";
 import { fakeProjects } from "./fakeProjects";
 import { fakeSkills } from "./fakeSkills";
+import { FAKE_WORKERS, type FakeWorkerSpec, type FakeWorkersMode, parseFakeWorkersQuery, workerRefOf } from "./fakeWorkers";
 import {
   AppError,
   type AppInfo,
@@ -24,6 +28,8 @@ import {
   type StartRequest,
   type StopInfo,
   type TurnSummary,
+  type WorkerOutcome,
+  type WorkerRef,
 } from "./ipc-types";
 
 type Handler = (args: Record<string, unknown>) => unknown;
@@ -31,6 +37,13 @@ type Handler = (args: Record<string, unknown>) => unknown;
 interface PendingFake {
   info: PermissionRequestInfo | QuestionRequestInfo;
 }
+
+type WorkerStartedEvent = Extract<ClaudeEvent, { type: "worker_started" }>;
+
+/** 가짜 작업자 시나리오의 한 걸음 길이 (밀리초) — 브라우저에서 고양이가 일하는 것이 보이게 느리다. 시험은 `reset({ pace })` 로 줄인다 */
+const DEFAULT_WORKER_PACE_MS = 1200;
+/** 작업자를 부르는 도구의 이름 (이 CLI 는 `Agent`) */
+const AGENT_TOOL = "Agent";
 
 /**
  * 같은 폴더의 다른 표기(대소문자 · `/` · 끝 `\` · 겹친 구분자 · `\\?\`)를 한 키로 모은다 — Rust `store::project_key`(Windows)와 같은 규칙.
@@ -95,6 +108,14 @@ export function createFakeClaude() {
   let session: { projectId: number; projectDir: string; sessionId: string; busy: boolean; turns: number; finishedTurns: number } | null = null;
   /** 시험이 정한 planner 값. 없으면 부를 때마다 주소 쿼리를 읽는다 */
   let plannerOverride: FakePlannerMode | null = null;
+  /** 시험이 정한 작업자 시나리오 · 걸음 길이. 없으면 주소 쿼리 · 기본값 */
+  let workersOverride: FakeWorkersMode | null = null;
+  let workerPace = DEFAULT_WORKER_PACE_MS;
+  const workersMode = (): FakeWorkersMode => workersOverride ?? parseFakeWorkersQuery(typeof window === "undefined" ? "" : window.location.search);
+  /** 지금 일하는 가짜 작업자들 (부른 도구 호출 ID → 시작 이벤트) */
+  const workers = new Map<string, WorkerStartedEvent>();
+  /** 작업자 도구 호출 ID 를 만드는 번호 — `reset` 해도 되돌리지 않는다 (앞 시나리오의 남은 타이머가 새 작업자를 건드리지 않게) */
+  let workerSeq = 0;
   const plannerMode = (): FakePlannerMode => plannerOverride ?? parseFakePlannerQuery(typeof window === "undefined" ? "" : window.location.search);
   const pending = new Map<string, PendingFake>();
   let counter = 0;
@@ -135,7 +156,9 @@ export function createFakeClaude() {
       lastSessions.set(fakeProjectKey(session.projectDir), session.sessionId);
       emit({ type: "turn_started", sessionId: session.sessionId, model: "fake-haiku", cliVersion: "2.1.296", permissionMode: "default", apiKeySource: "none" });
       emit({ type: "text", text: t("lab.fake.greeting") });
-      if (text.includes("권한3")) for (let i = 0; i < 3; i += 1) askPermission(i === 1 ? "Write" : "Bash");
+      const workersChoice = workersMode();
+      if (workersChoice !== "none") runWorkers(workersChoice);
+      else if (text.includes("권한3")) for (let i = 0; i < 3; i += 1) askPermission(i === 1 ? "Write" : "Bash");
       else if (text.includes("질문4")) askQuestion(true);
       else if (text.includes("질문")) askQuestion();
       else if (text.includes("승인")) askApproval();
@@ -144,7 +167,91 @@ export function createFakeClaude() {
     });
   }
 
-  function askPermission(tool: "Bash" | "Write") {
+  // ── 작업자(서브에이전트) 시나리오 (P7-02) ──
+
+  /** 작업자를 부른다: 메인의 `Agent` 도구 호출 줄 + 시작 이벤트 */
+  function startWorker(spec: FakeWorkerSpec, background: boolean): string {
+    workerSeq += 1;
+    const toolUseId = `toolu-agent-${workerSeq}`;
+    emit({ type: "tool_use", toolUseId, tool: AGENT_TOOL, summary: spec.description });
+    const started: WorkerStartedEvent = { type: "worker_started", toolUseId, agentId: `agent-${toolUseId}`, name: spec.name, description: spec.description, background, depth: 1, atMs: Date.now() };
+    workers.set(toolUseId, started);
+    emit(started);
+    return toolUseId;
+  }
+
+  /** 아직 일하는 중이면 `fn` 을 부르는 타이머 (끝났거나 세션이 없어졌으면 아무것도 안 한다) */
+  function whileWorking(toolUseId: string, steps: number, fn: () => void) {
+    later(() => {
+      if (session && workers.has(toolUseId)) fn();
+    }, workerPace * steps);
+  }
+
+  function workerActivity(toolUseId: string, spec: FakeWorkerSpec, index: number) {
+    const step = spec.steps[index];
+    if (!step) return;
+    emit({ type: "worker_activity", toolUseId, tool: step.tool, summary: step.summary, toolUses: index + 1 });
+  }
+
+  /** 작업자 하나를 끝낸다. 이미 끝났으면 `false` (두 번 끝나지 않는다) */
+  function endWorker(toolUseId: string, outcome: WorkerOutcome): boolean {
+    if (!workers.delete(toolUseId)) return false;
+    emit({ type: "worker_ended", toolUseId, outcome, atMs: Date.now() });
+    return true;
+  }
+
+  function endAllWorkers(outcome: WorkerOutcome) {
+    for (const toolUseId of [...workers.keys()]) endWorker(toolUseId, outcome);
+  }
+
+  /** 작업자 하나가 일하는 모습: 하는 일이 바뀌다가 끝난다. 끝나면 `after` */
+  function work(spec: FakeWorkerSpec, toolUseId: string, endAt: number, after: () => void) {
+    spec.steps.forEach((_, index) => {
+      whileWorking(toolUseId, index + 1, () => workerActivity(toolUseId, spec, index));
+    });
+    whileWorking(toolUseId, endAt, () => {
+      if (endWorker(toolUseId, "done")) after();
+    });
+  }
+
+  function runWorkers(mode: Exclude<FakeWorkersMode, "none">) {
+    const current = requireSession();
+    const spec = FAKE_WORKERS.tester;
+    if (mode === "one") {
+      const id = startWorker(spec, false);
+      work(spec, id, 3, () => {
+        emit({ type: "tool_result", toolUseId: id, isError: false, summary: spec.description });
+        finishTurn("success", t("lab.fake.done"));
+      });
+    } else if (mode === "two") {
+      const first = startWorker(FAKE_WORKERS.ui, false);
+      const second = startWorker(FAKE_WORKERS.system, false);
+      const closeTurn = () => {
+        if (workers.size === 0) finishTurn("success", t("lab.fake.done"));
+      };
+      work(FAKE_WORKERS.ui, first, 3, closeTurn);
+      work(FAKE_WORKERS.system, second, 4, closeTurn);
+    } else if (mode === "background") {
+      // 부른 턴은 바로 끝나고 작업자는 그 뒤에도 일한다 — 끝 알림이 오면 CLI 가 스스로 둘째 턴을 연다
+      const id = startWorker(spec, true);
+      emit({ type: "tool_result", toolUseId: id, isError: false, summary: "launched" });
+      later(() => finishTurn("success", t("lab.fake.done")), workerPace / 4);
+      work(spec, id, 4, () => {
+        if (!session || session.busy) return;
+        session.busy = true;
+        session.turns += 1;
+        emit({ type: "turn_started", sessionId: current.sessionId, model: "fake-haiku", cliVersion: "2.1.296", permissionMode: "default", apiKeySource: "none" });
+        finishTurn("success", t("lab.fake.done"));
+      });
+    } else {
+      // 작업자가 권한이 필요한 도구를 쓴다 — 요청에 어느 작업자인지 붙는다. 답하면 작업자가 끝난다 (`claude_session_respond`)
+      const id = startWorker(spec, false);
+      workerActivity(id, spec, 0);
+      whileWorking(id, 1, () => askPermission("Write", workerRefOf(id, spec)));
+    }
+  }
+
+  function askPermission(tool: "Bash" | "Write", worker?: WorkerRef) {
     const current = requireSession();
     const requestId = nextId("fake-perm");
     const info: PermissionRequestInfo =
@@ -152,6 +259,7 @@ export function createFakeClaude() {
         ? {
             requestId,
             toolUseId: nextId("toolu"),
+            ...(worker ? { worker } : {}),
             tool: "Bash",
             displayName: "Bash",
             description: "mkdir demo",
@@ -164,6 +272,7 @@ export function createFakeClaude() {
         : {
             requestId,
             toolUseId: nextId("toolu"),
+            ...(worker ? { worker } : {}),
             tool: "Write",
             displayName: "Write",
             description: "src/new.ts",
@@ -333,6 +442,8 @@ export function createFakeClaude() {
         throw new AppError("invalid_input", "this request has no always-allow rule");
       }
       pending.delete(requestId);
+      // 작업자 안의 요청이면 답한 뒤 그 작업자가 마친다 (거부면 실패 · 다르게 말하기면 멈춤)
+      const askedBy = waiting.info.worker?.toolUseId ?? null;
       log("send", JSON.stringify({ type: "control_response", response: { request_id: requestId, kind: response.kind } }));
       // 진짜처럼 답이 전해지면 바로 알린다 — 화면과 채팅 기록이 같이 받는다 (글은 다듬은 값)
       emit({
@@ -343,6 +454,7 @@ export function createFakeClaude() {
         answers: response.kind === "answer" ? Object.fromEntries(Object.entries(response.answers).map(([question, value]) => [question, Array.isArray(value) ? value.map((item) => item.trim()) : value.trim()])) : null,
       });
       later(() => {
+        if (askedBy) endWorker(askedBy, response.kind === "deny" ? "failed" : response.kind === "tell" ? "stopped" : "done");
         if (response.kind === "tell") {
           finishTurn("interrupted");
           later(() => {
@@ -364,13 +476,18 @@ export function createFakeClaude() {
       for (const [requestId] of pending) emit({ type: "request_cancelled", requestId });
       const hadPending = pending.size > 0;
       pending.clear();
-      if (session?.busy && hadPending) later(() => finishTurn("interrupted"));
+      // 중단하면 일하던 작업자는 모두 멈춘다 (백그라운드 작업자도)
+      const hadWorkers = workers.size > 0;
+      endAllWorkers("stopped");
+      if (session?.busy && (hadPending || hadWorkers)) later(() => finishTurn("interrupted"));
     },
     claude_session_stop: (): StopInfo => {
       if (!session) return { wasRunning: false, forced: false };
       const midTurn = session.busy;
       for (const [requestId] of pending) emit({ type: "request_cancelled", requestId });
       pending.clear();
+      // 끝 알림 앞에서 일하던 작업자를 모두 멈춘다
+      endAllWorkers("stopped");
       session = null;
       emit({ type: "session_ended", ended: "normal", exitCode: 0, forced: false, midTurn, stderrTail: [] });
       return { wasRunning: true, forced: false };
@@ -385,6 +502,7 @@ export function createFakeClaude() {
       pending: [...pending.values()].map(({ info }) =>
         "questions" in info ? ({ type: "question_request", ...info } as const) : ({ type: "permission_request", ...info } as const),
       ),
+      workers: [...workers.values()],
     }),
     claude_last_session: (args) => {
       if (typeof args.projectId !== "number" || !Number.isSafeInteger(args.projectId)) throw new AppError("invalid_input", "project id is not a number");
@@ -405,9 +523,12 @@ export function createFakeClaude() {
     liveRun(): { projectId: number; sessionId: string | null; turns: number } | null {
       return session ? { projectId: session.projectId, sessionId: session.turns > 0 ? session.sessionId : null, turns: session.finishedTurns } : null;
     },
-    /** 시험용: 모든 상태를 처음으로 (`planner` 를 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다) */
-    reset(next?: { planner?: FakePlannerMode }) {
+    /** 시험용: 모든 상태를 처음으로 (`planner` · `workers` 를 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다. `pace` 는 작업자 시나리오의 한 걸음 길이) */
+    reset(next?: { planner?: FakePlannerMode; workers?: FakeWorkersMode; pace?: number }) {
       plannerOverride = next?.planner ?? null;
+      workersOverride = next?.workers ?? null;
+      workerPace = next?.pace ?? DEFAULT_WORKER_PACE_MS;
+      workers.clear();
       session = null;
       pending.clear();
       lastSessions.clear();
@@ -431,6 +552,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     ...fakeHouse.handlers,
     ...fakeHistory.handlersFor(() => fakeClaude.liveRun()),
     ...fakeProjects.handlers,
+    ...fakeProgress.handlers,
     ...fakeSkills.handlers,
   };
   const handler = handlers[command];

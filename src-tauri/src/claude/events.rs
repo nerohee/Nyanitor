@@ -30,11 +30,26 @@ pub enum AlwaysScope {
     File,
 }
 
+/// 권한 · 질문 요청이 작업자(서브에이전트) 안에서 온 것일 때 어느 작업자인지 (`can_use_tool` 요청의 `agent_id`, P7-02).
+/// `None` 이면 오케스트레이터(메인) 쪽 요청이다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerRef {
+    /// CLI 가 준 작업자 ID (`task_started.task_id` 와 같다)
+    pub agent_id: String,
+    /// 그 작업자를 부른 도구 호출의 ID — `worker_started.toolUseId` 와 같다. 시작 알림 전에 온 요청이면 `None`
+    pub tool_use_id: Option<String>,
+    /// 작업자 이름 (`subagent_type`) — 시작 알림 전에 온 요청이면 `None`
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionRequestInfo {
     pub request_id: String,
     pub tool_use_id: Option<String>,
+    /// 작업자 안의 요청이면 그 작업자
+    pub worker: Option<WorkerRef>,
     pub tool: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
@@ -73,6 +88,8 @@ pub struct QuestionInfo {
 pub struct QuestionRequestInfo {
     pub request_id: String,
     pub tool_use_id: Option<String>,
+    /// 작업자 안의 요청이면 그 작업자
+    pub worker: Option<WorkerRef>,
     pub questions: Vec<QuestionInfo>,
 }
 
@@ -127,6 +144,18 @@ pub enum EndKind {
     Died,
 }
 
+/// 작업자(서브에이전트) 하나가 어떻게 끝났나 (P7-02)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerOutcome {
+    /// 일을 마쳤다 (`task_notification.status` = `completed`)
+    Done,
+    /// 실패했다 (`failed` 와 모르는 상태)
+    Failed,
+    /// 멈췄다 — 중단 (`stopped`) · 세션이 끝나거나 죽었다 · 앱이 다시 켜질 때까지 끝이 안 왔다
+    Stopped,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawLogEntry {
@@ -164,7 +193,7 @@ pub enum SessionEvent {
     /// 막지 않고 알리기만 하는 것. `code`: `cli_version_mismatch` · `session_store_failed` · `write_failed` ·
     /// `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use` ·
     /// `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` · `project_touch_failed` ·
-    /// `history_write_failed`
+    /// `history_write_failed` · `worker_limit`
     Warning {
         code: String,
         detail: Option<String>,
@@ -195,6 +224,37 @@ pub enum SessionEvent {
         tool_use_id: String,
         is_error: bool,
         summary: String,
+    },
+    /// 작업자(서브에이전트)가 일을 시작했다 (`system/task_started` — 작업자 종류만). 작업자 안쪽의 글 · 도구 줄은 `Text` · `ToolUse` · `ToolResult` 로 나오지 않는다.
+    /// 지시 글(`prompt`)은 싣지 않는다 (D-48 — 비밀값이 섞일 수 있다).
+    WorkerStarted {
+        /// 작업자를 부른 도구 호출의 ID — 끝 · 활동 · 요청이 이 값으로 가리킨다
+        tool_use_id: String,
+        /// CLI 가 준 작업자 ID (권한 요청의 `worker.agentId` 와 같다)
+        agent_id: Option<String>,
+        /// 작업자 이름 (`subagent_type` 그대로. 없으면 `general-purpose`)
+        name: String,
+        description: Option<String>,
+        /// 백그라운드로 돈다 (부른 쪽이 기다리지 않는다)
+        background: bool,
+        /// 작업자 속 작업자의 깊이 (메인이 부르면 1)
+        depth: u64,
+        /// 앱이 이 줄을 받은 때 (유닉스 밀리초)
+        at_ms: u64,
+    },
+    /// 작업자가 지금 하는 일 (`system/task_progress` — 마지막 도구 · 한 줄 설명). 도구나 설명이 바뀔 때만 온다.
+    WorkerActivity {
+        tool_use_id: String,
+        tool: Option<String>,
+        summary: Option<String>,
+        /// 지금까지 쓴 도구 횟수
+        tool_uses: Option<u64>,
+    },
+    /// 작업자가 끝났다. 세션이 끝나거나 · 죽거나 · 중단되면 안 끝난 작업자마다 `stopped` 로 온다.
+    WorkerEnded {
+        tool_use_id: String,
+        outcome: WorkerOutcome,
+        at_ms: u64,
     },
     PermissionRequest(PermissionRequestInfo),
     QuestionRequest(QuestionRequestInfo),
@@ -319,6 +379,8 @@ pub struct SessionState {
     pub busy: bool,
     /// 답을 기다리는 요청들 (`permission_request` · `question_request` 이벤트 모양 그대로)
     pub pending: Vec<SessionEvent>,
+    /// 지금 일하는 작업자들 (`worker_started` 이벤트 모양 그대로 — 화면을 다시 열었을 때 일하는 고양이를 되살린다)
+    pub workers: Vec<SessionEvent>,
 }
 
 /// `claude_session_stop` 이 돌려주는 것.
@@ -399,12 +461,58 @@ mod tests {
         let event = SessionEvent::QuestionRequest(QuestionRequestInfo {
             request_id: "r".into(),
             tool_use_id: None,
+            worker: None,
             questions: vec![],
         });
         assert_eq!(
             serde_json::to_value(event).unwrap(),
-            json!({ "type": "question_request", "requestId": "r", "toolUseId": null, "questions": [] })
+            json!({ "type": "question_request", "requestId": "r", "toolUseId": null, "worker": null, "questions": [] })
         );
+    }
+
+    #[test]
+    fn worker_events_are_tagged_and_camel_cased_and_never_carry_the_prompt() {
+        let started = SessionEvent::WorkerStarted {
+            tool_use_id: "toolu_1".into(),
+            agent_id: Some("a1".into()),
+            name: "harness-tester".into(),
+            description: Some("read note".into()),
+            background: true,
+            depth: 1,
+            at_ms: 5,
+        };
+        assert_eq!(
+            serde_json::to_value(started).unwrap(),
+            json!({
+                "type": "worker_started", "toolUseId": "toolu_1", "agentId": "a1", "name": "harness-tester",
+                "description": "read note", "background": true, "depth": 1, "atMs": 5
+            })
+        );
+        let activity = SessionEvent::WorkerActivity {
+            tool_use_id: "toolu_1".into(),
+            tool: Some("Read".into()),
+            summary: None,
+            tool_uses: Some(2),
+        };
+        assert_eq!(
+            serde_json::to_value(activity).unwrap(),
+            json!({ "type": "worker_activity", "toolUseId": "toolu_1", "tool": "Read", "summary": null, "toolUses": 2 })
+        );
+        for (outcome, name) in [
+            (WorkerOutcome::Done, "done"),
+            (WorkerOutcome::Failed, "failed"),
+            (WorkerOutcome::Stopped, "stopped"),
+        ] {
+            let ended = SessionEvent::WorkerEnded {
+                tool_use_id: "t".into(),
+                outcome,
+                at_ms: 9,
+            };
+            assert_eq!(
+                serde_json::to_value(ended).unwrap(),
+                json!({ "type": "worker_ended", "toolUseId": "t", "outcome": name, "atMs": 9 })
+            );
+        }
     }
 
     #[test]

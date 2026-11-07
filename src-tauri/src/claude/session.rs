@@ -27,7 +27,7 @@ use super::KNOWN_CLI_VERSION;
 use super::discover;
 use super::events::{
     AnswerKind, AnswerValue, EndKind, RawLogEntry, Response, SessionEvent, SessionState, StartInfo,
-    StopInfo,
+    StopInfo, WorkerOutcome,
 };
 use super::exec::{self, ClaudeCommand};
 use super::launch::{EFFORT_LEVELS, StartPlan};
@@ -346,10 +346,12 @@ impl SessionManager {
             .iter()
             .map(|(id, _)| id.clone())
             .collect();
+        let worker_ids = lock(&session.interpreter).running_worker_ids();
         Some(LiveRequests {
             project_id: session.project_id,
             run_id: session.run_id,
             request_ids,
+            worker_ids,
         })
     }
 
@@ -676,6 +678,7 @@ impl SessionManager {
                 session_id: None,
                 busy: false,
                 pending: Vec::new(),
+                workers: Vec::new(),
             },
             Some(session) => {
                 let (busy, session_id) = {
@@ -693,6 +696,7 @@ impl SessionManager {
                         .iter()
                         .map(|(_, p)| p.event.clone())
                         .collect(),
+                    workers: lock(&session.interpreter).running_workers(),
                 }
             }
         }
@@ -1401,6 +1405,12 @@ fn announce_end(session: &Session, shared: &Shared, code: Option<i32>, died: boo
         let leftover = std::mem::take(&mut *lock(&session.pending));
         for (request_id, _) in leftover {
             shared.publish(session, SessionEvent::RequestCancelled { request_id });
+        }
+        // 일하던 작업자도 끝 알림 앞에서 모두 멈춘다 (일하는 고양이가 남지 않게). 끝났거나 죽었거나 같다.
+        // 읽기 스레드는 해석기 잠금을 쥔 채 이 자리(`emit_gate`)를 잡지 않으므로 순서가 거꾸로 잡히지 않는다.
+        let unfinished = lock(&session.interpreter).end_all_workers(WorkerOutcome::Stopped);
+        for event in unfinished {
+            shared.publish(session, event);
         }
         // "끝남" 표시를 알림보다 먼저 한다 — 알림을 받은 화면이 바로 상태를 물어도 이미 꺼진 것으로 보이게.
         *lock(&session.exit) = Some(code);

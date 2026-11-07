@@ -12,6 +12,8 @@
 //! | `request_answered` · `request_cancelled` | 예 | 목록에는 따로 안 나오고 카드의 상태로 합쳐진다 (`chat::read_page`) |
 //! | `turn_ended` | 예 | 결과 · 사용량 요약 (성공이면 최종 글은 뺀다 — 같은 글이 `text` 로 이미 있다). 토큰 · 비용은 `usage_turns` 에도 쌓는다 |
 //! | `rate_limit` | `allowed` 가 아닐 때만 | 한도가 막혔거나 임박했을 때 (같은 값이 거듭 오면 보내는 쪽에서 한 번만) |
+//! | `worker_started` · `worker_ended` | 예 | 작업자(서브에이전트) 시작 · 끝 — 이름 · 설명 · 결과 · 시각만 (P7-02). 지시 글(`prompt`) · 작업자의 결과 글은 이벤트에 없다 (D-48). 목록에는 시작 항목 하나로 나오고 끝은 거기 합쳐진다 (`chat::read_page`) |
+//! | `worker_activity` | 아니오 | 하는 일은 너무 자주 바뀐다 — 화면이 실시간으로만 쓴다 |
 //! | `resume_not_found` | 예 | 이어 하기 못 찾음 |
 //! | `turn_started` · `warning` · `raw_log` | 아니오 | 세션 ID 는 `sessions` 표로, 알림은 그때만, 원본은 메모리에만 |
 
@@ -57,6 +59,8 @@ pub fn wants(event: &SessionEvent) -> bool {
         | SessionEvent::RequestCancelled { .. }
         | SessionEvent::TurnEnded(_)
         | SessionEvent::ResumeNotFound { .. }
+        | SessionEvent::WorkerStarted { .. }
+        | SessionEvent::WorkerEnded { .. }
         | SessionEvent::SessionEnded { .. } => true,
         SessionEvent::ToolResult { is_error, .. } => *is_error,
         SessionEvent::RateLimit { status, .. } => {
@@ -64,6 +68,7 @@ pub fn wants(event: &SessionEvent) -> bool {
         }
         SessionEvent::Warning { .. }
         | SessionEvent::TurnStarted { .. }
+        | SessionEvent::WorkerActivity { .. }
         | SessionEvent::RawLog(_) => false,
     }
 }
@@ -77,6 +82,9 @@ fn kind_of(event: &SessionEvent) -> &'static str {
         SessionEvent::Text { .. } => "text",
         SessionEvent::ToolUse { .. } => "tool_use",
         SessionEvent::ToolResult { .. } => "tool_result",
+        SessionEvent::WorkerStarted { .. } => "worker_started",
+        SessionEvent::WorkerActivity { .. } => "worker_activity",
+        SessionEvent::WorkerEnded { .. } => "worker_ended",
         SessionEvent::PermissionRequest(_) => "permission_request",
         SessionEvent::QuestionRequest(_) => "question_request",
         SessionEvent::RequestAnswered { .. } => "request_answered",
@@ -89,8 +97,11 @@ fn kind_of(event: &SessionEvent) -> &'static str {
     }
 }
 
+/// 짝짓는 열쇠 — 권한 · 질문 카드는 요청 ID, 작업자 시작 · 끝은 작업자를 부른 도구 호출 ID.
 fn request_id_of(event: &SessionEvent) -> Option<String> {
     match event {
+        SessionEvent::WorkerStarted { tool_use_id, .. }
+        | SessionEvent::WorkerEnded { tool_use_id, .. } => Some(tool_use_id.clone()),
         SessionEvent::PermissionRequest(info) => Some(info.request_id.clone()),
         SessionEvent::QuestionRequest(info) => Some(info.request_id.clone()),
         SessionEvent::RequestAnswered { request_id, .. }
@@ -147,6 +158,11 @@ pub fn draft(event: &SessionEvent, limits: &Limits) -> Option<Draft> {
         SessionEvent::ToolUse { .. } => {
             truncated |= cut_field(&mut value, "summary", CARD_TEXT_CHARS);
         }
+        SessionEvent::WorkerStarted { .. } => {
+            // 이벤트가 이미 짧게 줄인 글이다 — 그래도 한 번 더 막는다. 지시 글은 이벤트에 없다.
+            truncated |= cut_field(&mut value, "description", CARD_TEXT_CHARS);
+            truncated |= cut_field(&mut value, "name", CARD_TEXT_CHARS);
+        }
         SessionEvent::ToolResult { .. } => {
             // 도구 결과의 글(파일 내용 · 명령 출력)에는 비밀값이 들어 있을 수 있다 — 실패한 것도 글은 저장하지 않는다 (D-48).
             // 칸은 빈 글로 남긴다 (기록을 읽는 화면이 실시간 이벤트와 같은 모양으로 읽는다). 뺀 것은 잘린 것이 아니다.
@@ -201,7 +217,8 @@ mod tests {
     use super::*;
     use crate::claude::events::{
         AlwaysRule, AlwaysScope, AnswerKind, EndKind, PermissionRequestInfo, QuestionInfo,
-        QuestionOption, QuestionRequestInfo, RawLogEntry, TokenUsage, TurnSummary,
+        QuestionOption, QuestionRequestInfo, RawLogEntry, TokenUsage, TurnSummary, WorkerOutcome,
+        WorkerRef,
     };
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -236,6 +253,7 @@ mod tests {
         SessionEvent::PermissionRequest(PermissionRequestInfo {
             request_id: "r1".into(),
             tool_use_id: Some("t1".into()),
+            worker: None,
             tool: "Bash".into(),
             display_name: None,
             description: None,
@@ -253,6 +271,18 @@ mod tests {
 
     fn parsed(draft: &Draft) -> Value {
         serde_json::from_str(&draft.body).unwrap()
+    }
+
+    fn worker_started(tool_use_id: &str) -> SessionEvent {
+        SessionEvent::WorkerStarted {
+            tool_use_id: tool_use_id.into(),
+            agent_id: Some("a1".into()),
+            name: "harness-tester".into(),
+            description: Some("write the tests".into()),
+            background: true,
+            depth: 1,
+            at_ms: 1,
+        }
     }
 
     #[test]
@@ -289,6 +319,7 @@ mod tests {
             SessionEvent::QuestionRequest(QuestionRequestInfo {
                 request_id: "q".into(),
                 tool_use_id: None,
+                worker: None,
                 questions: vec![],
             }),
             SessionEvent::RequestAnswered {
@@ -317,6 +348,12 @@ mod tests {
             },
             SessionEvent::ResumeNotFound {
                 session_id: "s".into(),
+            },
+            worker_started("toolu_w"),
+            SessionEvent::WorkerEnded {
+                tool_use_id: "toolu_w".into(),
+                outcome: WorkerOutcome::Done,
+                at_ms: 2,
             },
             SessionEvent::SessionEnded {
                 ended: EndKind::Normal,
@@ -370,6 +407,13 @@ mod tests {
                 original_len: 2,
                 at_ms: 1,
             }),
+            // 하는 일은 너무 자주 바뀐다 — 실시간으로만
+            SessionEvent::WorkerActivity {
+                tool_use_id: "toolu_w".into(),
+                tool: Some("Read".into()),
+                summary: Some("Reading a.txt".into()),
+                tool_uses: Some(1),
+            },
         ];
         for event in &dropped {
             assert!(!wants(event), "{event:?}");
@@ -407,6 +451,69 @@ mod tests {
                 .unwrap()
                 .contains("SECRET")
         );
+    }
+
+    #[test]
+    fn worker_start_and_end_are_stored_with_only_who_what_when_and_how_and_keyed_by_the_call() {
+        let started = draft(&worker_started("toolu_w"), &limits()).unwrap();
+        assert!(!started.truncated);
+        assert_eq!(started.kind, "worker_started");
+        assert_eq!(started.request_id.as_deref(), Some("toolu_w"));
+        assert_eq!(
+            parsed(&started),
+            json!({
+                "type": "worker_started", "toolUseId": "toolu_w", "agentId": "a1", "name": "harness-tester",
+                "description": "write the tests", "background": true, "depth": 1, "atMs": 1
+            }),
+            "지시 글 · 결과 글 칸이 없다"
+        );
+        let ended = draft(
+            &SessionEvent::WorkerEnded {
+                tool_use_id: "toolu_w".into(),
+                outcome: WorkerOutcome::Stopped,
+                at_ms: 9,
+            },
+            &limits(),
+        )
+        .unwrap();
+        assert_eq!(ended.kind, "worker_ended");
+        assert_eq!(ended.request_id.as_deref(), Some("toolu_w"));
+        assert_eq!(
+            parsed(&ended),
+            json!({ "type": "worker_ended", "toolUseId": "toolu_w", "outcome": "stopped", "atMs": 9 })
+        );
+        // 아주 긴 설명이 와도 한 줄 크기를 넘지 않는다
+        let mut long = worker_started("t");
+        if let SessionEvent::WorkerStarted { description, .. } = &mut long {
+            *description = Some("d".repeat(CARD_TEXT_CHARS * 2));
+        }
+        let long = draft(&long, &limits()).unwrap();
+        assert!(long.truncated);
+        assert_eq!(
+            parsed(&long)["description"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count(),
+            CARD_TEXT_CHARS + 1
+        );
+    }
+
+    #[test]
+    fn a_request_card_from_a_worker_keeps_which_worker_it_came_from() {
+        let mut event = permission(json!({ "content": "SECRET=abc" }));
+        if let SessionEvent::PermissionRequest(info) = &mut event {
+            info.worker = Some(WorkerRef {
+                agent_id: "a1".into(),
+                tool_use_id: Some("toolu_w".into()),
+                name: Some("harness-builder-system".into()),
+            });
+        }
+        let draft = draft(&event, &limits()).unwrap();
+        let value = parsed(&draft);
+        assert_eq!(value["worker"]["toolUseId"], "toolu_w");
+        assert_eq!(value["worker"]["name"], "harness-builder-system");
+        assert!(value.get("input").is_none() && !draft.body.contains("SECRET"));
     }
 
     #[test]
@@ -522,6 +629,7 @@ mod tests {
         let event = SessionEvent::QuestionRequest(QuestionRequestInfo {
             request_id: "q1".into(),
             tool_use_id: None,
+            worker: None,
             questions: vec![QuestionInfo {
                 question: "Which?".into(),
                 header: Some("h".into()),
@@ -588,6 +696,7 @@ mod tests {
         let long_options = SessionEvent::QuestionRequest(QuestionRequestInfo {
             request_id: "q0".into(),
             tool_use_id: None,
+            worker: None,
             questions: vec![QuestionInfo {
                 question: "Which?".into(),
                 header: None,
@@ -622,6 +731,7 @@ mod tests {
         let many_questions = SessionEvent::QuestionRequest(QuestionRequestInfo {
             request_id: "q".into(),
             tool_use_id: None,
+            worker: None,
             questions: (0..400)
                 .map(|i| QuestionInfo {
                     question: format!("q{i}"),

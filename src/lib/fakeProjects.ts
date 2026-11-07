@@ -346,6 +346,10 @@ export function createFakeProjects() {
       checkDb(false);
       find(id);
     },
+    /** 폴더가 없어진 프로젝트인가 (등록 안 된 번호면 `project_not_found`). 문서 읽기 가짜가 "읽을 수 없음(folder_missing)" 으로 답하려고 묻는다 (`fakeProgress.ts`) */
+    isFolderMissing(id: unknown): boolean {
+      return find(id).folder === "missing";
+    },
     /** 등록된 프로젝트인가 (던지지 않는다) */
     isRegistered(id: number): boolean {
       return state().some((candidate) => candidate.id === id);

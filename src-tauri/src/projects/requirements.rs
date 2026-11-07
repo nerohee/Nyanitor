@@ -182,8 +182,8 @@ fn locate(dir: &Path) -> Result<(PathBuf, Located), Problem> {
     ))
 }
 
-/// 크기를 막아 읽는다 (파일이 읽는 사이 커져도 1MB 까지만 읽는다)
-fn read_bytes(path: &Path) -> Result<Vec<u8>, Problem> {
+/// 크기를 막아 읽는다 (파일이 읽는 사이 커져도 1MB 까지만 읽는다). 하네스 문서 읽기(`docs`)도 같은 규칙을 쓴다.
+pub(super) fn read_bytes(path: &Path) -> Result<Vec<u8>, Problem> {
     let meta = fs::metadata(path).map_err(|_| Problem::ReadFailed)?;
     if !meta.is_file() {
         return Err(Problem::NotAFile);
@@ -202,7 +202,7 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>, Problem> {
 }
 
 /// BOM 을 떼고 UTF-8 로 읽는다. 돌려주는 것: (글, BOM 이 있었나)
-fn decode(bytes: &[u8]) -> Result<(&str, bool), Problem> {
+pub(super) fn decode(bytes: &[u8]) -> Result<(&str, bool), Problem> {
     let (body, has_bom) = match bytes.strip_prefix(&BOM) {
         Some(rest) => (rest, true),
         None => (bytes, false),

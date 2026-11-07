@@ -15,8 +15,10 @@ import historyModRs from "../../src-tauri/src/history/mod.rs?raw";
 import historyRecordRs from "../../src-tauri/src/history/record.rs?raw";
 import historyUsageRs from "../../src-tauri/src/history/usage.rs?raw";
 import historyWriterRs from "../../src-tauri/src/history/writer.rs?raw";
+import projectsDocsRs from "../../src-tauri/src/projects/docs.rs?raw";
 import projectsFolderRs from "../../src-tauri/src/projects/folder.rs?raw";
 import projectsRs from "../../src-tauri/src/projects/mod.rs?raw";
+import projectsProgressRs from "../../src-tauri/src/projects/progress.rs?raw";
 import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs?raw";
 import skillsRs from "../../src-tauri/src/skills/mod.rs?raw";
 import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
@@ -39,6 +41,8 @@ import {
   type ChatPage,
   type ChatRequestState,
   type ChatRequestStatus,
+  type ChatWorkerState,
+  type ChatWorkerStatus,
   type ClaudeEventType,
   type ClaudeResponse,
   type ClaudeSessionState,
@@ -94,6 +98,27 @@ import {
   type UpdatePreview,
   type ScriptOutcome,
   type TurnOutcome,
+  type WorkerOutcome,
+  type WorkerRef,
+  type DocFile,
+  type DocRead,
+  type DocsList,
+  type DocsListing,
+  type DocText,
+  type HandoffInfo,
+  type HandoffNow,
+  type HandoffNowState,
+  type HandoffRead,
+  type HandoffTask,
+  type HandoffTaskProgress,
+  type HandoffTaskStatus,
+  type PlanInfo,
+  type PlanPhase,
+  type PlanPhaseStatus,
+  type PlanRead,
+  type ProgressRead,
+  type ProgressReason,
+  type ProgressSection,
   type UnreadableReason,
   type UpdateState,
   type UsageResult,
@@ -133,6 +158,9 @@ const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
   text: true,
   tool_use: true,
   tool_result: true,
+  worker_started: true,
+  worker_activity: true,
+  worker_ended: true,
   permission_request: true,
   question_request: true,
   request_answered: true,
@@ -289,6 +317,42 @@ const TS_PROJECT_FIELDS = {
   ConflictInfo: { version: 1 } satisfies Record<Exclude<keyof Extract<RequirementsWrite, { state: "conflict" }>, "state">, 1>,
 };
 
+// 프로젝트 문서 읽기 (P7-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_PROGRESS_REASONS: Record<ProgressReason, true> = {
+  not_utf8: true,
+  too_large: true,
+  outside_folder: true,
+  link: true,
+  folder_missing: true,
+  not_a_file: true,
+  read_failed: true,
+  no_section: true,
+  no_table: true,
+  header_mismatch: true,
+  no_item: true,
+};
+const TS_PHASE_STATUSES: Record<PlanPhaseStatus, true> = { done: true, now: true, todo: true, unknown: true };
+const TS_NOW_STATES: Record<HandoffNowState, true> = { working: true, reviewing: true, waiting_answer: true, waiting_run: true, between: true, unknown: true };
+const TS_TASK_STATUSES: Record<HandoffTaskStatus, true> = { assigned: true, back: true, passed: true, redo: true, unknown: true };
+const TS_SECTION_STATES: Record<ProgressSection<unknown>["state"], true> = { ok: true, unreadable: true };
+const TS_PLAN_STATES: Record<PlanRead["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_HANDOFF_STATES: Record<HandoffRead["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_DOCS_LIST_STATES: Record<DocsList["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_DOC_READ_STATES: Record<DocRead["state"], true> = { ok: true, absent: true, unreadable: true };
+const TS_PROGRESS_FIELDS = {
+  PhaseInfo: { id: 1, summary: 1, owners: 1, ownersText: 1, gate: 1, status: 1, statusText: 1, name: 1, goal: 1 } satisfies Record<keyof PlanPhase, 1>,
+  PlanInfo: { phases: 1 } satisfies Record<keyof PlanInfo, 1>,
+  NowInfo: { state: 1, text: 1 } satisfies Record<keyof HandoffNow, 1>,
+  TaskProgress: { done: 1, total: 1 } satisfies Record<keyof HandoffTaskProgress, 1>,
+  TaskInfo: { label: 1, brief: 1, id: 1, phase: 1, owner: 1, status: 1, statusText: 1, progress: 1 } satisfies Record<keyof HandoffTask, 1>,
+  HandoffInfo: { skill: 1, requirements: 1, phase: 1, updated: 1, current: 1, tasks: 1, waiting: 1, next: 1 } satisfies Record<keyof HandoffInfo, 1>,
+  ProgressResult: { version: 1, plan: 1, handoff: 1 } satisfies Record<keyof ProgressRead, 1>,
+  ReasonInfo: { reason: 1 } satisfies Record<Exclude<keyof Extract<PlanRead, { state: "unreadable" }>, "state">, 1>,
+  DocFile: { path: 1, size: 1, modified: 1 } satisfies Record<keyof DocFile, 1>,
+  DocsListing: { docsDir: 1, files: 1, truncated: 1 } satisfies Record<keyof DocsListing, 1>,
+  DocText: { text: 1, version: 1 } satisfies Record<keyof DocText, 1>,
+};
+
 // 세션 시작 · 스킬 목록 (P6-02) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
 const TS_SKILL_ORIGINS: Record<SkillOrigin, true> = { harness: true, mine: true };
 const TS_SKILL_UNREADABLE: Record<SkillUnreadableReason, true> = {
@@ -304,7 +368,8 @@ const TS_SKILLS_STATES: Record<SkillsState, true> = { ok: true, no_harness: true
 const TS_SESSION_FIELDS = {
   StartRequest: { projectId: 1, resume: 1, useApiKey: 1 } satisfies Record<keyof StartRequest, 1>,
   StartInfo: { projectId: 1, projectDir: 1, pid: 1, resumed: 1, resumeSessionId: 1, cliVersion: 1, model: 1, effort: 1 } satisfies Record<keyof StartInfo, 1>,
-  SessionState: { running: 1, projectId: 1, projectDir: 1, pid: 1, sessionId: 1, busy: 1, pending: 1 } satisfies Record<keyof ClaudeSessionState, 1>,
+  SessionState: { running: 1, projectId: 1, projectDir: 1, pid: 1, sessionId: 1, busy: 1, pending: 1, workers: 1 } satisfies Record<keyof ClaudeSessionState, 1>,
+  WorkerRef: { agentId: 1, toolUseId: 1, name: 1 } satisfies Record<keyof WorkerRef, 1>,
   SkillInfo: { name: 1, command: 1, description: 1, argumentHint: 1, origin: 1, userInvocable: 1 } satisfies Record<keyof SkillInfo, 1>,
   SkillUnreadable: { folder: 1, origin: 1, reason: 1 } satisfies Record<keyof SkillUnreadable, 1>,
   SkillsList: { state: 1, skills: 1 } satisfies Record<keyof SkillsList, 1>,
@@ -322,13 +387,18 @@ const TS_CHAT_LIST_EVENT_TYPES: Record<ChatListEventType, true> = {
   turn_ended: true,
   rate_limit: true,
   resume_not_found: true,
+  worker_started: true,
   session_ended: true,
 };
-/** 기록에 저장하지 않는 이벤트 (`record.rs` 의 표) — 답 · 취소는 저장하지만 목록에 따로 나오지 않고 카드의 상태로 합쳐진다 */
-const NOT_LISTED_EVENTS = ["warning", "turn_started", "raw_log", "request_answered", "request_cancelled"];
+/** 기록에 저장하지 않는 이벤트 (`record.rs` 의 표) — 답 · 취소 · 작업자 끝은 저장하지만 목록에 따로 나오지 않고 카드(작업자 시작 항목)의 상태로 합쳐진다.
+ *  `worker_activity`(작업자가 지금 하는 일)는 너무 자주 바뀌어 저장하지 않는다. */
+const NOT_LISTED_EVENTS = ["warning", "turn_started", "raw_log", "request_answered", "request_cancelled", "worker_activity", "worker_ended"];
+const TS_WORKER_OUTCOMES: Record<WorkerOutcome, true> = { done: true, failed: true, stopped: true };
+const TS_CHAT_WORKER_STATUSES: Record<ChatWorkerStatus, true> = { running: true, done: true, failed: true, stopped: true };
 const TS_CHAT_REQUEST_STATUSES: Record<ChatRequestStatus, true> = { answered: true, cancelled: true, pending: true, expired: true };
 const TS_HISTORY_FIELDS = {
-  ChatEntry: { id: 1, at: 1, sessionId: 1, truncated: 1, event: 1, request: 1 } satisfies Record<keyof ChatEntry, 1>,
+  ChatEntry: { id: 1, at: 1, sessionId: 1, truncated: 1, event: 1, request: 1, worker: 1 } satisfies Record<keyof ChatEntry, 1>,
+  WorkerState: { status: 1, endedAtMs: 1 } satisfies Record<keyof ChatWorkerState, 1>,
   ChatPage: { entries: 1, hasMore: 1 } satisfies Record<keyof ChatPage, 1>,
   RequestState: { status: 1, answer: 1 } satisfies Record<keyof ChatRequestState, 1>,
   UsageSum: { turns: 1, inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 1, cacheReadInputTokens: 1, totalTokens: 1, costUsd: 1, subscriptionTurns: 1, apiKeyTurns: 1, referenceOnly: 1 } satisfies Record<keyof UsageSum, 1>,
@@ -407,6 +477,24 @@ describe("Rust ↔ 화면 목록이 같다", () => {
   it("이벤트 종류: events.rs 의 SessionEvent 와 ipc-types 의 ClaudeEvent", () => {
     const rustTypes = rustVariants(eventsRs, "SessionEvent").map(snake);
     expect(sorted(Object.keys(TS_EVENT_TYPES))).toEqual(sorted(rustTypes));
+  });
+
+  it("작업자 이벤트 (P7-02): 결과 종류가 Rust 와 같고, 이벤트는 지시 글 · 작업자 결과 글 칸을 갖지 않는다 (D-48)", () => {
+    expect(sorted(Object.keys(TS_WORKER_OUTCOMES))).toEqual(sorted(rustVariants(eventsRs, "WorkerOutcome").map(snake)));
+    const variantBody = (name: string) => {
+      const start = eventsRs.indexOf(`    ${name} {`);
+      return eventsRs.slice(start, eventsRs.indexOf("\n    },", start));
+    };
+    for (const name of ["WorkerStarted", "WorkerActivity", "WorkerEnded"]) {
+      expect(variantBody(name), name).not.toMatch(/prompt|summary_text|result_text|hand_back/);
+    }
+    // 기록: 작업자 시작 · 끝은 저장하고 하는 일은 저장하지 않는다
+    const wants = historyRecordRs.slice(historyRecordRs.indexOf("pub fn wants("));
+    const wantsBody = wants.slice(0, wants.indexOf("\n}\n"));
+    expect(wantsBody).toContain("SessionEvent::WorkerStarted { .. }");
+    expect(wantsBody).toContain("SessionEvent::WorkerEnded { .. }");
+    expect(wantsBody).toContain("SessionEvent::WorkerActivity { .. }");
+    expect(wantsBody).toMatch(/SessionEvent::WorkerActivity \{ \.\. \}\s*\|\s*SessionEvent::RawLog\(_\) => false/);
   });
 
   it("답 종류: events.rs 의 Response 와 ClaudeResponse", () => {
@@ -573,10 +661,15 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       project_requirements_read: ["db", "state", "id"],
       project_requirements_version: ["db", "state", "id"],
       project_requirements_write: ["db", "state", "id", "text", "base_version"],
+      // 문서 읽기 (P7-01) — 읽기 전용. `project_doc_read` 만 `docsDir` 안 상대 경로를 받고 Rust 가 다시 확인한다 (아래 시험)
+      project_progress_read: ["db", "state", "id"],
+      project_progress_version: ["db", "state", "id"],
+      project_docs_list: ["db", "state", "id"],
+      project_doc_read: ["db", "state", "id", "path"],
     };
     expect(signatures.map((m) => m[1]).sort()).toEqual(Object.keys(expected).sort());
     // 화면이 보내는 값(앱이 채우는 app · db · state · sessions 를 뺀 것)의 이름 · 모양
-    const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>" };
+    const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>", path: "String" };
     for (const [, name, params] of signatures) {
       const list = (params as string)
         .replace(/State<[^>]*>/g, "State") // `State<'_, AppDb>` 안의 쉼표는 매개변수 구분이 아니다
@@ -600,8 +693,19 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     const projectCalls = [...ipcTs.matchAll(/(project[A-Za-z]*): \(([^)]*)\) =>\s*call<[^>]*>\("(projects?_[a-z_]+)"(, \{[^}]*\})?/g)].filter((m) => m[3] !== "project_chat_history");
     expect(projectCalls.map((m) => m[3]).sort()).toEqual(Object.keys(expected).sort());
     for (const [, , params, command, args] of projectCalls) {
+      // 문서 하나 읽기만 `docsDir` 안 상대 경로(`path`)를 보낸다 — 폴더 경로가 아니다
+      if (command === "project_doc_read") {
+        expect(params, command).toBe("id: number, path: string");
+        expect(args, command).toBe(", { id, path }");
+        continue;
+      }
       expect(`${params as string}${args ?? ""}`, command).not.toMatch(/path|dir|folder/i);
     }
+    // 문서 읽기의 `path` 는 Rust 가 다시 확인한다: 경로 모양 확인 · 읽을 때 실제 경로가 `docsDir` 안인지 확인
+    expect(projectsDocsRs).toContain("pub fn parse_path(path: &str)");
+    expect(projectsDocsRs).toContain("let parts = parse_path(path)?;");
+    expect(projectsDocsRs).toContain("if !canon.starts_with(canon_docs)");
+    expect(commandsRs).toContain("docs::read(&db, &state.env(), id, &path)");
   });
 
   it("프로젝트 파일 명령은 requirements.md 하나만 다룬다 (파일 이름이 코드에 고정돼 있고, 폴더 만들기 · 지우기 · 다른 파일 쓰기가 없다)", () => {
@@ -617,11 +721,83 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(requirementsProduction).not.toMatch(/fs::(create_dir|remove_dir|copy)/);
   });
 
+  it("문서 읽기의 종류: Rust enum 과 ipc-types 의 글 종류 (P7-01)", () => {
+    expect(sorted(Object.keys(TS_PROGRESS_REASONS))).toEqual(sorted(rustVariants(projectsProgressRs, "Reason").map(snake)));
+    // 앞 일곱은 `requirements.md` 를 못 읽는 이유와 같은 이름이다 (`From<Problem>`)
+    expect(sorted(Object.keys(TS_PROGRESS_REASONS)).filter((name) => Object.keys(TS_REQUIREMENTS_PROBLEMS).includes(name))).toEqual(sorted(Object.keys(TS_REQUIREMENTS_PROBLEMS)));
+    expect(sorted(Object.keys(TS_PHASE_STATUSES))).toEqual(sorted(rustVariants(projectsProgressRs, "PhaseStatus").map(snake)));
+    expect(sorted(Object.keys(TS_NOW_STATES))).toEqual(sorted(rustVariants(projectsProgressRs, "NowState").map(snake)));
+    expect(sorted(Object.keys(TS_TASK_STATUSES))).toEqual(sorted(rustVariants(projectsProgressRs, "TaskStatus").map(snake)));
+    // 태그가 붙는 enum: 변형 이름이 곧 `state` 값. `Section<T>` 는 제네릭이라 이름에 `<T>` 가 붙는다
+    expect(sorted(Object.keys(TS_SECTION_STATES))).toEqual(sorted(rustVariants(projectsProgressRs, "Section<T>").map(snake)));
+    expect(sorted(Object.keys(TS_PLAN_STATES))).toEqual(sorted(rustVariants(projectsProgressRs, "PlanResult").map(snake)));
+    expect(sorted(Object.keys(TS_HANDOFF_STATES))).toEqual(sorted(rustVariants(projectsProgressRs, "HandoffResult").map(snake)));
+    expect(sorted(Object.keys(TS_DOCS_LIST_STATES))).toEqual(sorted(rustVariants(projectsDocsRs, "ListResult").map(snake)));
+    expect(sorted(Object.keys(TS_DOC_READ_STATES))).toEqual(sorted(rustVariants(projectsDocsRs, "DocReadResult").map(snake)));
+    for (const [source, name] of [
+      [projectsProgressRs, "Section<T>"],
+      [projectsProgressRs, "PlanResult"],
+      [projectsProgressRs, "HandoffResult"],
+      [projectsDocsRs, "ListResult"],
+      [projectsDocsRs, "DocReadResult"],
+    ] as const) {
+      expect(source, name).toContain(`#[serde(tag = "state", rename_all = "snake_case")]\npub enum ${name}`);
+    }
+    // 읽을 수 없는 문서 목록 · 읽기의 이유는 `requirements.md` 와 같은 일곱 가지다
+    expect(projectsDocsRs).toContain("Unreadable(ProblemInfo)");
+  });
+
+  it("문서 읽기 결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다 (P7-01)", () => {
+    const sources: Record<string, [string, string]> = {
+      PhaseInfo: [projectsProgressRs, "PhaseInfo"],
+      PlanInfo: [projectsProgressRs, "PlanInfo"],
+      NowInfo: [projectsProgressRs, "NowInfo"],
+      TaskProgress: [projectsProgressRs, "TaskProgress"],
+      TaskInfo: [projectsProgressRs, "TaskInfo"],
+      HandoffInfo: [projectsProgressRs, "HandoffInfo"],
+      ProgressResult: [projectsProgressRs, "ProgressResult"],
+      ReasonInfo: [projectsProgressRs, "ReasonInfo"],
+      DocFile: [projectsDocsRs, "DocFile"],
+      DocsListing: [projectsDocsRs, "DocsListing"],
+      DocText: [projectsDocsRs, "DocText"],
+    };
+    expect(Object.keys(sources).sort()).toEqual(Object.keys(TS_PROGRESS_FIELDS).sort());
+    for (const [name, [source, struct]] of Object.entries(sources)) {
+      const ts = TS_PROGRESS_FIELDS[name as keyof typeof TS_PROGRESS_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
+    }
+    // 여러 낱말 필드(`status_text` → `statusText`)는 camelCase 로 나간다
+    for (const [source, struct] of [
+      [projectsProgressRs, "PhaseInfo"],
+      [projectsProgressRs, "TaskInfo"],
+      [projectsDocsRs, "DocFile"],
+      [projectsDocsRs, "DocsListing"],
+    ] as const) {
+      expect(source, struct).toContain(`#[serde(rename_all = "camelCase")]\npub struct ${struct} {`);
+    }
+  });
+
+  it("문서 읽기는 읽기만 한다 — 쓰기 · 만들기 · 지우기 · 이름 바꾸기가 없고, 파일 감시(notify)를 쓰지 않는다 (D-49)", () => {
+    for (const [name, source] of [
+      ["docs.rs", projectsDocsRs],
+      ["progress.rs", projectsProgressRs],
+    ] as const) {
+      const production = source.slice(0, source.indexOf("#[cfg(test)]"));
+      expect(production, `projects/${name}`).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions|set_permissions)/);
+      expect(production, `projects/${name}`).not.toMatch(/notify|\.write_all|set_modified/);
+    }
+    // 읽는 문서 이름은 코드에 고정돼 있다 (하네스 문서 둘 + 지시서 폴더)
+    expect(projectsProgressRs).toContain('const PLAN_FILE: &str = "dev-plan.md";');
+    expect(projectsProgressRs).toContain('const HANDOFF_FILE: &str = "handoff.md";');
+    expect(projectsProgressRs).toContain('const BRIEFS_DIR: &str = "briefs";');
+  });
+
   it("세션 시작 · 스킬 목록의 필드와 종류: Rust 와 ipc-types 가 같다", () => {
     const sources: Record<string, [string, string]> = {
       StartRequest: [eventsRs, "StartRequest"],
       StartInfo: [eventsRs, "StartInfo"],
       SessionState: [eventsRs, "SessionState"],
+      WorkerRef: [eventsRs, "WorkerRef"],
       SkillInfo: [skillsRs, "SkillInfo"],
       SkillUnreadable: [skillsRs, "SkillUnreadable"],
       SkillsList: [skillsRs, "SkillsList"],
@@ -647,6 +823,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       ChatEntry: [historyChatRs, "ChatEntry"],
       ChatPage: [historyChatRs, "ChatPage"],
       RequestState: [historyChatRs, "RequestState"],
+      WorkerState: [historyChatRs, "WorkerState"],
       UsageSum: [historyUsageRs, "UsageSum"],
       ProjectUsage: [historyUsageRs, "ProjectUsage"],
       SessionUsage: [historyUsageRs, "SessionUsage"],
@@ -658,6 +835,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, struct)));
     }
     expect(sorted(Object.keys(TS_CHAT_REQUEST_STATUSES))).toEqual(sorted(rustVariants(historyChatRs, "RequestStatus").map(snake)));
+    expect(sorted(Object.keys(TS_CHAT_WORKER_STATUSES))).toEqual(sorted(rustVariants(historyChatRs, "WorkerStatus").map(snake)));
     // 답 종류 이름은 사용자의 답(`Response`)의 `kind` 와 같다
     expect(sorted(Object.keys(TS_RESPONSE_KINDS))).toEqual(sorted(rustVariants(eventsRs, "AnswerKind").map(snake)));
     // 목록에 나오는 이벤트 종류 = 모든 이벤트 − 저장하지 않는 것 − 카드에 합쳐지는 것

@@ -112,6 +112,10 @@ pub fn run() {
             projects::commands::project_requirements_read,
             projects::commands::project_requirements_version,
             projects::commands::project_requirements_write,
+            projects::commands::project_progress_read,
+            projects::commands::project_progress_version,
+            projects::commands::project_docs_list,
+            projects::commands::project_doc_read,
             history::commands::project_chat_history,
             history::commands::app_usage_summary,
         ])

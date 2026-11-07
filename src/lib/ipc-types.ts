@@ -121,9 +121,21 @@ export interface AlwaysRule {
   folder: string | null;
 }
 
+/** 권한 · 질문 요청이 작업자(서브에이전트) 안에서 온 것일 때 어느 작업자인지 (P7-02). 없으면(`null`) 오케스트레이터(메인) 쪽 요청 */
+export interface WorkerRef {
+  /** CLI 가 준 작업자 ID (`worker_started.agentId` 와 같다) */
+  agentId: string;
+  /** 그 작업자를 부른 도구 호출의 ID — `worker_started.toolUseId` 와 같다. 시작 알림보다 요청이 먼저 왔으면 null */
+  toolUseId: string | null;
+  /** 작업자 이름 (`subagent_type`). 시작 알림보다 요청이 먼저 왔으면 null */
+  name: string | null;
+}
+
 export interface PermissionRequestInfo {
   requestId: string;
   toolUseId: string | null;
+  /** 작업자 안의 요청이면 그 작업자. Rust 는 항상 보낸다 (메인 쪽이면 null) — 옛 시험 자료를 위해 칸을 빼도 된다 */
+  worker?: WorkerRef | null;
   tool: string;
   displayName: string | null;
   description: string | null;
@@ -156,6 +168,8 @@ export interface QuestionInfo {
 export interface QuestionRequestInfo {
   requestId: string;
   toolUseId: string | null;
+  /** 작업자 안의 질문이면 그 작업자. Rust 는 항상 보낸다 (메인 쪽이면 null) */
+  worker?: WorkerRef | null;
   questions: QuestionInfo[];
 }
 
@@ -186,6 +200,9 @@ export interface TurnSummary {
   totalCostUsd: number;
 }
 
+/** 작업자(서브에이전트) 하나가 어떻게 끝났나: `done` 마침 · `failed` 실패 · `stopped` 멈춤 (중단 · 세션이 끝나거나 죽음 · 끝 알림 없이 앱이 다시 켜짐) */
+export type WorkerOutcome = "done" | "failed" | "stopped";
+
 export interface RawLogEntry {
   seq: number;
   /** send(앱→CLI) · recv(CLI→앱) · stderr · note */
@@ -211,7 +228,8 @@ export type ClaudeEvent =
     }
   /** 막지 않고 알리기만 — `cli_version_mismatch` · `session_store_failed` · `write_failed` · `control_error` · `unknown_control_request` · `question_unreadable` · `duplicate_request` · `line_too_long` · `api_key_in_use`
    *  · `planner_config_missing` · `planner_config_unreadable` · `planner_model_unusable` · `planner_effort_unusable` (하네스 `planner` 설정을 못 읽거나 값이 이상해 그 값만 CLI 기본으로 띄움) · `project_touch_failed`
-   *  · `history_write_failed` (채팅 기록 · 츄르를 앱 DB 에 못 씀 — 세션은 계속된다. `detail` 은 오류 종류. 쓰기가 계속 실패하는 동안은 한 번만) */
+   *  · `history_write_failed` (채팅 기록 · 츄르를 앱 DB 에 못 씀 — 세션은 계속된다. `detail` 은 오류 종류. 쓰기가 계속 실패하는 동안은 한 번만)
+   *  · `worker_limit` (작업자 200 개를 넘게 한꺼번에 일한다고 와서 새 시작은 무시함 — 한 세션에 한 번만) */
   | { type: "warning"; code: string; detail: string | null }
   | { type: "user_message"; text: string; deferred: boolean }
   | { type: "turn_started"; sessionId: string; model: string | null; cliVersion: string | null; permissionMode: string | null; apiKeySource: string | null }
@@ -219,6 +237,27 @@ export type ClaudeEvent =
   | { type: "tool_use"; toolUseId: string; tool: string; summary: string }
   /** 도구 결과. 실시간 이벤트는 결과 글(`summary`)을 가진다. **기록으로 저장된 실패한 결과는 `summary` 가 빈 글이다** (D-48 — 비밀값이 들어 있을 수 있어 글은 저장하지 않는다. "실패함" 표시와 `toolUseId` 만 남는다) */
   | { type: "tool_result"; toolUseId: string; isError: boolean; summary: string }
+  /** 작업자(서브에이전트)가 일을 시작했다 (P7-02, D-49). 작업자 안쪽의 글 · 도구 줄은 `text` · `tool_use` · `tool_result` 로 오지 않는다. 지시 글(`prompt`)은 싣지 않는다 (D-48) */
+  | {
+      type: "worker_started";
+      /** 작업자를 부른 도구 호출의 ID — 하는 일 · 끝 · 권한 요청의 `worker` 가 이 값으로 가리킨다 */
+      toolUseId: string;
+      /** CLI 가 준 작업자 ID */
+      agentId: string | null;
+      /** 작업자 이름 (`subagent_type` 그대로 — 이름 → 고양이 연결은 화면이 한다. 이름이 안 왔으면 `general-purpose`) */
+      name: string;
+      description: string | null;
+      /** 백그라운드로 돈다. **부른 턴이 끝난 뒤에도 일할 수 있다** — 끝은 `worker_ended` 로만 안다 */
+      background: boolean;
+      /** 작업자 속 작업자의 깊이 (메인이 부르면 1) */
+      depth: number;
+      /** 앱이 받은 때 (유닉스 밀리초) */
+      atMs: number;
+    }
+  /** 작업자가 지금 하는 일 — 마지막 도구와 한 줄 설명. 바뀔 때만 온다. 기록에는 저장하지 않는다 (실시간만) */
+  | { type: "worker_activity"; toolUseId: string; tool: string | null; summary: string | null; toolUses: number | null }
+  /** 작업자가 끝났다. 세션이 끝나거나 · 죽거나 · 중단되면 안 끝난 작업자마다 `stopped` 로 온다. 기록 목록에는 따로 나오지 않고 `worker_started` 항목의 `worker` 로 합쳐진다 */
+  | { type: "worker_ended"; toolUseId: string; outcome: WorkerOutcome; atMs: number }
   | ({ type: "permission_request" } & PermissionRequestInfo)
   | ({ type: "question_request" } & QuestionRequestInfo)
   /** 사용자의 답이 CLI 로 전해졌다 — 실시간 화면과 채팅 기록이 같이 받는다. `text` 는 `deny` 의 이유 · `tell` 의 말, `answers` 는 `answer` 의 질문 문장 → 고른 것 · 쓴 글(다듬은 값) */
@@ -262,6 +301,8 @@ export interface ClaudeSessionState {
   busy: boolean;
   /** 답을 기다리는 요청들 (`permission_request` · `question_request` 이벤트 모양) */
   pending: ClaudeEvent[];
+  /** 지금 일하는 작업자들 (`worker_started` 이벤트 모양 — 화면을 다시 열었을 때 일하는 고양이를 되살린다). Rust 는 항상 보낸다 — 옛 시험 자료를 위해 칸을 빼도 된다 */
+  workers?: ClaudeEvent[];
 }
 
 // ───────────────────────── 채팅 기록 · 세션 츄르 (P6-03) — `src-tauri/src/history/` 와 같이 맞춘다 ─────────────────────────
@@ -281,6 +322,7 @@ export type ChatListEventType =
   | "turn_ended"
   | "rate_limit"
   | "resume_not_found"
+  | "worker_started"
   | "session_ended";
 
 /** 기록의 권한 카드에는 도구 입력(`input` — 쓸 파일 내용 · 바꾸는 글)이 없다. 비밀값이 들어 있을 수 있어 저장하지 않는다 (2026-10-29 고객) */
@@ -300,6 +342,16 @@ export interface ChatRequestState {
   answer: Extract<ClaudeEvent, { type: "request_answered" }> | null;
 }
 
+/** 작업자 상태: `running` 지금 살아 있는 세션이 일하는 중 · `done` · `failed` · `stopped` 멈춤 (중단 · 세션 끝 · 끝 알림 없이 앱이 다시 켜짐) */
+export type ChatWorkerStatus = "running" | "done" | "failed" | "stopped";
+
+/** 작업자 시작 항목(`worker_started`)에 붙는 상태 — 끝(`worker_ended`)은 여기로 합쳐진다 */
+export interface ChatWorkerState {
+  status: ChatWorkerStatus;
+  /** 끝난 때(유닉스 밀리초) — 끝 알림이 온 것만. 일하는 중이거나 끝 알림이 없으면 null */
+  endedAtMs: number | null;
+}
+
 /** 기록의 항목 하나 */
 export interface ChatEntry {
   /** 순서 번호 — 클수록 나중. 다음 쪽을 읽을 때 `before` 로 쓴다 */
@@ -313,6 +365,8 @@ export interface ChatEntry {
   event: ChatListEvent;
   /** 권한 · 질문 카드에만, 나머지는 null */
   request: ChatRequestState | null;
+  /** 작업자 시작 항목(`worker_started`)에만, 나머지는 null. Rust 는 항상 보낸다 — 옛 시험 자료를 위해 칸을 빼도 된다 */
+  worker?: ChatWorkerState | null;
 }
 
 /** `project_chat_history` 의 결과 — 오래된 것이 앞 (이미 가진 것 위에 이어 붙인다) */
@@ -891,6 +945,134 @@ export type RequirementsWrite =
   | { state: "ok"; version: string }
   | { state: "conflict"; version: string | null }
   | { state: "refused"; reason: RequirementsProblem };
+
+// ── 프로젝트 문서 읽기 (P7-01, D-49) — 모두 읽기 전용. 하네스 문서는 약속(`app-contract.md` §6)대로 읽고, 형식이 깨져도 오류가 아니라 결과의 `unreadable`(이유 포함)이다 ──
+
+/** 하네스 문서(단계 표 · 이어 하기 메모)를 읽을 수 없는 이유. 앞 일곱은 `RequirementsProblem` 과 같다 — 뒤 넷은 글 모양: `no_section` 찾는 `## 절` 제목이 없음 · `no_table` 절에 표가 없음 · `header_mismatch` 표 머리 줄이 약속과 다름 · `no_item` 절에서 읽을 글이 없음 */
+export type ProgressReason = RequirementsProblem | "no_section" | "no_table" | "header_mismatch" | "no_item";
+
+/** 단계 상태: 빈 칸 `todo` · `완료` 로 시작 `done` · `진행 중` 으로 시작 `now` · 그 밖 `unknown` (글은 `statusText`) */
+export type PlanPhaseStatus = "done" | "now" | "todo" | "unknown";
+
+export interface PlanPhase {
+  /** `P0`, `P1` … */
+  id: string;
+  /** 내용 칸 */
+  summary: string;
+  /** 담당 칸: `→` 로 차례, `·` 로 함께 (`system → tester` = `[["system"],["tester"]]`). 낱말은 `designer` · `ui` · `system` · `tester` · `helper` · `reviewer` · `직접`, 모르는 말은 글 그대로 */
+  owners: string[][];
+  /** 담당 칸의 원래 글 */
+  ownersText: string;
+  /** 승인 게이트 칸 */
+  gate: string;
+  status: PlanPhaseStatus;
+  /** 상태 칸의 원래 글 (`**` 뗌) */
+  statusText: string;
+  /** `## P<n>. 이름` 절의 이름 (절이 없으면 null) */
+  name: string | null;
+  /** 그 절의 `- 목표:` 한 줄 (없으면 null) */
+  goal: string | null;
+}
+
+export interface PlanInfo {
+  phases: PlanPhase[];
+}
+
+/** `## 지금 상태` 의 값: 약속 낱말(`작업자 일하는 중` · `검수 중` · `사용자 답 기다림` · `실행 확인 기다림` · `단계 사이`)로 시작하면 그 상태, 아니면 `unknown` */
+export type HandoffNowState = "working" | "reviewing" | "waiting_answer" | "waiting_run" | "between" | "unknown";
+
+export interface HandoffNow {
+  state: HandoffNowState;
+  /** 그 줄의 글 (`**` 뗌) */
+  text: string;
+}
+
+/** 작업(지시서) 상태: `맡김` → `돌아옴` → `검수 통과` / `다시 맡김`. 앞의 `<n>차 ` 는 떼고 읽는다. 그 밖은 `unknown` (글은 `statusText`) */
+export type HandoffTaskStatus = "assigned" | "back" | "passed" | "redo" | "unknown";
+
+export interface HandoffTaskProgress {
+  done: number;
+  total: number;
+}
+
+export interface HandoffTask {
+  /** 지시서 칸의 글 (경로가 아니어도 그대로 — `(P2-01 ~ P2-03 검수 통과 — 지시서 끝)`) */
+  label: string;
+  /** `briefs/<이름>.md` 모양일 때만 (아니면 null) */
+  brief: string | null;
+  /** 파일 이름 앞부분 (`P7-01`) */
+  id: string | null;
+  /** 그 앞부분의 단계 (`P7`) */
+  phase: string | null;
+  /** 담당 칸의 글 (`system` …) */
+  owner: string;
+  status: HandoffTaskStatus;
+  /** 상태 칸의 원래 글 (`**` 뗌) */
+  statusText: string;
+  /** 지시서의 `- [x]` 수 / 전체. 지시서가 없거나 못 읽었거나 끝난 작업(`검수 통과` — 읽지 않는다)이면 null */
+  progress: HandoffTaskProgress | null;
+}
+
+/** 이어 하기 메모의 한 절 — 읽었으면 `value`, 못 읽었으면 `reason` (다른 절은 그대로 읽힌다) */
+export type ProgressSection<T> = { state: "ok"; value: T } | { state: "unreadable"; reason: ProgressReason };
+
+export interface HandoffInfo {
+  /** 머리 목록 `- 스킬:` · `- 요구사항:` · `- 지금 단계:` · `- 마지막 갱신:` 의 값 (첫 줄만, 없으면 null) */
+  skill: string | null;
+  requirements: string | null;
+  phase: string | null;
+  updated: string | null;
+  /** `## 지금 상태` */
+  current: ProgressSection<HandoffNow>;
+  /** `## 진행 중인 작업` */
+  tasks: ProgressSection<HandoffTask[]>;
+  /** `## 사용자에게 기다리는 것` (`없음` 이면 빈 목록) */
+  waiting: ProgressSection<string[]>;
+  /** `## 다음 할 일` */
+  next: ProgressSection<string[]>;
+}
+
+/** `plan` — 파일이 없으면 `absent` (아직 하네스 전) */
+export type PlanRead = ({ state: "ok" } & PlanInfo) | { state: "absent" } | { state: "unreadable"; reason: ProgressReason };
+
+/** `handoff` */
+export type HandoffRead = ({ state: "ok" } & HandoffInfo) | { state: "absent" } | { state: "unreadable"; reason: ProgressReason };
+
+/** `project_progress_read` — `version` 은 읽기 전에 만든 값 (`project_progress_version` 과 같은 식) */
+export interface ProgressRead {
+  version: string;
+  plan: PlanRead;
+  handoff: HandoffRead;
+}
+
+export interface DocFile {
+  /** `docsDir` 안 상대 경로 (`/` 구분) — `project_doc_read` 에 그대로 보낸다 */
+  path: string;
+  size: number;
+  /** 수정 시각 (유닉스 초). 모르면 null */
+  modified: number | null;
+}
+
+export interface DocsListing {
+  /** 하네스 설정의 `docsDir` (기본 `docs`) */
+  docsDir: string;
+  /** 경로 순 (대소문자 가리지 않음) */
+  files: DocFile[];
+  /** 목록이 다 담기지 않았다 (파일 2000개 · 폴더 8단 · 살펴본 항목 20000개 상한, 읽을 수 없던 폴더) */
+  truncated: boolean;
+}
+
+/** `project_docs_list` — `absent` 는 docs 폴더가 없음 */
+export type DocsList = ({ state: "ok" } & DocsListing) | { state: "absent" } | { state: "unreadable"; reason: RequirementsProblem };
+
+export interface DocText {
+  /** BOM 을 뗀 글 (줄바꿈 그대로) */
+  text: string;
+  version: string;
+}
+
+/** `project_doc_read` — 경로 모양이 틀리면 결과가 아니라 `invalid_input` 오류. 실제 경로가 `docsDir` 밖이면 `unreadable` + `outside_folder` */
+export type DocRead = ({ state: "ok" } & DocText) | { state: "absent" } | { state: "unreadable"; reason: RequirementsProblem };
 
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */
 export const CLAUDE_SESSION_EVENT = "claude:session";

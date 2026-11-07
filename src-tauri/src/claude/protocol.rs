@@ -7,18 +7,29 @@
 //! - 보낼 줄은 `*_line` 함수가 `serde_json` 으로 만든다. 항상 줄바꿈 없는 JSON 한 줄이다 (JSON 이 아닌 줄을 보내면 CLI 가 죽는다).
 
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
 use super::events::{
     AlwaysRule, AlwaysScope, PermissionRequestInfo, QuestionInfo, QuestionOption,
-    QuestionRequestInfo, SessionEvent, TokenUsage, TurnOutcome, TurnSummary,
+    QuestionRequestInfo, SessionEvent, TokenUsage, TurnOutcome, TurnSummary, WorkerOutcome,
+    WorkerRef,
 };
 
 pub const ASK_USER_QUESTION: &str = "AskUserQuestion";
 
 /// 글 · 요약이 화면 이벤트에 실릴 때의 최대 글자 수.
 const SUMMARY_CHARS: usize = 300;
+
+/// 작업자 이벤트의 글 한계 — 설명 · 한 줄 설명 / 이름 · 도구 이름 / ID (넘으면 그 ID 를 가진 줄은 무시한다).
+const WORKER_TEXT_CHARS: usize = 300;
+const WORKER_NAME_CHARS: usize = 100;
+const ID_CHARS: usize = 200;
+/// 한꺼번에 일하는 것으로 기억하는 작업자 수 (넘으면 새 시작은 무시하고 한 번 알린다 — 끝이 안 오는 줄이 쌓여 메모리가 불지 않게).
+const WORKER_LIMIT: usize = 200;
+/// `subagent_type` 이 안 온 작업자의 이름 (CLI 가 종류를 안 주면 쓰는 기본 작업자)
+const DEFAULT_WORKER_NAME: &str = "general-purpose";
 
 /// 줄 하나를 JSON 객체로. JSON 이 아니거나 객체가 아니면 `None` (원본 로그에만 남는다).
 /// 줄 맨 앞의 BOM(U+FEFF)은 무시한다 (`trim` 은 BOM 을 공백으로 보지 않는다).
@@ -85,21 +96,79 @@ pub struct Interpreter {
     project_dir: String,
     baseline_cost: f64,
     last_rate_status: Option<String>,
+    /// 지금 일하는 작업자들 (시작한 차례) — 끝이 오면 빠진다
+    workers: Vec<WorkerEntry>,
+    worker_limit_warned: bool,
+    /// 작업자 이벤트에 찍는 시각 (유닉스 밀리초) — 시험에서 바꿔 끼운다
+    clock: fn() -> u64,
+}
+
+/// 일하는 작업자 하나 (`system/task_started` 로 시작해 `task_notification` 으로 끝난다).
+#[derive(Debug)]
+struct WorkerEntry {
+    tool_use_id: String,
+    agent_id: Option<String>,
+    name: String,
+    /// 내보낸 시작 이벤트 (`claude_session_state` 가 일하는 작업자를 다시 보여 줄 때 쓴다)
+    started: SessionEvent,
+    last_tool: Option<String>,
+    last_summary: Option<String>,
+}
+
+fn system_clock_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 impl Interpreter {
     pub fn new(project_dir: &Path) -> Self {
+        Self::with_clock(project_dir, system_clock_ms)
+    }
+
+    pub fn with_clock(project_dir: &Path, clock: fn() -> u64) -> Self {
         Self {
             project_dir: project_dir.display().to_string(),
             baseline_cost: 0.0,
             last_rate_status: None,
+            workers: Vec::new(),
+            worker_limit_warned: false,
+            clock,
         }
+    }
+
+    /// 지금 일하는 작업자들의 시작 이벤트 (시작한 차례).
+    pub fn running_workers(&self) -> Vec<SessionEvent> {
+        self.workers.iter().map(|w| w.started.clone()).collect()
+    }
+
+    /// 지금 일하는 작업자들을 부른 도구 호출 ID.
+    pub fn running_worker_ids(&self) -> Vec<String> {
+        self.workers.iter().map(|w| w.tool_use_id.clone()).collect()
+    }
+
+    /// 아직 안 끝난 작업자를 모두 이 결과로 끝낸다 (세션이 끝나거나 · 죽거나 · 중단될 때 — 일하는 작업자가 남지 않게).
+    pub fn end_all_workers(&mut self, outcome: WorkerOutcome) -> Vec<SessionEvent> {
+        let at_ms = (self.clock)();
+        std::mem::take(&mut self.workers)
+            .into_iter()
+            .map(|w| SessionEvent::WorkerEnded {
+                tool_use_id: w.tool_use_id,
+                outcome,
+                at_ms,
+            })
+            .collect()
     }
 
     pub fn handle(&mut self, msg: &Value) -> Interpretation {
         let mut out = Interpretation::default();
         match str_at(msg, "type") {
             Some("system") => self.on_system(msg, &mut out),
+            // 작업자 안쪽의 글 · 도구 줄은 메인 채팅에 섞지 않는다 (`parent_tool_use_id` 가 작업자를 부른 도구 호출을 가리킨다).
+            // 하는 일은 `system/task_progress` 가 알린다. 원본 출력(`RawLog`)에는 부르는 쪽이 남긴다.
+            Some("assistant" | "user") if is_inner(msg) => {}
             Some("assistant") => on_assistant(msg, &mut out),
             Some("user") => on_user(msg, &mut out),
             Some("control_request") => self.on_control_request(msg, &mut out),
@@ -121,9 +190,14 @@ impl Interpreter {
     }
 
     fn on_system(&mut self, msg: &Value, out: &mut Interpretation) {
-        // `thinking_tokens` · `task_started` · `permission_denied` 등은 화면에 쓸 일이 없다.
-        if str_at(msg, "subtype") != Some("init") {
-            return;
+        match str_at(msg, "subtype") {
+            Some("init") => {}
+            Some("task_started") => return self.on_task_started(msg, out),
+            Some("task_progress") => return self.on_task_progress(msg, out),
+            Some("task_updated") => return self.on_task_updated(msg, out),
+            Some("task_notification") => return self.on_task_notification(msg, out),
+            // `thinking_tokens` · `permission_denied` · `background_tasks_changed` 등은 화면에 쓸 일이 없다.
+            _ => return,
         }
         let Some(session_id) = str_at(msg, "session_id") else {
             return;
@@ -139,6 +213,149 @@ impl Interpreter {
             permission_mode: str_at(msg, "permissionMode").map(str::to_string),
             api_key_source: str_at(msg, "apiKeySource").map(str::to_string),
         });
+    }
+
+    /// `system/task_started` — 작업자(`task_type` 이 `local_agent`)만 본다. 백그라운드 명령 같은 다른 작업은 지나간다.
+    fn on_task_started(&mut self, msg: &Value, out: &mut Interpretation) {
+        if !is_worker_task(msg) {
+            return;
+        }
+        let Some(tool_use_id) = id_at(msg, "tool_use_id") else {
+            return;
+        };
+        // 같은 호출의 시작이 두 번 와도 한 번만 알린다.
+        if self.workers.iter().any(|w| w.tool_use_id == tool_use_id) {
+            return;
+        }
+        if self.workers.len() >= WORKER_LIMIT {
+            if !self.worker_limit_warned {
+                self.worker_limit_warned = true;
+                out.events.push(SessionEvent::Warning {
+                    code: "worker_limit".into(),
+                    detail: Some(format!("more than {WORKER_LIMIT} workers at once")),
+                });
+            }
+            return;
+        }
+        let name = str_at(msg, "subagent_type")
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map_or_else(
+                || DEFAULT_WORKER_NAME.to_string(),
+                |n| truncate_chars(n, WORKER_NAME_CHARS),
+            );
+        let agent_id = id_at(msg, "task_id");
+        let started = SessionEvent::WorkerStarted {
+            tool_use_id: tool_use_id.clone(),
+            agent_id: agent_id.clone(),
+            name: name.clone(),
+            description: short_text(msg, "description", WORKER_TEXT_CHARS),
+            background: msg
+                .get("is_backgrounded")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            depth: msg.get("spawn_depth").and_then(Value::as_u64).unwrap_or(1),
+            at_ms: (self.clock)(),
+        };
+        self.workers.push(WorkerEntry {
+            tool_use_id,
+            agent_id,
+            name,
+            started: started.clone(),
+            last_tool: None,
+            last_summary: None,
+        });
+        out.events.push(started);
+    }
+
+    /// `system/task_progress` — 작업자가 지금 하는 일. 도구나 설명이 바뀔 때만 알린다.
+    fn on_task_progress(&mut self, msg: &Value, out: &mut Interpretation) {
+        let Some(index) = self.find_worker(msg) else {
+            return;
+        };
+        let tool = short_text(msg, "last_tool_name", WORKER_NAME_CHARS);
+        let summary = short_text(msg, "description", WORKER_TEXT_CHARS);
+        let worker = &mut self.workers[index];
+        if worker.last_tool == tool && worker.last_summary == summary {
+            return;
+        }
+        worker.last_tool.clone_from(&tool);
+        worker.last_summary.clone_from(&summary);
+        out.events.push(SessionEvent::WorkerActivity {
+            tool_use_id: worker.tool_use_id.clone(),
+            tool,
+            summary,
+            tool_uses: msg
+                .get("usage")
+                .and_then(|u| u.get("tool_uses"))
+                .and_then(Value::as_u64),
+        });
+    }
+
+    /// `system/task_updated` — `patch.status` 가 끝난 상태면 작업자를 끝낸다 (`task_notification` 이 안 와도 남지 않게. 둘 다 오면 뒤의 것은 지나간다).
+    fn on_task_updated(&mut self, msg: &Value, out: &mut Interpretation) {
+        let Some(status) = msg.get("patch").and_then(|patch| str_at(patch, "status")) else {
+            return;
+        };
+        let outcome = match status {
+            "completed" => WorkerOutcome::Done,
+            "failed" | "error" => WorkerOutcome::Failed,
+            "killed" | "stopped" | "cancelled" | "canceled" => WorkerOutcome::Stopped,
+            _ => return,
+        };
+        self.finish_worker(msg, outcome, out);
+    }
+
+    /// `system/task_notification` — 작업자가 끝났다 (`status`: `completed` · `stopped` · …). 작업자의 결과 글(`summary`)은 읽지 않는다.
+    fn on_task_notification(&mut self, msg: &Value, out: &mut Interpretation) {
+        let outcome = match str_at(msg, "status") {
+            Some("completed") => WorkerOutcome::Done,
+            Some("stopped" | "killed" | "cancelled" | "canceled") => WorkerOutcome::Stopped,
+            // `failed` 와 모르는 상태 — 끝났다는 알림이니 일하는 중으로 남기지 않는다.
+            _ => WorkerOutcome::Failed,
+        };
+        self.finish_worker(msg, outcome, out);
+    }
+
+    /// 줄이 가리키는 작업자(호출 ID 로, 없으면 작업자 ID 로)를 끝낸다. 모르는 작업자(시작 없이 온 끝 · 이미 끝난 것)는 지나간다.
+    fn finish_worker(&mut self, msg: &Value, outcome: WorkerOutcome, out: &mut Interpretation) {
+        let Some(index) = self.find_worker(msg) else {
+            return;
+        };
+        let worker = self.workers.remove(index);
+        out.events.push(SessionEvent::WorkerEnded {
+            tool_use_id: worker.tool_use_id,
+            outcome,
+            at_ms: (self.clock)(),
+        });
+    }
+
+    /// 줄이 가리키는 작업자의 자리 — 호출 ID(`tool_use_id`)가 있으면 그것으로, 없으면 작업자 ID(`task_id`)로.
+    fn find_worker(&self, msg: &Value) -> Option<usize> {
+        if let Some(tool_use_id) = id_at(msg, "tool_use_id") {
+            return self
+                .workers
+                .iter()
+                .position(|w| w.tool_use_id == tool_use_id);
+        }
+        let task_id = id_at(msg, "task_id")?;
+        self.workers
+            .iter()
+            .position(|w| w.agent_id.as_deref() == Some(task_id.as_str()))
+    }
+
+    /// 요청(권한 · 질문)이 작업자 안에서 왔으면 그 작업자 (`agent_id`).
+    fn worker_of_request(&self, request: &Value) -> Option<WorkerRef> {
+        let agent_id = id_at(request, "agent_id")?;
+        let known = self
+            .workers
+            .iter()
+            .find(|w| w.agent_id.as_deref() == Some(agent_id.as_str()));
+        Some(WorkerRef {
+            tool_use_id: known.map(|w| w.tool_use_id.clone()),
+            name: known.map(|w| w.name.clone()),
+            agent_id,
+        })
     }
 
     fn on_control_request(&self, msg: &Value, out: &mut Interpretation) {
@@ -169,6 +386,7 @@ impl Interpreter {
         let tool = str_at(request, "tool_name").unwrap_or("").to_string();
         let input = request.get("input").cloned().unwrap_or_else(|| json!({}));
         let tool_use_id = str_at(request, "tool_use_id").map(str::to_string);
+        let worker = self.worker_of_request(request);
 
         if tool == ASK_USER_QUESTION {
             let Some((questions, shapes, infos)) = parse_questions(&input) else {
@@ -186,6 +404,7 @@ impl Interpreter {
             let event = SessionEvent::QuestionRequest(QuestionRequestInfo {
                 request_id: request_id.to_string(),
                 tool_use_id,
+                worker,
                 questions: infos,
             });
             out.new_pending.push((
@@ -213,6 +432,7 @@ impl Interpreter {
         let info = PermissionRequestInfo {
             request_id: request_id.to_string(),
             tool_use_id,
+            worker,
             display_name: str_at(request, "display_name").map(str::to_string),
             description: str_at(request, "description").map(|d| truncate_chars(d, 1000)),
             // 카드에 보이는 글도 같은 한계로 자른다 (원본은 `PendingKind::Permission` 이 쥔다). 잘렸으면 끝에 `…` 가 붙는다.
@@ -290,6 +510,11 @@ impl Interpreter {
 
         if errors.iter().any(|e| e.contains("No conversation found")) {
             out.resume_not_found = true;
+        }
+        // 중단하면 CLI 가 일하던 작업자를 모두 멈춘다 (녹화: `agent-interrupt*`) — 끝 알림이 빠졌어도 일하는 중으로 남기지 않는다.
+        if outcome == TurnOutcome::Interrupted {
+            out.events
+                .extend(self.end_all_workers(WorkerOutcome::Stopped));
         }
 
         let usage = msg.get("usage");
@@ -438,6 +663,8 @@ pub fn summarize_tool_input(tool: &str, input: Option<&Value>) -> String {
         "Glob" | "Grep" => &["pattern"],
         "WebFetch" => &["url"],
         "WebSearch" => &["query"],
+        // 작업자를 부르는 도구 — 지시 글(`prompt`)은 요약에 쓰지 않는다 (기록에 남을 수 있어 D-48)
+        "Agent" | "Task" => &["description", "subagent_type"],
         _ => &["description", "command", "file_path", "prompt"],
     };
     keys.iter()
@@ -456,6 +683,38 @@ pub fn truncate_chars(text: &str, max: usize) -> String {
 
 fn str_at<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
+}
+
+/// 글 칸 하나를 `max` 글자로 줄여서. 비었거나 글이 아니면 `None`.
+fn short_text(value: &Value, key: &str, max: usize) -> Option<String> {
+    str_at(value, key)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| truncate_chars(text, max))
+}
+
+/// ID 칸 — 비어 있지 않고 너무 길지 않은 글만 (줄이 가리키는 열쇠로 쓰므로 잘라서 쓰지 않는다).
+fn id_at(value: &Value, key: &str) -> Option<String> {
+    str_at(value, key)
+        .filter(|id| !id.is_empty() && id.chars().count() <= ID_CHARS)
+        .map(str::to_string)
+}
+
+/// 작업자 안쪽 줄인가 — `parent_tool_use_id` 가 있다 (null 이거나 없으면 메인 줄).
+fn is_inner(msg: &Value) -> bool {
+    match msg.get("parent_tool_use_id") {
+        None | Some(Value::Null) => false,
+        Some(Value::String(id)) => !id.is_empty(),
+        Some(_) => true,
+    }
+}
+
+/// `system/task_started` 가 작업자(서브에이전트)의 시작인가 — `task_type` 이 `local_agent`, 또는 `task_type` 은 없고 `subagent_type` 이 있다.
+fn is_worker_task(msg: &Value) -> bool {
+    match str_at(msg, "task_type") {
+        Some(kind) => kind == "local_agent",
+        None => str_at(msg, "subagent_type").is_some(),
+    }
 }
 
 fn round9(x: f64) -> f64 {

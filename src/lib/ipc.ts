@@ -16,12 +16,15 @@ import {
   type ClaudeResponse,
   type ClaudeSessionState,
   type ClaudeStatus,
+  type DocRead,
+  type DocsList,
   type GitResult,
   type HarnessStatus,
   type ProjectAddRequest,
   type ProjectEntry,
   type ProjectList,
   type ProjectPatch,
+  type ProgressRead,
   type ProjectPickedFolder,
   type RawLogEntry,
   type RequirementsRead,
@@ -160,4 +163,14 @@ export const ipc = {
   /** 쓰기 — 지금 파일이 `baseVersion` 과 다르면 쓰지 않고 `conflict`. 없던 파일을 새로 쓸 때는 `baseVersion: null` */
   projectRequirementsWrite: (id: number, text: string, baseVersion: string | null) =>
     call<RequirementsWrite>("project_requirements_write", { id, text, baseVersion }),
+
+  // 프로젝트 문서 읽기 (P7-01, D-49) — 모두 읽기 전용이고 쓰는 명령은 없다. 프로젝트 번호로만 부른다 (`projectDocRead` 만 `docsDir` 안 상대 경로를 더한다 — Rust 가 다시 확인한다).
+  /** 하네스 문서 — 단계 표(`dev-plan.md`) · 이어 하기 메모(`handoff.md`) · 작업의 지시서 진행률. 문서가 없으면 `absent`, 형식이 깨졌으면 `unreadable`(이유 포함) — 오류가 아니다 */
+  projectProgressRead: (id: number) => call<ProgressRead>("project_progress_read", { id }),
+  /** 하네스 문서가 바뀌었는지 싸게 묻는 값 (내용을 읽지 않는다 — 화면이 몇 초마다 부르고, 달라졌을 때만 `projectProgressRead`) */
+  projectProgressVersion: (id: number) => call<string>("project_progress_version", { id }),
+  /** 그 프로젝트 `docsDir` 아래 `.md` 목록 (숨은 폴더 · 폴더 밖 링크 제외, 상한을 넘으면 `truncated`) */
+  projectDocsList: (id: number) => call<DocsList>("project_docs_list", { id }),
+  /** 문서 하나 읽기. `path` 는 `projectDocsList` 가 준 경로 — 모양이 틀리면(`..` · 절대 경로 · `.md` 아님 …) `invalid_input` */
+  projectDocRead: (id: number, path: string) => call<DocRead>("project_doc_read", { id, path }),
 };

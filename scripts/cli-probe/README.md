@@ -24,7 +24,7 @@ CLI 가 바뀌었는지 보는 순서: `run all --out <새 폴더>` → 끝에 �
 
 ## 비용 · 주의
 
-- **실제 Claude 구독 사용량이 쓰인다.** `run all` 은 짧은 haiku 턴 약 30개 (한 세션 시작마다 시스템 프롬프트 약 1만~3만 토큰이 캐시로 읽히고 쓰인다). 사용량 한도가 빠듯할 때는 시나리오를 골라서 돌린다.
+- **실제 Claude 구독 사용량이 쓰인다.** `run all` 은 짧은 haiku 턴 약 40개 (한 세션 시작마다 시스템 프롬프트 약 1만~3만 토큰이 캐시로 읽히고 쓰인다). 사용량 한도가 빠듯할 때는 시나리오를 골라서 돌린다.
 - 허용하는 권한은 임시 폴더 안 파일 만들기 · `mkdir` · `echo` 뿐이다. `--dangerously-skip-permissions` · `bypassPermissions` 는 쓰지 않는다.
 - 세션은 **OS 임시 폴더 아래 새 폴더**(`nyanitor-probe-<시나리오>-<8자>`)에서만 돈다. 끝나면 지운다 (저장소 안이면 시작을 거부한다).
 - 인증 파일 · 토큰 · 키체인은 읽지 않는다. 로그인 확인은 `claude auth status --json` 출력만 쓴다. `claude auth login/logout` 은 실행하지 않는다.
@@ -43,6 +43,25 @@ CLI 가 바뀌었는지 보는 순서: `run all --out <새 폴더>` → 끝에 �
 
 `node scripts/cli-probe/probe.mjs run skill` — 임시 프로젝트 폴더의 `.claude/skills/probe-echo/SKILL.md`(한 줄로만 답하는 아주 짧은 스킬, `argument-hint` 하나)를 두고, stream-json 세션의 **첫 메시지로 `/probe-echo banana`** 를 보내 스킬이 실행되는지 · 인자(`$ARGUMENTS`)가 넘어가는지 · `system/init` 의 `slash_commands` 에 보이는지(이름은 `/` 없이 온다) · `--effort high` 를 같이 줘도 되는지(두 번째 세션 `skill.effort.jsonl`)를 본다. 2.1.296 에서는 모두 된다 — 슬래시 스킬은 모델을 한 번 부르는 평범한 턴으로 돈다(모델 호출 1, `num_turns` 1).
 haiku 턴 2개라 가볍다. 하네스 스킬(`/desktop-app` 등)은 Opus 사용량이 커서 실험하지 않는다.
+
+## 작업자(서브에이전트) 시나리오 (`agent*`, P7-02 · D-49)
+
+임시 프로젝트 폴더에 실험용 작업자(`.claude/agents/probe-helper.md` — haiku, 도구 `Read`) 정의와 읽을 파일(`note.txt`)을 두고 메인(haiku)에게 맡기게 한다. **이 시나리오들만** 돌린다 (`run all` 은 이 다섯도 돈다 — 사용량이 늘었다).
+
+| 시나리오 | 보는 것 | 사용량 |
+|---|---|---|
+| `agent` | 앞에서 기다리는 작업자(`run_in_background:false`) · 말 안 하고 시켰을 때(`agent.default` — 이 CLI 는 기본이 백그라운드) | 메인 + 작업자 각 2번 |
+| `agent-background` | `run_in_background:true` — 부른 턴이 먼저 끝나고 끝 알림이 뒤에 오는 모양 · CLI 가 스스로 여는 둘째 턴 | 메인 2턴 + 작업자 1번 |
+| `agent-two` | 한 메시지에서 작업자 둘을 한꺼번에 | 메인 1턴 + 작업자 2번 |
+| `agent-permission` | 작업자(`Write` 만 가진 `probe-writer`)가 권한이 필요한 도구를 쓸 때 요청에 작업자 표시가 있는가 (+ `.background`: 백그라운드 작업자의 요청도 오는가) | 메인 + 작업자 각 2번 |
+| `agent-interrupt` | 작업자가 일하는 중 `interrupt` (+ `.background`: 부른 턴이 끝난 뒤 백그라운드 작업자가 도는 중 `interrupt`) | 메인 + 작업자 각 2번 |
+
+2.1.319 에서 확인한 모양 (바뀌면 `compare` 로 알아본다):
+- 작업자를 부르는 도구 호출의 이름은 `Agent` (`system/init` 의 `tools` 에는 옛 이름 `Task` 로 나온다). 입력은 `subagent_type` · `description` · `prompt` · `run_in_background`.
+- 작업자 안쪽 `assistant` · `user` 줄에는 `parent_tool_use_id`(= 부른 도구 호출의 id) · `agent_id` · `subagent_type` · `task_description` 이 붙는다. 메인 줄은 `parent_tool_use_id: null`.
+- 시작 `system/task_started`(`task_type: "local_agent"`, `tool_use_id`, `task_id`, `subagent_type`, `description`, `is_backgrounded`, `spawn_depth`, `prompt`) → 하는 일 `system/task_progress`(`last_tool_name`, `description`, `usage`) → 끝 `system/task_updated`(`patch.status`) + `system/task_notification`(`status`: `completed` · `stopped`, `summary` = 작업자의 결과 글). 백그라운드 명령도 같은 `task_*` 줄이 오되 `task_type` 이 `local_bash`.
+- 권한 · 질문 요청(`can_use_tool`)이 작업자 안에서 오면 요청 본문에 `agent_id`(= `task_started.task_id`) 가 있다. 요청의 `tool_use_id` 는 작업자 안쪽 도구 호출의 id.
+- 중단하면 일하는 작업자(백그라운드 포함)가 모두 `task_notification` `stopped` 로 끝난다.
 
 ## 녹화 형식 (`*.jsonl`, 한 줄에 JSON 하나)
 

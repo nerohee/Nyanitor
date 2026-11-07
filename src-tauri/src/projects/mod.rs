@@ -5,13 +5,17 @@
 //! - `store` — 프로젝트 표의 SQL
 //! - `folder` — 고를 수 없는 폴더 · 폴더 살펴보기(느린 폴더를 기다리지 않음) · 하네스 문서 폴더 이름
 //! - `requirements` — 폴더 바로 아래 `requirements.md` 하나의 읽기 · 쓰기 · 바깥 변경 확인
+//! - `docs` — `docsDir` 아래 `.md` 의 읽기 전용 목록 · 읽기 (P7-01, D-49)
+//! - `progress` — 하네스 문서(단계 표 · 이어 하기 메모 · 지시서 진행률) 읽기 (P7-01, D-22 · D-49)
 //! - `commands` — Tauri 명령 (얇게)
 //!
 //! **화면은 경로 글자를 보내지 않는다.** 폴더는 Rust 가 대화상자로 받아 들고 있다가(`ProjectsState::picked`) "추가" 때 그것만 등록하고,
 //! 파일 명령은 등록된 프로젝트 번호로만 부른다. 이 파일의 함수들은 일반 함수라 Tauri 없이 시험한다.
 
 pub mod commands;
+pub mod docs;
 pub mod folder;
+pub mod progress;
 pub mod requirements;
 pub mod store;
 

@@ -24,6 +24,9 @@
 //!   `NYANITOR_FAKE_VERSION_DELAY_MS=<ms>` (`--version` 이 느림 — 시작이 오래 걸리는 동안의 경계 시험) ·
 //!   `NYANITOR_FAKE_AUTH_OUT=<글>` · `NYANITOR_FAKE_AUTH_CODE=<코드>` (`auth status` 가 글 그대로 · 이 종료 코드. 글 안의 두 글자 `\n` 은 줄바꿈으로) ·
 //!   `NYANITOR_FAKE_AUTH_PAD=<바이트>` (`auth status` 글 뒤에 그만큼의 `x`)
+//! - (P7-02) 작업자(서브에이전트) 시나리오는 녹화본 그대로다 — `agent`(앞에서 기다림) · `agent.default`(이 CLI 의 기본 = 백그라운드) · `agent-background` · `agent-two` ·
+//!   `agent-permission[.background]`(작업자 안의 권한 요청) · `agent-interrupt[.background]`(일하는 중 중단). `die-before-result` 는 일하는 작업자가 있을 때 죽는 경우,
+//!   `agent-interrupt` 는 권한 요청에서 멈춰 서므로(응답을 기다린다) 일하는 중에 끝내는 경우를 시험할 수 있다 (`tests/worker_fake_cli.rs`).
 //! - (P3-03) 녹화 줄 `{"dir":"recv_bytes","hex":"…"}` — 16진수 바이트를 **그대로**(줄바꿈을 덧붙이지 않고) stdout 으로 (BOM · CRLF · 깨진 UTF-8 시험)
 
 use std::env;

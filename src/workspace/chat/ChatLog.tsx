@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t, tf } from "../../i18n/ko";
 import { Icon } from "../../variants/shared/icons";
 import { QuestionRequest, PermissionCard, type Respond } from "./Cards";
-import { NoticeLine, OrchMessage, ToolErrorLine, ToolGroup, ToolLine, TurnEndLine, UserMessage } from "./Lines";
+import { NoticeLine, OrchMessage, ToolErrorLine, ToolGroup, ToolLine, TurnEndLine, UserMessage, WorkerLine } from "./Lines";
 import type { ChatLine } from "./model";
 
 /** 도구 사용이 이만큼 이어지면 접는다 */
@@ -59,6 +59,8 @@ function LineView({ line, first, more, onRespond }: { line: ChatLine; first: boo
       return <QuestionRequest info={line.info} state={line.state} onRespond={onRespond} first={first} />;
     case "permission":
       return <PermissionCard info={line.info} state={line.state} onRespond={onRespond} first={first} more={more} />;
+    case "worker":
+      return <WorkerLine line={line} />;
     case "turnEnd":
       return <TurnEndLine line={line} />;
     case "notice":

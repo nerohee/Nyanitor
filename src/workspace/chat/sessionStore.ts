@@ -4,13 +4,16 @@
 // 기록 + 실시간 잇기: 목록을 읽기 전(`load` 가 `ready` 가 아닐 때)에 온 이벤트는 `buffer` 에 모아 두었다가, 읽은 뒤 `mergeLive` 가 기록 끝과 겹치는 것을 빼고 잇는다.
 import { create } from "zustand";
 import { ipc } from "../../lib/ipc";
-import { AppError, type AppErrorKind, type ClaudeEvent, type ClaudeResponse, type ClaudeSessionState, type StartInfo } from "../../lib/ipc-types";
-import { emptyChat, foldEvent, fromEntries, mergeLive, prependEntries, type ChatData } from "./model";
+import { AppError, type AppErrorKind, type ClaudeEvent, type ClaudeResponse, type ClaudeSessionState, type RawLogEntry, type StartInfo } from "../../lib/ipc-types";
+import { applyWorkerEvent, mergeHistoryWorkers, stopAllWorkers, type WorkerEntry } from "../progress/workers";
+import { emptyChat, foldEvent, fromEntries, mergeLive, prependEntries, settleWorkers, type ChatData } from "./model";
 
 /** 기록을 한 번에 읽는 개수 */
 export const PAGE_SIZE = 50;
 /** 읽기 전에 모아 두는 이벤트의 상한 (넘으면 오래된 것부터 버린다) */
 const BUFFER_MAX = 2000;
+/** 원본 출력(`raw_log`)을 메모리에 쥐는 줄 수 — 지금 세션 것만, 저장하지 않는다 (D-48). 넘으면 오래된 것부터 버린다 */
+export const RAW_LINES_MAX = 1000;
 
 export type LoadState = "idle" | "loading" | "ready" | "failed";
 
@@ -20,6 +23,10 @@ export interface ProjectChat {
   data: ChatData;
   /** 읽는 동안(읽기 전부터) 온 실시간 이벤트 — 읽은 뒤 기록과 이어 붙이고 비운다 */
   buffer: ClaudeEvent[];
+  /** `buffer` 의 이벤트를 받은 때 (같은 순서, 유닉스 밀리초) — 요약 로그의 시각 */
+  bufferAt: number[];
+  /** 이 프로젝트의 작업자 (시작 순) — 세션 상태 · 실시간 · 기록에서 하나로 합친 것. 고르는 함수는 `progress/workers.ts` */
+  workers: WorkerEntry[];
   /** 이 쪽보다 오래된 기록이 더 있다 */
   hasMore: boolean;
   /** 가진 기록 가운데 가장 오래된 항목의 번호 (다음 쪽의 `before`) */
@@ -62,13 +69,15 @@ interface State {
   /** 일하는 중에 보낸 말 — 이번 턴이 끝나면 전해진다 (Rust 는 턴이 도는 중의 보내기를 받지 않는다) */
   queued: QueuedMessage | null;
   queueError: AppErrorKind | null;
+  /** 지금(또는 마지막) 세션의 원본 출력 줄 — 최근 `RAW_LINES_MAX` 줄, 프로젝트를 바꾸거나 새 세션이 시작하면 비운다 */
+  raw: { projectId: number; lines: RawLogEntry[] } | null;
   /** 세션이 끝나 못 보낸 말 — 입력줄이 되돌려 받는다 */
   draftBack: QueuedMessage | null;
   /** 먹물이 답을 끝낸(성공한) 턴 수 — 화면 읽기 프로그램에 "답했어요" 를 알리는 신호 (실시간만, 기록 읽기로는 오르지 않는다) */
   answeredTurns: number;
 }
 
-const initial = (): State => ({ restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, draftBack: null, answeredTurns: 0 });
+const initial = (): State => ({ restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, raw: null, draftBack: null, answeredTurns: 0 });
 
 export const useSessionStore = create<State>()(() => initial());
 
@@ -80,6 +89,8 @@ export const newChat = (): ProjectChat => ({
   loadError: null,
   data: emptyChat(),
   buffer: [],
+  bufferAt: [],
+  workers: [],
   hasMore: false,
   oldestId: null,
   loadingOlder: false,
@@ -101,9 +112,26 @@ const kindOf = (raw: unknown): AppErrorKind => (raw instanceof AppError ? raw.ki
 
 /** 이 이벤트를 그 프로젝트 대화에 넣는다 — 목록을 읽었으면 바로 접고, 아니면 모아 둔다 */
 function feed(projectId: number, event: ClaudeEvent): void {
+  const atMs = Date.now();
   patchChat(projectId, (chat) => {
-    if (chat.load === "ready") return { data: foldEvent(chat.data, event) };
-    return { buffer: [...chat.buffer, event].slice(-BUFFER_MAX) };
+    if (chat.load === "ready") return { data: foldEvent(chat.data, event, { atMs }) };
+    return { buffer: [...chat.buffer, event].slice(-BUFFER_MAX), bufferAt: [...chat.bufferAt, atMs].slice(-BUFFER_MAX) };
+  });
+}
+
+/** 작업자 목록에 이 이벤트를 반영한다 — 대화를 읽었는지와 상관없이 바로 (진행 탭이 쓴다) */
+function feedWorkers(projectId: number, event: ClaudeEvent): void {
+  if (event.type === "worker_started" || event.type === "worker_activity" || event.type === "worker_ended") patchChat(projectId, (chat) => ({ workers: applyWorkerEvent(chat.workers, event) }));
+  // 새 세션이 시작하면 옛 세션의 남은 작업자는 끝난 것, 세션이 끝나도 (Rust 가 먼저 주지만 못 받았어도)
+  else if (event.type === "session_started" || event.type === "session_ended") patchChat(projectId, (chat) => ({ workers: stopAllWorkers(chat.workers, Date.now()) }));
+}
+
+/** 원본 출력 한 줄 — 지금 세션 것만 최근 `RAW_LINES_MAX` 줄 */
+function feedRaw(projectId: number, event: Extract<ClaudeEvent, { type: "raw_log" }>): void {
+  const entry: RawLogEntry = { seq: event.seq, dir: event.dir, text: event.text, truncated: event.truncated, originalLen: event.originalLen, atMs: event.atMs };
+  set((state) => {
+    const lines = state.raw && state.raw.projectId === projectId ? state.raw.lines : [];
+    return { raw: { projectId, lines: [...lines, entry].slice(-RAW_LINES_MAX) } };
   });
 }
 
@@ -125,17 +153,21 @@ export async function refreshChurros(): Promise<void> {
 }
 
 function apply(event: ClaudeEvent): void {
-  if (event.type === "raw_log") return;
   let session = get().session;
   if (event.type === "session_started") session = { projectId: event.projectId, busy: false, sessionId: event.resumeSessionId };
   // 어느 프로젝트 세션인지 모르는 이벤트는 둘 곳이 없다
   if (!session) return;
   const projectId = session.projectId;
+  if (event.type === "raw_log") {
+    feedRaw(projectId, event);
+    return;
+  }
   feed(projectId, event);
+  feedWorkers(projectId, event);
 
   switch (event.type) {
     case "session_started":
-      set({ session, queueError: null });
+      set({ session, queueError: null, raw: { projectId, lines: [] } });
       void refreshChurros();
       break;
     case "turn_started":
@@ -185,6 +217,11 @@ function restore(state: ClaudeSessionState): void {
   set({ session: { projectId: state.projectId, busy: state.busy, sessionId: state.sessionId } });
   // 기다리던 카드 — 기록에도 `pending` 으로 있다 (읽은 뒤 같은 `requestId` 는 한 장으로 합쳐진다)
   for (const event of state.pending) feed(state.projectId, event);
+  // 지금 일하는 작업자 — 채팅 줄 · 작업자 목록 둘 다 (기록에도 있다: 읽은 뒤 `toolUseId` 가 같은 것은 하나로 합쳐진다)
+  for (const event of state.workers ?? []) {
+    feed(state.projectId, event);
+    feedWorkers(state.projectId, event);
+  }
   void refreshChurros();
 }
 
@@ -232,10 +269,14 @@ export async function loadChat(projectId: number): Promise<void> {
   patchChat(projectId, { load: "loading", loadError: null });
   try {
     const page = await ipc.projectChatHistory(projectId, null, PAGE_SIZE);
+    const live = get().session?.projectId === projectId;
     patchChat(projectId, (now) => ({
       load: "ready",
-      data: mergeLive(fromEntries(page.entries), page.entries, now.buffer),
+      // 지금 세션이 없는데 기록이 "일하는 중" 이면 끝 알림을 못 받은 것 — 멈춤으로
+      data: live ? mergeLive(fromEntries(page.entries), page.entries, now.buffer, now.bufferAt) : settleWorkers(mergeLive(fromEntries(page.entries), page.entries, now.buffer, now.bufferAt)),
+      workers: mergeHistoryWorkers(now.workers, page.entries, live),
       buffer: [],
+      bufferAt: [],
       hasMore: page.hasMore && page.entries.length > 0,
       oldestId: page.entries[0]?.id ?? null,
     }));
@@ -251,9 +292,11 @@ export async function loadOlder(projectId: number): Promise<void> {
   patchChat(projectId, { loadingOlder: true, olderFailed: false });
   try {
     const page = await ipc.projectChatHistory(projectId, chat.oldestId, PAGE_SIZE);
+    const live = get().session?.projectId === projectId;
     patchChat(projectId, (now) => ({
       loadingOlder: false,
-      data: prependEntries(now.data, page.entries),
+      data: live ? prependEntries(now.data, page.entries) : settleWorkers(prependEntries(now.data, page.entries)),
+      workers: mergeHistoryWorkers(now.workers, page.entries, live),
       hasMore: page.hasMore && page.entries.length > 0,
       oldestId: page.entries[0]?.id ?? now.oldestId,
     }));
@@ -349,6 +392,31 @@ export async function stopSession(): Promise<void> {
 }
 
 // ───────────────────────── 읽기 도우미 ─────────────────────────
+
+const NO_WORKERS: WorkerEntry[] = [];
+const NO_RAW: RawLogEntry[] = [];
+
+/** 그 프로젝트의 작업자 목록 (시작 순) — 바뀌지 않으면 같은 배열이라 `useSessionStore` 에 바로 쓴다. 지금 일하는 것 · 최근 것은 `progress/workers.ts` 의 `workingWorkers` · `recentWorkers` 로 (`useMemo` 와 함께) */
+export function selectWorkers(projectId: number | null) {
+  return (state: State): WorkerEntry[] => (projectId === null ? NO_WORKERS : (state.chats[projectId]?.workers ?? NO_WORKERS));
+}
+
+/** 작업자를 부른 도구 호출 번호(`toolUseId`)로 그 작업자의 이름 (어느 프로젝트든) — 없으면 null. 카드가 "누구의 요청인가" 를 찾는다 */
+export function selectWorkerName(toolUseId: string | null) {
+  return (state: State): string | null => {
+    if (toolUseId === null) return null;
+    for (const chat of Object.values(state.chats)) {
+      const found = chat.workers.find((worker) => worker.toolUseId === toolUseId);
+      if (found) return found.name;
+    }
+    return null;
+  };
+}
+
+/** 그 프로젝트의 원본 출력 줄 (최근 `RAW_LINES_MAX` 줄, 오래된 것이 앞). 다른 프로젝트의 줄은 보이지 않는다 */
+export function selectRawLines(projectId: number | null) {
+  return (state: State): RawLogEntry[] => (projectId !== null && state.raw?.projectId === projectId ? state.raw.lines : NO_RAW);
+}
 
 /** 그 프로젝트에서 답을 기다리는 카드 수 (아직 읽지 않은 대화는 모아 둔 이벤트로 센다) */
 export function selectPending(projectId: number | null) {

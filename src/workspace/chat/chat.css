@@ -307,6 +307,61 @@
 .wc-toolerr .icon {
   flex: none;
 }
+/* 작업자를 맡긴 줄 — 얼굴 + 글 + 상태 알약 (아이콘 + 글자) */
+.wc-worker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+  font-size: var(--text-sm);
+}
+.wc-worker__avatar {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+.wc-worker__text {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-worker__tag {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-worker__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-worker__state[data-status="running"] {
+  border: 1.5px solid var(--ui-line);
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+  font-weight: var(--weight-semibold);
+}
+.wc-worker__state[data-status="done"] {
+  color: var(--color-success);
+}
+.wc-worker__state[data-status="failed"] {
+  color: var(--color-danger);
+}
 .wc-tools {
   display: flex;
   flex-direction: column;
@@ -416,6 +471,7 @@
 }
 .wc-card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
@@ -430,6 +486,21 @@
 }
 .wc-card__kind {
   font-weight: var(--weight-bold);
+}
+/* 작업자가 한 요청 — 머리의 고양이 얼굴 + "<이름>의 요청" */
+.wc-card__who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.wc-card__avatar {
+  display: block;
+  flex: none;
+  width: 22px;
+  height: 22px;
 }
 .wc-card__state {
   margin-left: auto;

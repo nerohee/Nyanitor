@@ -1,10 +1,11 @@
-// 채팅 목록의 한 줄들 — 사용자 말 · 먹물 글(마크다운) · 도구 사용 · 실패한 도구 결과 · 턴 끝(오류 · 한도 · 중단일 때만) · 알림 줄.
+// 채팅 목록의 한 줄들 — 사용자 말 · 먹물 글(마크다운) · 도구 사용 · 실패한 도구 결과 · 작업자 줄 · 턴 끝(오류 · 한도 · 중단일 때만) · 알림 줄.
 import { useState } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
 import { catForAgent, type CatId } from "../../components/cat/catalog";
 import { isTextKey, t, tf } from "../../i18n/ko";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { MarkdownPreview } from "../MarkdownPreview";
+import { catForWorker, catName, useWorkerRoles } from "../progress/workerCat";
 import type { ChatLine } from "./model";
 
 /** 오케스트레이터(먹물) — 이름 · 얼굴 */
@@ -87,6 +88,29 @@ export function ToolErrorLine({ line }: { line: Of<"toolError"> }) {
       <span>{line.summary.trim() === "" ? t("ws.chat.tools.failedBare") : tf("ws.chat.tools.failed", { summary: line.summary })}</span>
       {line.truncated && <span className="wc-msg__cut">{t("ws.chat.truncated")}</span>}
     </p>
+  );
+}
+
+const WORKER_ICON: Record<Of<"worker">["status"], IconName> = { running: "clock", done: "check", failed: "alert", stopped: "stop" };
+
+/** 작업자를 맡긴 줄 — 고양이 얼굴 + "<이름>에게 맡김 — 무엇" + 상태(일하는 중 · 돌아옴 · 못 끝냄 · 멈춤: 아이콘과 글자로, 색만으로 가르지 않는다). 끝나면 같은 줄의 상태가 바뀐다 */
+export function WorkerLine({ line }: { line: Of<"worker"> }) {
+  const roles = useWorkerRoles();
+  const cat = catForWorker(line.name, { roles });
+  const name = catName(cat);
+  const text = line.description ? tf("ws.chat.worker.assignedWith", { cat: name, description: line.description }) : tf("ws.chat.worker.assigned", { cat: name });
+  return (
+    <div className="wc-worker" data-status={line.status} role={isLive(line) ? "status" : undefined}>
+      <span className="wc-worker__avatar" aria-hidden="true">
+        <CatFigure cat={cat} crop="face" />
+      </span>
+      <p className="wc-worker__text">{text}</p>
+      {line.background && <span className="wc-worker__tag">{t("ws.chat.worker.background")}</span>}
+      <span className="wc-worker__state" data-status={line.status}>
+        <Icon name={WORKER_ICON[line.status]} size={14} />
+        {t(`ws.chat.worker.${line.status}`)}
+      </span>
+    </div>
   );
 }
 

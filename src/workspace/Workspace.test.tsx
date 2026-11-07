@@ -7,11 +7,13 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../lib/fakeClaude";
 import { fakeHistory } from "../lib/fakeHistory";
+import { fakeProgress } from "../lib/fakeProgress";
 import { fakeProjects, type FakeProjectsOptions } from "../lib/fakeProjects";
 import { fakeSkills } from "../lib/fakeSkills";
 import { ipc } from "../lib/ipc";
 import { AppError } from "../lib/ipc-types";
-import { resetSessionStore, stopSession } from "./chat/sessionStore";
+import { newChat, resetSessionStore, stopSession, useSessionStore } from "./chat/sessionStore";
+import type { WorkerEntry } from "./progress/workers";
 import Workspace from "./Workspace";
 
 /** 앱(App)이 하듯 고른 프로젝트를 들고 있는 틀 */
@@ -34,6 +36,7 @@ beforeEach(() => {
   fakeSkills.reset();
   fakeClaude.reset();
   fakeHistory.reset();
+  fakeProgress.reset();
   resetSessionStore();
   setWide(true);
 });
@@ -45,6 +48,7 @@ afterEach(() => {
   fakeSkills.reset();
   fakeClaude.reset();
   fakeHistory.reset();
+  fakeProgress.reset();
   // @ts-expect-error jsdom 에는 matchMedia 가 없다 — 시험이 넣은 것을 지운다
   delete window.matchMedia;
 });
@@ -85,9 +89,11 @@ describe("프로젝트 목록", () => {
     // 폴더 없음 표시
     expect(within(list()).getByRole("button", { name: /쇼핑몰 관리자/ })).toHaveTextContent("폴더를 찾을 수 없어요");
 
-    // 창이 넓어도 판 하나에 탭 [채팅] [요구사항] — 처음엔 채팅, 요구사항은 숨겨졌을 뿐 마운트돼 있다
-    const [chatTab, editorTab] = within(screen.getByRole("tablist", { name: "작업 공간 보기" })).getAllByRole("tab");
+    // 창이 넓어도 판 하나에 탭 [채팅] [진행] [문서] [요구사항] — 처음엔 채팅, 나머지는 숨겨졌을 뿐 마운트돼 있다
+    const [chatTab, progressTab, docsTab, editorTab] = within(screen.getByRole("tablist", { name: "작업 공간 보기" })).getAllByRole("tab");
     expect(chatTab).toHaveTextContent("채팅");
+    expect(progressTab).toHaveTextContent("진행");
+    expect(docsTab).toHaveTextContent("문서");
     expect(editorTab).toHaveTextContent("요구사항");
     expect(chatTab).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("tabpanel", { name: "요구사항" })).not.toBeInTheDocument();
@@ -264,12 +270,18 @@ describe("좁은 창", () => {
     await waitFor(() => expect(document.querySelector(".cm-editor")).not.toBeNull());
     expect(screen.queryByRole("navigation", { name: "프로젝트" })).not.toBeInTheDocument();
     const tabs = screen.getByRole("tablist", { name: "작업 공간 보기" });
-    const [chatTab, editorTab] = within(tabs).getAllByRole("tab");
+    const [chatTab, progressTab, docsTab, editorTab] = within(tabs).getAllByRole("tab");
     expect(chatTab).toHaveAttribute("aria-selected", "true");
     expect(chatTab).toHaveAttribute("tabindex", "0");
+    expect(progressTab).toHaveAttribute("tabindex", "-1");
     expect(editorTab).toHaveAttribute("tabindex", "-1");
 
     chatTab.focus();
+    fireEvent.keyDown(tabs, { key: "ArrowRight" });
+    expect(progressTab).toHaveAttribute("aria-selected", "true");
+    expect(progressTab).toHaveFocus();
+    fireEvent.keyDown(tabs, { key: "ArrowRight" });
+    expect(docsTab).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(tabs, { key: "ArrowRight" });
     expect(editorTab).toHaveAttribute("aria-selected", "true");
     expect(editorTab).toHaveFocus();
@@ -710,5 +722,120 @@ describe("채팅 판", () => {
   it("지난 대화(?history=full)가 보인다", async () => {
     await startChatting();
     expect(within(chatPanel()).getByText("계획을 정리했어요. 승인해 주세요.")).toBeInTheDocument();
+  });
+});
+
+describe("진행 · 문서 탭과 작은 창문", () => {
+  const working = (toolUseId: string, name: string, startedAtMs: number): WorkerEntry => ({
+    toolUseId,
+    agentId: null,
+    name,
+    description: "일",
+    background: false,
+    depth: 1,
+    startedAtMs,
+    activity: null,
+    status: "running",
+    endedAtMs: null,
+  });
+
+  /** 채팅을 읽은 뒤 그 프로젝트의 작업자를 정해 넣는다 (읽는 중에 덮이지 않게) */
+  async function putWorkers(workers: WorkerEntry[], id = 1) {
+    await waitFor(() => expect(useSessionStore.getState().chats[id]?.load).toBe("ready"));
+    act(() => useSessionStore.setState((state) => ({ chats: { ...state.chats, [id]: { ...(state.chats[id] ?? newChat()), workers } } })));
+  }
+
+  const mini = () => document.querySelector<HTMLButtonElement>(".ws-mini") as HTMLButtonElement;
+  const tabNames = () => within(screen.getByRole("tablist", { name: "작업 공간 보기" })).getAllByRole("tab").map((tab) => tab.textContent);
+
+  it("탭 [채팅] [진행] [문서] [요구사항] — 탭 줄 오른쪽에 작은 창문 단추 (넓은 창 · 좁은 창 모두)", async () => {
+    await mount();
+    expect(tabNames()).toEqual(["채팅", "진행", "문서", "요구사항"]);
+    expect(mini()).not.toBeNull();
+    expect(mini().closest(".ws-wp__bar")).not.toBeNull();
+    cleanup();
+    setWide(false);
+    await mount();
+    expect(tabNames()).toEqual(["채팅", "진행", "문서", "요구사항"]);
+    expect(mini()).not.toBeNull();
+  });
+
+  it("작은 창문 — 일하는 고양이가 없으면 먹물, 있으면 그 고양이 얼굴 + 이름표, 둘 이상이면 작은 수", async () => {
+    await mount();
+    // 아무도 없음 — 먹물 (수 표시 없음)
+    expect(mini()).toHaveAccessibleName("일하는 고양이가 없어요 — 진행 보기");
+    expect(mini().querySelector(".ws-mini__count")).toBeNull();
+    expect(mini().querySelector(".cat-figure")).not.toBeNull();
+    const faceOf = () => mini().querySelector(".cat-figure")?.innerHTML ?? "";
+    const idle = faceOf();
+
+    await putWorkers([working("t1", "harness-builder-ui", 1)]);
+    expect(mini()).toHaveAccessibleName("일하는 고양이 1마리 — 진행 보기");
+    expect(mini().querySelector(".ws-mini__count")).toBeNull();
+    expect(faceOf()).not.toBe(idle);
+
+    await putWorkers([working("t1", "harness-builder-ui", 1), working("t2", "harness-tester", 2), working("t3", "harness-builder-ui", 3)]);
+    // 같은 고양이를 가리키는 작업자는 한 마리
+    expect(mini()).toHaveAccessibleName("일하는 고양이 2마리 — 진행 보기");
+    expect(mini().querySelector(".ws-mini__count")).toHaveTextContent("2");
+
+    // 끝나면 다시 먹물
+    await putWorkers([{ ...working("t1", "harness-builder-ui", 1), status: "done", endedAtMs: 5 }]);
+    expect(mini()).toHaveAccessibleName("일하는 고양이가 없어요 — 진행 보기");
+    expect(faceOf()).toBe(idle);
+  });
+
+  it("작은 창문을 누르면 진행 탭이 열린다 (탭 · 창문 · 단계 보드)", async () => {
+    await mount();
+    expect(screen.queryByRole("tabpanel", { name: "진행" })).not.toBeInTheDocument();
+    fireEvent.click(mini());
+    const tab = within(screen.getByRole("tablist", { name: "작업 공간 보기" })).getByRole("tab", { name: "진행" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    const panel = screen.getByRole("tabpanel", { name: "진행" });
+    expect(within(panel).getByRole("img", { name: /작업실 창문/ })).toBeInTheDocument();
+    await within(panel).findByRole("list", { name: "단계" });
+  });
+
+  it("숨긴 탭에서는 진행 · 문서를 묻지 않고, 탭을 열면 그때부터 묻는다", async () => {
+    const progress = vi.spyOn(ipc, "projectProgressRead");
+    const version = vi.spyOn(ipc, "projectProgressVersion");
+    const docs = vi.spyOn(ipc, "projectDocsList");
+    await mount();
+    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull());
+    expect(progress).not.toHaveBeenCalled();
+    expect(version).not.toHaveBeenCalled();
+    expect(docs).not.toHaveBeenCalled();
+
+    const tabs = screen.getByRole("tablist", { name: "작업 공간 보기" });
+    fireEvent.click(within(tabs).getByRole("tab", { name: "진행" }));
+    await waitFor(() => expect(progress).toHaveBeenCalledWith(1));
+    expect(docs).not.toHaveBeenCalled();
+
+    // 다른 탭으로 가면 진행은 더 묻지 않는다
+    fireEvent.click(within(tabs).getByRole("tab", { name: "문서" }));
+    await waitFor(() => expect(docs).toHaveBeenCalledWith(1));
+    const asked = version.mock.calls.length;
+    fireEvent.click(within(tabs).getByRole("tab", { name: "요구사항" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(version.mock.calls.length).toBe(asked);
+  });
+
+  it("프로젝트를 바꾸면 진행 · 문서가 그 프로젝트 것으로 처음부터", async () => {
+    const progress = vi.spyOn(ipc, "projectProgressRead");
+    const docs = vi.spyOn(ipc, "projectDocsList");
+    await mount();
+    const tabs = screen.getByRole("tablist", { name: "작업 공간 보기" });
+    fireEvent.click(within(tabs).getByRole("tab", { name: "진행" }));
+    await waitFor(() => expect(progress).toHaveBeenCalledWith(1));
+    fireEvent.click(within(list()).getByRole("button", { name: /레시피 상자/ }));
+    // 프로젝트를 바꾸면 채팅 탭으로 — 진행은 숨고 그 프로젝트(2)의 것은 탭을 열 때 읽는다
+    expect(within(tabs).getByRole("tab", { name: "채팅" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(tabs).getByRole("tab", { name: "진행" }));
+    await waitFor(() => expect(progress).toHaveBeenCalledWith(2));
+    fireEvent.click(within(tabs).getByRole("tab", { name: "문서" }));
+    await waitFor(() => expect(docs).toHaveBeenCalledWith(2));
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
   });
 });

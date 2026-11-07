@@ -2,13 +2,17 @@
 // 카드는 답을 `onRespond` 로 올릴 뿐이다 (`claudeSessionRespond`). 답한 카드는 접혀서 고른 답이 보이고, 지나감 · 취소됨은 흐리게 한 줄.
 // 항상 허용의 규칙은 요청의 `alwaysRule` 이고 화면이 고르지 않는다 — 없으면 단추를 보이지 않는다 (D-23 · D-45).
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { CatFigure } from "../../components/cat/CatFigure";
+import type { CatId } from "../../components/cat/catalog";
 import { t, tf, type TextKey } from "../../i18n/ko";
-import type { AnswerValue, ClaudeResponse, QuestionInfo, QuestionRequestInfo } from "../../lib/ipc-types";
+import type { AnswerValue, ClaudeResponse, QuestionInfo, QuestionRequestInfo, WorkerRef } from "../../lib/ipc-types";
 import { Icon, type IconName } from "../../variants/shared/icons";
+import { catForWorker, catName, useWorkerRoles } from "../progress/workerCat";
 import { approvalChoiceOf, approvalLabel, parseApproval, type Approval } from "./approval";
 import { dropDraft, getDraft, setDraft } from "./cardDrafts";
 import { chatErrorText } from "./errors";
 import type { CardState, PermissionView } from "./model";
+import { selectWorkerName, useSessionStore } from "./sessionStore";
 
 export type Respond = (requestId: string, response: ClaudeResponse) => Promise<void>;
 
@@ -56,13 +60,31 @@ const STATE_LABEL: Record<CardState["status"], TextKey> = {
   expired: "ws.chat.card.expired",
 };
 
-function CardHead({ label, icon, status, note }: { label: string; icon: IconName; status: CardState["status"]; note?: string | null }) {
+/** 요청을 한 작업자의 고양이 — 요청의 `worker` 에서 작업자 목록(`toolUseId`)으로, 없으면 요청의 이름으로. 작업자가 아니거나 누군지 모르면 `null` (먹물 쪽 요청처럼) */
+function useRequestWorker(worker: WorkerRef | null | undefined): { cat: CatId; name: string } | null {
+  const listed = useSessionStore(selectWorkerName(worker?.toolUseId ?? null));
+  const roles = useWorkerRoles(worker != null);
+  const raw = listed ?? worker?.name ?? null;
+  if (!worker || raw === null) return null;
+  const cat = catForWorker(raw, { roles });
+  return { cat, name: catName(cat) };
+}
+
+function CardHead({ label, icon, status, note, worker }: { label: string; icon: IconName; status: CardState["status"]; note?: string | null; worker?: { cat: CatId; name: string } | null }) {
   return (
     <header className="wc-card__head">
       <span className="wc-card__icon" aria-hidden="true">
         <Icon name={icon} size={16} />
       </span>
       <span className="wc-card__kind">{label}</span>
+      {worker && (
+        <span className="wc-card__who">
+          <span className="wc-card__avatar" aria-hidden="true">
+            <CatFigure cat={worker.cat} crop="face" />
+          </span>
+          {tf("ws.chat.card.fromWorker", { cat: worker.name })}
+        </span>
+      )}
       {note && <span className="wc-card__more">{note}</span>}
       <span className="wc-card__state" data-status={status}>
         {t(STATE_LABEL[status])}
@@ -281,6 +303,7 @@ export function QuestionCard({ info, state, onRespond, first }: CardProps & { in
   const wantFocus = useRef(false);
   /** 요약에서 [바꾸기] 로 왔다 — 고치고 나면 남은 질문을 거치지 않고 요약으로 돌아간다 */
   const backToSummary = useRef(false);
+  const worker = useRequestWorker(info.worker);
 
   // 고른 값 · 보던 칸은 카드가 닫힐 때까지 앱 안에 둔다
   useEffect(() => {
@@ -344,7 +367,7 @@ export function QuestionCard({ info, state, onRespond, first }: CardProps & { in
 
   return (
     <Article kind="question" label={t("variant.ws.card.question")} state={state} first={first}>
-      <CardHead label={t("variant.ws.card.question")} icon="info" status={state.status} />
+      <CardHead label={t("variant.ws.card.question")} icon="info" status={state.status} worker={worker} />
       {pending ? (
         <form className="wc-card__body" onSubmit={send} onKeyDown={onKeyDown}>
           {multiStep && (
@@ -512,6 +535,7 @@ export function ApprovalCard({ info, approval, state, onRespond, first }: CardPr
   const [writing, setWriting] = useState(false);
   const [text, setText] = useState("");
   const writeRef = useRevealWhenOpen<HTMLTextAreaElement>(writing);
+  const worker = useRequestWorker(info.worker);
   const pending = state.status === "pending";
   if (!question) return null;
   const answer = (value: string) => void submit({ kind: "answer", answers: { [question.question]: value } });
@@ -521,7 +545,7 @@ export function ApprovalCard({ info, approval, state, onRespond, first }: CardPr
 
   return (
     <Article kind="approval" label={t("variant.ws.card.approval")} state={state} first={first}>
-      <CardHead label={t("variant.ws.card.approval")} icon="check" status={state.status} />
+      <CardHead label={t("variant.ws.card.approval")} icon="check" status={state.status} worker={worker} />
       <div className="wc-card__body">
         <h3 className="wc-card__title">{heading}</h3>
         <dl className="wc-appr">
@@ -651,6 +675,7 @@ export function PermissionCard({ info, state, onRespond, first, more = 0 }: Card
   const [words, setWords] = useState("");
   const tellRef = useRevealWhenOpen<HTMLTextAreaElement>(telling);
   const alwaysId = useId();
+  const worker = useRequestWorker(info.worker);
   const pending = state.status === "pending";
   const target = info.command ?? info.path;
   const kindKey = TOOL_LABEL[info.tool];
@@ -658,7 +683,7 @@ export function PermissionCard({ info, state, onRespond, first, more = 0 }: Card
 
   return (
     <Article kind="permission" label={t("variant.ws.card.permission")} state={state} first={first}>
-      <CardHead label={t("variant.ws.card.permission")} icon="key" status={state.status} note={pending && more > 0 ? tf("ws.chat.card.moreRequests", { n: more }) : null} />
+      <CardHead label={t("variant.ws.card.permission")} icon="key" status={state.status} note={pending && more > 0 ? tf("ws.chat.card.moreRequests", { n: more }) : null} worker={worker} />
       <div className="wc-card__body">
         {info.description && info.description !== target && <p className="wc-card__text">{info.description}</p>}
         <div className="wc-perm">

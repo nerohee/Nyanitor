@@ -1,4 +1,4 @@
-// 작업 공간의 칸 틀 — 창 크기와 상관없이 판 하나에 탭 [채팅] [요구사항] (P6-08). 시제품 `variants/shared/workspace.tsx` 의 `WorkPanels` · `useWide` 를 바탕으로.
+// 작업 공간의 칸 틀 — 창 크기와 상관없이 판 하나에 탭 [채팅] [진행] [문서] [요구사항] (P6-08 · P7-04). 시제품 `variants/shared/workspace.tsx` 의 `WorkPanels` · `useWide` 를 바탕으로.
 // 탭은 ←/→ · Home/End 로 옮긴다 (WAI-ARIA tabs). 안 보이는 탭도 마운트된 채로 숨긴다. `useWide` 는 프로젝트 목록을 옆에 둘지 정하는 데 쓴다.
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { t, tf } from "../i18n/ko";
@@ -35,9 +35,11 @@ interface Props {
   className?: string;
   /** 탭 줄 왼쪽 (좁은 창의 프로젝트 바꾸기) */
   tabStart?: ReactNode;
+  /** 탭 줄 오른쪽 (작은 둥근 창문) */
+  tabEnd?: ReactNode;
 }
 
-export function WorkPanels({ panels, active, onActive, className, tabStart }: Props) {
+export function WorkPanels({ panels, active, onActive, className, tabStart, tabEnd }: Props) {
   const tabs = useRef(new Map<string, HTMLButtonElement>());
 
   const index = Math.max(
@@ -99,6 +101,7 @@ export function WorkPanels({ panels, active, onActive, className, tabStart }: Pr
             );
           })}
         </div>
+        {tabEnd}
       </div>
       {/* 안 보이는 탭도 그대로 두고 숨긴다 — 편집기의 글 · 저장이 끊기지 않게 */}
       {panels.map((panel) => (

@@ -1,8 +1,8 @@
 // 실제 작업 공간 — 시안 a 「들여다보는 창」 (D-30 · ③ 스티커 수첩, D-43). 뒤로 물러난 마당 장면 위 종이(`ws-paper`)에
-// 넓은 창은 프로젝트 목록 | 탭 판, 좁은 창은 프로젝트 바꾸기 단추 + 탭 판. 탭은 [채팅] [요구사항] (처음 채팅, P6-08).
-// 프로젝트 · 새 프로젝트 · 프로젝트 설정 · 요구사항 편집기 (P6-04) + 채팅 (P6-05, `chat/`). 진행 보기 · 둥근 창문 · 일하는 고양이는 P7.
+// 넓은 창은 프로젝트 목록 | 탭 판, 좁은 창은 프로젝트 바꾸기 단추 + 탭 판. 탭은 [채팅] [진행] [문서] [요구사항] (처음 채팅, P6-08 · P7-04) + 탭 줄 오른쪽 작은 둥근 창문(누르면 진행 탭).
+// 프로젝트 · 새 프로젝트 · 프로젝트 설정 · 요구사항 편집기 (P6-04) + 채팅 (P6-05, `chat/`) + 진행 보기 · 일하는 고양이 · 둥근 창문 (P7-04, `progress/`) + 문서 보기 (`docs/`).
 // 고른 프로젝트(`projectId`)는 앱(App)이 들고 있다 — 고양이 집에서 프로젝트를 눌러 들어와도 같다. 고른 것이 없으면 가장 최근에 연 프로젝트.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
 import { HouseScene } from "../components/house/HouseScene";
 import { timeOfDay } from "../components/house/time";
@@ -17,11 +17,17 @@ import { NoProjects, ProjectNavList, ProjectSwitcher } from "./ProjectList";
 import { ProjectSettingsDialog } from "./ProjectSettings";
 import { Dialog as DialogBox } from "./Dialog";
 import { RequirementsEditor, type EditorGuard } from "./RequirementsEditor";
+import { DocsPane } from "./docs/DocsPane";
+import { MiniWindow } from "./progress/RoomWindow";
+import { ProgressPane } from "./progress/ProgressPane";
+import { windowScene } from "./progress/placement";
+import { useWorkerRoles } from "./progress/workerCat";
+import { workingWorkers } from "./progress/workers";
 import { useProjects } from "./useProjects";
 import { useWide, WorkPanels } from "./WorkPanels";
 import { PendingAnnouncer } from "./chat/Announcer";
 import { ChatPane } from "./chat/ChatPane";
-import { selectPending, startSessionStore, useSessionStore } from "./chat/sessionStore";
+import { selectPending, selectWorkers, startSessionStore, useSessionStore } from "./chat/sessionStore";
 import "./workspace.css";
 
 interface Props {
@@ -119,6 +125,11 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   const [editorConflict, setEditorConflict] = useState(false);
   /** 채팅 탭에 붙는, 답을 기다리는 카드 수 */
   const waitingCards = useSessionStore(selectPending(selectedId));
+  /** 작은 창문 — 지금 일하는 고양이 (먼저 시작한 순) */
+  const workers = useSessionStore(selectWorkers(selectedId));
+  const roles = useWorkerRoles(selectedId !== null);
+  const working = useMemo(() => workingWorkers(workers), [workers]);
+  const mini = useMemo(() => windowScene(working, false, roles), [working, roles]);
 
   // 세션 저장소는 앱이 켜질 때 한 번 시작한다 (`App.tsx`) — 여기서 한 번 더 불러도 같은 것 (작업 공간만 따로 열어 본 시험)
   useEffect(() => {
@@ -216,12 +227,23 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
                       />
                     )
                   }
+                  tabEnd={<MiniWindow cat={mini.focus} count={mini.all.length} onOpen={() => setActive("progress")} />}
                   panels={[
                     {
                       id: "chat",
                       label: t("variant.ws.tab.chat"),
                       badge: waitingCards,
                       content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} />,
+                    },
+                    {
+                      id: "progress",
+                      label: t("ws.tab.progress"),
+                      content: <ProgressPane key={selected.id} projectId={selected.id} visible={active === "progress"} time={time} now={now} roles={roles} />,
+                    },
+                    {
+                      id: "docs",
+                      label: t("ws.tab.docs"),
+                      content: <DocsPane key={selected.id} projectId={selected.id} visible={active === "docs"} />,
                     },
                     {
                       id: "editor",

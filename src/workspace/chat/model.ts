@@ -4,6 +4,8 @@ import type {
   ChatEntry,
   ChatListEvent,
   ChatRequestState,
+  ChatWorkerState,
+  ChatWorkerStatus,
   ClaudeEvent,
   PermissionRequestInfo,
   QuestionRequestInfo,
@@ -37,17 +39,35 @@ export type ChatBody =
   | { kind: "question"; info: QuestionRequestInfo; state: CardState }
   | { kind: "permission"; info: PermissionView; state: CardState }
   | { kind: "turnEnd"; outcome: "interrupted" | "error" | "limit"; detail: string | null }
+  /** 작업자(서브에이전트)를 맡긴 줄 — 시작 때 한 줄이 생기고 끝나면 같은 줄의 `status` 가 바뀐다 (`toolUseId` 가 같은 줄) */
+  | { kind: "worker"; toolUseId: string; name: string; description: string | null; background: boolean; status: ChatWorkerStatus; startedAtMs: number; endedAtMs: number | null }
   | { kind: "notice"; code: NoticeCode; detail: string | null; resetsAt: number | null; utilization: number | null; limitStatus: string | null };
 
-export type ChatLine = { key: string } & ChatBody;
+/** `atMs` — 그 줄이 생긴 때 (유닉스 밀리초, 모르면 없다). 기록은 초 단위, 실시간은 받은 때 */
+export type ChatLine = { key: string; atMs?: number } & ChatBody;
 
 export type ChatLineKind = ChatLine["kind"];
 
 /** 먹물이 멈춰 있는 이유 — 갑자기 멈춤(`died`) · 마지막 턴이 오류 · 한도 */
 export type Halted = "died" | "error" | "limit" | null;
 
+/** 세션 시작 표시 — 채팅 줄이 아니라서(보이지 않는다) 따로 둔다. 요약 로그가 쓴다. `afterKey` = 그 앞의 마지막 줄 (맨 앞이면 null) */
+export interface SessionStart {
+  key: string;
+  atMs: number | null;
+  resumed: boolean;
+  afterKey: string | null;
+}
+
+/** 작업자를 부르는 도구 이름 — `Agent` (옛 이름 `Task`). 작업자 줄과 겹치니 채팅에서 숨긴다 */
+export const AGENT_TOOLS: readonly string[] = ["Agent", "Task"];
+
 export interface ChatData {
   lines: ChatLine[];
+  /** 세션 시작들 (오래된 것이 앞) */
+  starts: SessionStart[];
+  /** 숨긴 `Agent` · `Task` 도구 호출의 `toolUseId` — 그 `tool_result` 를 알아보려고 */
+  agentCalls: string[];
   /** 실시간 줄의 다음 번호 */
   nextKey: number;
   /** 가장 최근 세션 시작 — 모델 · 수준 (앱이 다시 그려져도 기록에서 읽는다) */
@@ -55,7 +75,7 @@ export interface ChatData {
   halted: Halted;
 }
 
-export const emptyChat = (): ChatData => ({ lines: [], nextKey: 1, lastStart: null, halted: null });
+export const emptyChat = (): ChatData => ({ lines: [], starts: [], agentCalls: [], nextKey: 1, lastStart: null, halted: null });
 
 /** 채팅에 보이는 경고 코드 — 나머지 경고는 채팅에 보이지 않는다 */
 const PLANNER_WARNINGS = new Set(["planner_config_missing", "planner_config_unreadable", "planner_model_unusable", "planner_effort_unusable"]);
@@ -71,6 +91,10 @@ interface Meta {
   id?: number;
   truncated?: boolean;
   request?: ChatRequestState | null;
+  /** 작업자 시작 항목의 지금 상태 */
+  worker?: ChatWorkerState | null;
+  /** 이벤트가 생긴 때 (유닉스 밀리초) */
+  atMs?: number | null;
 }
 
 function noticeOf(code: NoticeCode, extra: Partial<Extract<ChatBody, { kind: "notice" }>> = {}): ChatBody {
@@ -78,8 +102,9 @@ function noticeOf(code: NoticeCode, extra: Partial<Extract<ChatBody, { kind: "no
 }
 
 function withKey(data: ChatData, meta: Meta | undefined, line: ChatBody): { data: ChatData; line: ChatLine } {
-  if (meta?.id !== undefined) return { data, line: { ...line, key: `h-${meta.id}` } as ChatLine };
-  return { data: { ...data, nextKey: data.nextKey + 1 }, line: { ...line, key: `l-${data.nextKey}` } as ChatLine };
+  const at = meta?.atMs == null ? {} : { atMs: meta.atMs };
+  if (meta?.id !== undefined) return { data, line: { ...line, ...at, key: `h-${meta.id}` } as ChatLine };
+  return { data: { ...data, nextKey: data.nextKey + 1 }, line: { ...line, ...at, key: `l-${data.nextKey}` } as ChatLine };
 }
 
 function push(data: ChatData, meta: Meta | undefined, line: ChatBody): ChatData {
@@ -112,21 +137,75 @@ function upsertCard(data: ChatData, event: Extract<ClaudeEvent | ChatListEvent, 
   return { ...data, lines: data.lines.map((candidate, index) => (index === existing ? (replaced as ChatLine) : candidate)) };
 }
 
+type WorkerLine = Extract<ChatLine, { kind: "worker" }>;
+
+/** 작업자 줄 하나 — 이미 있으면(기록 + 실시간, 다시 그릴 때) 한 줄로. 상태는 더 나아간 쪽(끝남이 일하는 중을 이긴다) */
+function upsertWorker(data: ChatData, event: Extract<ClaudeEvent, { type: "worker_started" }>, meta: Meta | undefined): ChatData {
+  const status = meta?.worker?.status ?? "running";
+  const endedAtMs = meta?.worker?.endedAtMs ?? null;
+  const body = { kind: "worker" as const, toolUseId: event.toolUseId, name: event.name, description: event.description, background: event.background, startedAtMs: event.atMs };
+  const existing = data.lines.findIndex((line) => line.kind === "worker" && line.toolUseId === event.toolUseId);
+  if (existing < 0) return push(data, { ...meta, atMs: event.atMs }, { ...body, status, endedAtMs });
+  return {
+    ...data,
+    lines: data.lines.map((line, index) => {
+      if (index !== existing || line.kind !== "worker") return line;
+      const keep = line.status !== "running";
+      return { ...line, ...body, status: keep ? line.status : status, endedAtMs: keep ? line.endedAtMs : endedAtMs } as ChatLine;
+    }),
+  };
+}
+
+function endWorker(data: ChatData, toolUseId: string, status: ChatWorkerStatus, endedAtMs: number | null): ChatData {
+  let changed = false;
+  const lines = data.lines.map((line) => {
+    if (line.kind !== "worker" || line.toolUseId !== toolUseId || line.status !== "running") return line;
+    changed = true;
+    return { ...line, status, endedAtMs } as ChatLine;
+  });
+  return changed ? { ...data, lines } : data;
+}
+
+/** 일하는 중인 작업자 줄을 모두 `stopped` 로 — 세션이 없는데 기록이 "일하는 중" 이라 하면 (끝 알림을 못 받음) */
+export function settleWorkers(data: ChatData): ChatData {
+  if (!data.lines.some((line) => line.kind === "worker" && line.status === "running")) return data;
+  return { ...data, lines: data.lines.map((line) => (line.kind === "worker" && line.status === "running" ? ({ ...line, status: "stopped" } as ChatLine) : line)) };
+}
+
+export const isWorkerLine = (line: ChatLine): line is WorkerLine => line.kind === "worker";
+
 /** 이벤트 하나를 목록에 접는다. 기록 항목이면 `meta` 에 번호 · 잘림 · 카드 상태가 온다 */
 export function foldEvent(data: ChatData, event: ClaudeEvent | ChatListEvent, meta?: Meta): ChatData {
   const truncated = meta?.truncated ?? false;
   switch (event.type) {
-    case "session_started":
-      return { ...data, lastStart: { model: event.model, effort: event.effort }, halted: null };
+    case "session_started": {
+      const key = meta?.id !== undefined ? `h-${meta.id}` : `l-${data.nextKey}`;
+      const start: SessionStart = { key, atMs: meta?.atMs ?? null, resumed: event.resumed, afterKey: data.lines[data.lines.length - 1]?.key ?? null };
+      return {
+        ...data,
+        nextKey: meta?.id !== undefined ? data.nextKey : data.nextKey + 1,
+        starts: [...data.starts, start],
+        lastStart: { model: event.model, effort: event.effort },
+        halted: null,
+      };
+    }
     case "user_message":
       return push({ ...data, halted: null }, meta, { kind: "user", text: event.text, deferred: event.deferred, truncated });
     case "text":
       return push(data, meta, { kind: "orch", text: event.text, truncated });
     case "tool_use":
+      // 작업자를 부른 줄은 작업자 줄과 겹친다 — 보이지 않게 두고 번호만 기억한다
+      if (AGENT_TOOLS.includes(event.tool)) return data.agentCalls.includes(event.toolUseId) ? data : { ...data, agentCalls: [...data.agentCalls, event.toolUseId] };
       return push(data, meta, { kind: "tool", tool: event.tool, summary: event.summary });
     case "tool_result":
-      // 성공한 결과는 기록에도 없다 — 실패한 것만 한 줄
-      return event.isError ? push(data, meta, { kind: "toolError", summary: event.summary, truncated }) : data;
+      // 성공한 결과는 기록에도 없다 — 실패한 것만 한 줄. 작업자를 부른 호출의 실패는 작업자 줄("못 끝냄")이 말한다
+      if (!event.isError) return data;
+      if (data.agentCalls.includes(event.toolUseId) && data.lines.some((line) => line.kind === "worker" && line.toolUseId === event.toolUseId)) return data;
+      return push(data, meta, { kind: "toolError", summary: event.summary, truncated });
+    case "worker_started":
+      return upsertWorker(data, event, meta);
+    case "worker_ended":
+      return endWorker(data, event.toolUseId, event.outcome, event.atMs);
     case "permission_request":
     case "question_request":
       return upsertCard(data, event, meta);
@@ -158,7 +237,16 @@ export function foldEvent(data: ChatData, event: ClaudeEvent | ChatListEvent, me
     case "session_ended": {
       const ended: ChatData = { ...data, halted: event.ended === "died" ? "died" : null };
       // 끝난 세션이 기다리던 카드는 취소됨 — Rust 가 취소 이벤트를 먼저 주지만 못 받았어도 남지 않게
-      const cleaned = { ...ended, lines: ended.lines.map((line) => ((line.kind === "question" || line.kind === "permission") && line.state.status === "pending" && meta?.id === undefined ? ({ ...line, state: { status: "cancelled", answer: null } } as ChatLine) : line)) };
+      const cleaned = {
+        ...ended,
+        lines: ended.lines.map((line) => {
+          if (meta?.id !== undefined) return line;
+          if ((line.kind === "question" || line.kind === "permission") && line.state.status === "pending") return { ...line, state: { status: "cancelled", answer: null } } as ChatLine;
+          // 끝난 세션의 작업자도 남지 않게 (Rust 가 `worker_ended` 를 먼저 주지만 못 받았어도)
+          if (line.kind === "worker" && line.status === "running") return { ...line, status: "stopped" } as ChatLine;
+          return line;
+        }),
+      };
       return event.ended === "died" ? push(cleaned, meta, noticeOf("session_died", { detail: event.stderrTail.join("\n") || null })) : cleaned;
     }
     case "warning":
@@ -167,7 +255,7 @@ export function foldEvent(data: ChatData, event: ClaudeEvent | ChatListEvent, me
       if (event.code === "history_write_failed") return push(data, meta, noticeOf("history_write_failed", { detail: event.detail }));
       return data;
     default:
-      // turn_started · raw_log — 채팅에 보이지 않는다
+      // turn_started · worker_activity · raw_log — 채팅에 보이지 않는다
       return data;
   }
 }
@@ -175,7 +263,7 @@ export function foldEvent(data: ChatData, event: ClaudeEvent | ChatListEvent, me
 /** 기록 한 쪽(오래된 것이 앞) → 목록 */
 export function fromEntries(entries: readonly ChatEntry[]): ChatData {
   let data = emptyChat();
-  for (const entry of entries) data = foldEvent(data, entry.event, { id: entry.id, truncated: entry.truncated, request: entry.request });
+  for (const entry of entries) data = foldEvent(data, entry.event, { id: entry.id, truncated: entry.truncated, request: entry.request, worker: entry.worker, atMs: entry.at * 1000 });
   return data;
 }
 
@@ -183,7 +271,18 @@ export function fromEntries(entries: readonly ChatEntry[]): ChatData {
 export function prependEntries(data: ChatData, entries: readonly ChatEntry[]): ChatData {
   const older = fromEntries(entries);
   const have = new Set(data.lines.map((line) => line.key));
-  return { ...data, lines: [...older.lines.filter((line) => !have.has(line.key)), ...data.lines], lastStart: data.lastStart ?? older.lastStart };
+  const olderLines = older.lines.filter((line) => !have.has(line.key));
+  // 지금 목록의 맨 앞(`afterKey` null)이던 시작은 이제 이전 쪽 마지막 줄 뒤
+  const lastOlder = olderLines[olderLines.length - 1]?.key ?? null;
+  const shifted = data.starts.map((start) => (start.afterKey === null && lastOlder !== null ? { ...start, afterKey: lastOlder } : start));
+  const haveStarts = new Set(shifted.map((start) => start.key));
+  return {
+    ...data,
+    lines: [...olderLines, ...data.lines],
+    starts: [...older.starts.filter((start) => !haveStarts.has(start.key)), ...shifted],
+    agentCalls: [...new Set([...older.agentCalls, ...data.agentCalls])],
+    lastStart: data.lastStart ?? older.lastStart,
+  };
 }
 
 // ───────────────────────── 기록 + 실시간 잇기 ─────────────────────────
@@ -199,6 +298,7 @@ export function isStoredEvent(event: ClaudeEvent): boolean {
     case "question_request":
     case "turn_ended":
     case "resume_not_found":
+    case "worker_started":
     case "session_ended":
       return true;
     case "tool_result":
@@ -231,6 +331,8 @@ function signature(event: ClaudeEvent | ChatListEvent): string {
       return `rate_limit:${event.resetsAt ?? ""}:${event.status ?? ""}`;
     case "resume_not_found":
       return `resume_not_found:${event.sessionId}`;
+    case "worker_started":
+      return `worker_started:${event.toolUseId}`;
     case "session_ended":
       return `session_ended:${event.ended}:${event.exitCode ?? ""}:${event.midTurn}`;
     default:
@@ -278,13 +380,15 @@ export function overlapCount(entries: readonly ChatEntry[], stored: readonly Cla
 
 /**
  * 기록(`data`, 이미 접은 것)에 읽는 동안 모은 이벤트를 잇는다.
- * 기록과 겹친 이벤트는 건너뛰되, 답 · 취소 · 경고는 그 자리 목록에 반영한다 (카드 상태가 어긋나지 않게).
+ * 기록과 겹친 이벤트는 건너뛰되, 답 · 취소 · 경고 · 작업자 끝은 그 자리 목록에 반영한다 (카드 · 작업자 상태가 어긋나지 않게).
+ * `times` = 모아 둔 이벤트를 받은 때 (같은 순서, 유닉스 밀리초 — 요약 로그의 시각).
  */
-export function mergeLive(data: ChatData, entries: readonly ChatEntry[], buffer: readonly ClaudeEvent[]): ChatData {
+export function mergeLive(data: ChatData, entries: readonly ChatEntry[], buffer: readonly ClaudeEvent[], times: readonly number[] = []): ChatData {
   const stored = buffer.filter(isStoredEvent);
   let skip = overlapCount(entries, stored);
   let next = data;
-  for (const event of buffer) {
+  for (const [index, event] of buffer.entries()) {
+    const atMs = times[index];
     if (isStoredEvent(event)) {
       if (skip > 0) {
         skip -= 1;
@@ -293,7 +397,7 @@ export function mergeLive(data: ChatData, entries: readonly ChatEntry[], buffer:
         continue;
       }
     }
-    next = foldEvent(next, event);
+    next = foldEvent(next, event, atMs === undefined ? undefined : { atMs });
   }
   return next;
 }

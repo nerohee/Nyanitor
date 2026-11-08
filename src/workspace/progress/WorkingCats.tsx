@@ -3,10 +3,10 @@
 import { CatFigure } from "../../components/cat/CatFigure";
 import type { CatId } from "../../components/cat/catalog";
 import { t, tf } from "../../i18n/ko";
+import { agoText, workedText } from "./elapsed";
 import { catForWorker, catName, type WorkerRoles } from "./workerCat";
 import type { WorkerEntry } from "./workers";
 
-const MINUTE = 60_000;
 const TEXT_MAX = 80;
 
 const clip = (text: string, max: number): string => {
@@ -30,15 +30,9 @@ function activityText(worker: WorkerEntry): string {
   return [what ? clip(what, TEXT_MAX) : t("ws.progress.working"), uses].filter(Boolean).join(" · ");
 }
 
-function minutesText(worker: WorkerEntry, nowMs: number): string {
-  const n = Math.floor((nowMs - worker.startedAtMs) / MINUTE);
-  return n >= 1 ? tf("ws.progress.minutes", { n }) : t("ws.progress.justNow");
-}
+const minutesText = (worker: WorkerEntry, nowMs: number): string => workedText(worker.startedAtMs, nowMs);
 
-function agoText(worker: WorkerEntry, nowMs: number): string {
-  const n = Math.floor((nowMs - (worker.endedAtMs ?? worker.startedAtMs)) / MINUTE);
-  return n >= 1 ? tf("ws.progress.agoMinutes", { n }) : t("ws.progress.agoNow");
-}
+const endedText = (worker: WorkerEntry, nowMs: number): string => agoText(worker.endedAtMs ?? worker.startedAtMs, nowMs);
 
 interface Props {
   working: readonly WorkerEntry[];
@@ -94,7 +88,7 @@ export function WorkingCats({ working, recent, roles, nowMs }: Props) {
                       <span className="ws-wk__outcome">{t(`ws.progress.outcome.${outcome}`)}</span>
                     </span>
                     <span className="ws-wk__task">{worker.description?.trim() ? clip(worker.description, TEXT_MAX) : t("ws.progress.untitled")}</span>
-                    <span className="ws-wk__where">{agoText(worker, nowMs)}</span>
+                    <span className="ws-wk__where">{endedText(worker, nowMs)}</span>
                   </span>
                 </li>
               );

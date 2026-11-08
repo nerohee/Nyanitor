@@ -4,7 +4,6 @@
 import { useMemo } from "react";
 import type { CatId } from "../components/cat/catalog";
 import { REST_ALL, type CatIntent, type Intents } from "../components/house/schedule";
-import { t, tf } from "../i18n/ko";
 import { selectPending, selectWorkers, useSessionStore } from "../workspace/chat/sessionStore";
 import { ORCHESTRATOR, windowIntents } from "../workspace/progress/placement";
 import { catForWorker, useWorkerRoles, type WorkerRoles } from "../workspace/progress/workerCat";
@@ -56,11 +55,8 @@ export function homeWork(projectId: number | null, workers: readonly WorkerEntry
   return { intents, jobs, waiting };
 }
 
-/** 일한 지 얼마 — 진행 탭 일하는 고양이 줄과 같은 표기 ("3분째" · "방금 시작했어요") */
-export function workedText(startedAtMs: number, nowMs: number): string {
-  const n = Math.floor((nowMs - startedAtMs) / 60_000);
-  return n >= 1 ? tf("ws.progress.minutes", { n }) : t("ws.progress.justNow");
-}
+/** 일한 지 얼마 — 진행 탭 일하는 고양이 줄과 같은 표기 ("방금 시작했어요" · "3분째" · "2시간째") */
+export { workedText } from "../workspace/progress/elapsed";
 
 export function useHomeWork(): HomeWork {
   const projectId = useSessionStore((state) => state.session?.projectId ?? null);

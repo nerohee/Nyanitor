@@ -1,6 +1,6 @@
 // 채팅 목록 — 줄 그리기 + 스크롤: 처음엔 맨 아래(기다리는 카드가 있으면 그 카드 머리가 보이게), 새 글이 오면 맨 아래에 붙되
 // 사용자가 위를 보고 있으면 끌어내리지 않고 "새 글 n" 단추, 이전 쪽을 앞에 붙여도 보던 자리가 그대로.
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t, tf } from "../../i18n/ko";
 import { Icon } from "../../variants/shared/icons";
 import { QuestionRequest, PermissionCard, type Respond } from "./Cards";
@@ -75,6 +75,7 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
   const prev = useRef<{ first: string | null; last: string | null; count: number; height: number } | null>(null);
   const [unread, setUnread] = useState(0);
 
+  const noLines = lines.length === 0;
   const firstPending = lines.findIndex((line) => (line.kind === "question" || line.kind === "permission") && line.state.status === "pending");
 
   // 기다리는 권한 요청은 가장 먼저 온 하나만 그린다 — 나머지는 그 카드 머리의 "남은 요청 n개" 로 (답하면 다음 것이 그 자리에)
@@ -82,14 +83,10 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
   const frontPerm = pendingPerms[0];
   const morePerms = pendingPerms.length - 1;
 
+  // 맨 아래를 보고 있으면 늘 맨 아래를 따라간다 (편집기 채팅처럼) — 기다리는 카드가 있어도 그 뒤 새 글 · 다음 카드까지 (P7 써 보기, 고객).
+  // 위로 올려 읽는 중이면 끌어내리지 않고 "새 글 n" 단추. 카드로 돌아가는 길은 "기다리는 카드로" 단추
   const toBottom = (el: HTMLElement) => {
     el.scrollTop = el.scrollHeight;
-    // 기다리는 카드가 있으면 그 카드 머리가 보이게
-    const card = el.querySelector<HTMLElement>('[data-pending-card="true"]');
-    if (card) {
-      const top = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 12;
-      if (top < el.scrollTop) el.scrollTop = top;
-    }
     stuck.current = true;
   };
 
@@ -110,12 +107,22 @@ export function ChatLog({ lines, hasMore, loadingOlder, olderFailed, onLoadOlder
       el.scrollTop += el.scrollHeight - before.height;
       return;
     }
-    if (last !== before.last) {
-      const added = Math.max(1, lines.length - before.count);
-      if (stuck.current) toBottom(el);
-      else setUnread((n) => n + added);
-    }
+    // 맨 아래를 보고 있으면 끝 줄이 같아도(다음 카드가 그 자리에 · 카드에 답함) 다시 맨 아래로
+    if (stuck.current) toBottom(el);
+    else if (last !== before.last) setUnread((n) => n + Math.max(1, lines.length - before.count));
   }, [lines]);
+
+  // 줄 수는 같은데 높이만 바뀔 때 (카드가 접히거나 펼쳐짐, 글이 늘어남) — 맨 아래를 보고 있었으면 따라간다
+  useEffect(() => {
+    const el = log.current;
+    const items = el?.firstElementChild;
+    if (!el || !items || typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => {
+      if (stuck.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(items);
+    return () => observer.disconnect();
+  }, [noLines]);
 
   const onScroll = () => {
     const el = log.current;

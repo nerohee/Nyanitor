@@ -524,6 +524,57 @@ describe("목록", () => {
     expect(screen.queryByRole("button", { name: /새 글 \d/ })).not.toBeInTheDocument();
   });
 
+  it("맨 아래를 보고 있으면 기다리는 카드가 있어도 새 글 · 다음 카드를 따라 맨 아래로 (편집기 채팅처럼)", async () => {
+    let emit: (event: ClaudeEvent) => void = () => undefined;
+    vi.spyOn(ipc, "onClaudeEvent").mockImplementation((handler) => {
+      emit = handler;
+      return Promise.resolve(() => undefined);
+    });
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    const perm = (n: number) =>
+      ({
+        type: "permission_request",
+        requestId: `p${n}`,
+        toolUseId: `tp${n}`,
+        worker: null,
+        tool: "Bash",
+        displayName: "Bash",
+        description: `ping ${n}`,
+        command: `ping ${n}`,
+        path: null,
+        cwd: "C:\\dev\\cat-album",
+        input: { command: `ping ${n}` },
+        alwaysRule: null,
+      }) as ClaudeEvent;
+    act(() => {
+      emit({ type: "session_started", projectId: 1, projectDir: "C:\\dev\\cat-album", pid: 1, resumed: false, resumeSessionId: null, cliVersion: null, model: null, effort: null });
+      emit(perm(1));
+      emit(perm(2));
+    });
+    await screen.findByRole("article", { name: "권한 요청" });
+    const log = screen.getByTestId("chat-log");
+    let height = 1000;
+    let top = 900;
+    Object.defineProperty(log, "scrollHeight", { configurable: true, get: () => height });
+    Object.defineProperty(log, "clientHeight", { configurable: true, get: () => 100 });
+    Object.defineProperty(log, "scrollTop", { configurable: true, get: () => top, set: (value: number) => (top = value) });
+    fireEvent.scroll(log);
+    // 카드가 기다리는 동안 새 줄 — 카드 머리에 멈추지 않고 맨 아래로
+    height = 1400;
+    act(() => {
+      emit({ type: "tool_use", toolUseId: "t9", tool: "Read", summary: "file9.md" });
+    });
+    await screen.findByText(/file9\.md/);
+    expect(top).toBe(1400);
+    // 첫 카드에 답하면 다음 카드가 그 자리에 — 끝 줄이 같아도 맨 아래로
+    height = 1600;
+    act(() => {
+      emit({ type: "request_answered", requestId: "p1" } as ClaudeEvent);
+    });
+    await waitFor(() => expect(top).toBe(1600));
+  });
+
   it("실시간 줄 — 실패한 도구는 글이 있으면 그대로 · 없으면 대시 없이, 알림 역할을 단다", async () => {
     let emit: (event: ClaudeEvent) => void = () => undefined;
     vi.spyOn(ipc, "onClaudeEvent").mockImplementation((handler) => {

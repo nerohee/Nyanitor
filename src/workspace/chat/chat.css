@@ -4,8 +4,6 @@
  * 접두사 `wc-` = workspace chat.
  */
 .wc {
-  /* 알림 띠 — workspace.css 가 정하지 않은 위험 띠 (tokens.css 의 [data-variant] 절과 같은 식) */
-  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
   /* 머리 줄이 판 폭에 맞춰 한 줄 / 두 줄을 고른다 (아래 @container wc) */
   container: wc / inline-size;
   display: flex;
@@ -493,6 +491,11 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+  /* 카드 종류("권한 요청")와 붙어 한 덩어리로 읽히지 않게 — 점선 이름표 (③ 칩과 같은 재질) */
+  padding: 0 var(--space-2) 0 2px;
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }

@@ -147,9 +147,9 @@ export function DocsPane({ projectId, visible }: { projectId: number; visible: b
               {groups.length === 0 && <p className="ws-dc__note">{t("ws.docs.empty")}</p>}
               {groups.map((group) => (
                 <section key={group.dir} className="ws-dc__group">
-                  <h3 className="ws-dc__dir" title={group.dir || list.listing.docsDir}>
+                  <h3 className="ws-dc__dir" title={group.dir ? `${list.listing.docsDir}/${group.dir}` : list.listing.docsDir}>
                     <Icon name="folder" size={14} />
-                    <span>{tf("ws.docs.root", { dir: group.dir ? `${list.listing.docsDir}/${group.dir}` : list.listing.docsDir })}</span>
+                    <span>{tf("ws.docs.root", { dir: group.dir || list.listing.docsDir })}</span>
                     <span className="ws-dc__count">{tf("ws.docs.count", { n: group.files.length })}</span>
                   </h3>
                   <ul>

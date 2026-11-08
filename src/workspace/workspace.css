@@ -26,10 +26,6 @@ body:has(.ws) {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 20px 20px;
   /* 왼쪽 메뉴 폭 — 시제품 ③ 과 같다 (src/components/nav/nav.css) */
   --nav-w: 92px;
-  /* 알림 띠 — tokens.css 의 [data-variant] 절과 같은 식 (실제 화면 뿌리에는 data-variant 가 없다) */
-  --banner-info-bg: var(--accent-soft);
-  --banner-ok-bg: color-mix(in srgb, var(--color-success) 13%, var(--color-surface));
-  --banner-warn-bg: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
   display: grid;
   grid-template-columns: var(--nav-w) minmax(0, 1fr);
   height: 100vh;

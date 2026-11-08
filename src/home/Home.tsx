@@ -1,7 +1,7 @@
 // 실제 메인 화면 — 고양이 집 (시안 a 「들여다보는 창」, D-30 · ③ 스티커 수첩, D-43).
 // 집이 화면 전체 무대, 카드는 그림의 빈 곳: 왼쪽 위 = 준비 상태 + 사용량, 아래 판 = 최근 프로젝트 + 새 프로젝트 단추 (P6-04).
 // 왼쪽에 메뉴(고양이 집 · 작업 공간) — 프로젝트를 누르면 작업 공간에서 열린다.
-// 앱이 돌린 세션의 작업자가 일하는 동안 그 고양이는 캣휠(점검은 캣타워)에, 먹물은 기다리는 카드가 있으면 댓돌에 있다 (P7-05, `useHomeWork`). 나머지는 쉰다.
+// 앱이 돌린 세션의 작업자가 일하는 동안 그 고양이는 캣휠(점검은 캣타워)에, 기다리는 카드를 보낸 고양이(먹물, 또는 권한을 물은 작업자)는 댓돌에 있다 (P7-05, `useHomeWork`). 나머지는 쉰다.
 import { useRef, useState } from "react";
 import { HouseScene } from "../components/house/HouseScene";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
@@ -92,7 +92,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, cl
           job
             ? { kind: "job", projectName, description: job.description, worked: workedText(job.startedAtMs, now.getTime()), onOpen: () => onOpenWork(job.projectId, "progress") }
             : waiting
-              ? { kind: "waiting", projectName, count: waiting.count, onOpen: () => onOpenWork(waiting.projectId, "chat") }
+              ? { kind: "waiting", projectName, count: waiting.count, description: waiting.description, onOpen: () => onOpenWork(waiting.projectId, "chat") }
               : undefined
         }
         onClose={panel.close}

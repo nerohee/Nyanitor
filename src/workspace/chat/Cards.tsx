@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent,
 import { CatFigure } from "../../components/cat/CatFigure";
 import type { CatId } from "../../components/cat/catalog";
 import { t, tf, type TextKey } from "../../i18n/ko";
+import { withSubject } from "../../i18n/josa";
 import type { AnswerValue, ClaudeResponse, QuestionInfo, QuestionRequestInfo, WorkerRef } from "../../lib/ipc-types";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { catForWorker, catName, useWorkerRoles } from "../progress/workerCat";
@@ -82,7 +83,7 @@ function CardHead({ label, icon, status, note, worker }: { label: string; icon: 
           <span className="wc-card__avatar" aria-hidden="true">
             <CatFigure cat={worker.cat} crop="face" />
           </span>
-          {tf("ws.chat.card.fromWorker", { cat: worker.name })}
+          {tf("ws.chat.card.fromWorker", { cat: withSubject(worker.name) })}
         </span>
       )}
       {note && <span className="wc-card__more">{note}</span>}

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import type { TimeOfDay } from "../../components/house/time";
 import { t } from "../../i18n/ko";
 import { emptyChat } from "../chat/model";
-import { selectPending, selectRawLines, selectWorkers, useSessionStore } from "../chat/sessionStore";
+import { selectRawLines, selectWaitingAsker, selectWorkers, useSessionStore } from "../chat/sessionStore";
 import { PhaseBoard } from "./PhaseBoard";
 import { ProgressLog } from "./ProgressLog";
 import { RawOutput } from "./RawOutput";
@@ -35,11 +35,11 @@ export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
   const workers = useSessionStore(selectWorkers(projectId));
   const chat = useSessionStore((store) => store.chats[projectId]?.data ?? EMPTY_CHAT);
   const raw = useSessionStore(selectRawLines(projectId));
-  const waitingCards = useSessionStore(selectPending(projectId));
+  const waiting = useSessionStore(selectWaitingAsker(projectId));
 
   const working = useMemo(() => workingWorkers(workers), [workers]);
   const recent = useMemo(() => recentWorkers(workers), [workers]);
-  const scene = useMemo(() => windowScene(working, waitingCards > 0, roles), [working, waitingCards, roles]);
+  const scene = useMemo(() => windowScene(working, waiting, roles), [working, waiting, roles]);
   const log = useMemo(() => mergeLogs(buildSummaryLog({ chat, workers, roles }), boardLog), [chat, workers, roles, boardLog]);
 
   return (
@@ -48,7 +48,7 @@ export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
         <div className="ws-pg__live">
           <RoomWindow scene={scene} time={time} />
           <h3 className="ws-pg__h">{t("ws.progress.workingTitle")}</h3>
-          <WorkingCats working={working} recent={recent} roles={roles} nowMs={now.getTime()} />
+          <WorkingCats working={working} waiting={waiting} recent={recent} roles={roles} nowMs={now.getTime()} />
         </div>
         <div className="ws-pg__story">
           <h3 className="ws-pg__h">{t("ws.progress.boardTitle")}</h3>

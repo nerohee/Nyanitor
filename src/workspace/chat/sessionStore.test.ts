@@ -7,7 +7,7 @@ import { ipc } from "../../lib/ipc";
 import type { ChatEntry, ChatPage, ClaudeEvent, ClaudeSessionState, UsageSummary } from "../../lib/ipc-types";
 import { AppError } from "../../lib/ipc-types";
 import { pendingCount } from "./model";
-import { loadChat, loadOlder, resetSessionStore, selectPending, sendMessage, startSessionStore, useSessionStore } from "./sessionStore";
+import { loadChat, loadOlder, resetSessionStore, selectPending, selectWaitingAsker, sendMessage, startSessionStore, useSessionStore } from "./sessionStore";
 
 let emit: (event: ClaudeEvent) => void = () => undefined;
 const IDLE: ClaudeSessionState = { running: false, projectId: null, projectDir: null, pid: null, sessionId: null, busy: false, pending: [] };
@@ -369,5 +369,72 @@ describe("일하는 중에 보낸 말", () => {
     const send = vi.spyOn(ipc, "claudeSessionSend");
     await expect(sendMessage(1, "안녕")).rejects.toMatchObject({ kind: "project_folder_missing" });
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("기다리는 카드를 보낸 이", () => {
+  const workerStarted = (toolUseId: string, name: string): ClaudeEvent => ({ type: "worker_started", toolUseId, agentId: null, name, description: null, background: false, depth: 1, atMs: 1 });
+  const permission = (requestId: string, worker: { toolUseId: string | null; name: string | null } | null): ClaudeEvent => ({
+    type: "permission_request",
+    requestId,
+    toolUseId: null,
+    worker: worker ? { agentId: "a1", ...worker } : null,
+    tool: "Bash",
+    displayName: null,
+    description: null,
+    command: "npm install",
+    path: null,
+    cwd: "C:/p1",
+    input: null,
+    alwaysRule: null,
+  });
+  const asker = (projectId: number) => selectWaitingAsker(projectId)(useSessionStore.getState());
+
+  it("카드가 없으면 null — 질문 카드는 먹물(worker null) · 카드가 생긴 때", async () => {
+    await boot();
+    await loadChat(1);
+    emit(started(1));
+    expect(asker(1)).toBeNull();
+    emit(question("q1"));
+    expect(asker(1)).toMatchObject({ worker: null });
+    expect(asker(1)?.sinceMs).toEqual(expect.any(Number));
+    emit({ type: "request_answered", requestId: "q1", kind: "answer", text: null, answers: { "q?": "A" } });
+    expect(asker(1)).toBeNull();
+  });
+
+  it("작업자의 권한 카드는 작업자 이름(작업자 목록에서) — 맨 앞(먼저 온) 카드의 보낸 이", async () => {
+    await boot();
+    await loadChat(1);
+    emit(started(1));
+    emit(workerStarted("tu-1", "harness-builder-ui"));
+    emit(permission("p1", { toolUseId: "tu-1", name: null }));
+    emit(question("q2"));
+    expect(asker(1)?.worker).toBe("harness-builder-ui");
+    emit({ type: "request_answered", requestId: "p1", kind: "allow", text: null, answers: null });
+    expect(asker(1)?.worker).toBeNull();
+  });
+
+  it("작업자 목록에 없으면 요청의 이름, 이름도 없으면 먹물 쪽", async () => {
+    await boot();
+    await loadChat(1);
+    emit(started(1));
+    emit(permission("p1", { toolUseId: "tu-x", name: "harness-tester" }));
+    expect(asker(1)?.worker).toBe("harness-tester");
+    emit({ type: "request_cancelled", requestId: "p1" });
+    emit(permission("p2", { toolUseId: null, name: null }));
+    expect(asker(1)?.worker).toBeNull();
+  });
+
+  it("아직 읽지 않은 대화의 모아 둔 이벤트도 센다 · 값이 같으면 같은 객체 · 다른 프로젝트는 따로", async () => {
+    await boot();
+    emit(started(1));
+    emit(workerStarted("tu-1", "harness-reviewer"));
+    emit(permission("p1", { toolUseId: "tu-1", name: null }));
+    expect(chatOf(1)?.load).not.toBe("ready");
+    const first = asker(1);
+    expect(first?.worker).toBe("harness-reviewer");
+    expect(asker(1)).toBe(first);
+    expect(asker(2)).toBeNull();
+    expect(selectWaitingAsker(null)(useSessionStore.getState())).toBeNull();
   });
 });

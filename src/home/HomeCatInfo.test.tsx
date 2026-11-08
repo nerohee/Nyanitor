@@ -41,6 +41,23 @@ describe("HomeCatInfo — 맡은 일", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it("작업자가 댓돌에서 기다릴 때 — 맡은 일 줄이 남는다 · 칩은 '기다리는 중 — 댓돌에서'", () => {
+    show({ kind: "waiting", projectName: null, count: 1, description: "시험 쓰기", onOpen: () => undefined }, "stone");
+    expect(document.querySelector(".hm-info__state")).toHaveTextContent("기다리는 중");
+    expect(document.querySelector(".hm-info__doing")).toHaveTextContent("— 댓돌에서");
+    expect(screen.getByText("시험 쓰기")).toBeInTheDocument();
+    expect(screen.getByText("1개")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "채팅에서 보기" })).toBeInTheDocument();
+  });
+
+  it("일하는 칩은 자리만 — '일하는 중 — 캣휠에서', 쉬는 중은 예전 설명 그대로", () => {
+    const { unmount } = show({ kind: "job", projectName: null, description: null, worked: "3분째", onOpen: () => undefined }, "wheel");
+    expect(document.querySelector(".hm-info__doing")).toHaveTextContent(/^— 캣휠에서$/);
+    unmount();
+    show(undefined, "box");
+    expect(document.querySelector(".hm-info__doing")).toHaveTextContent("— 상자 안에서 쉬는 중");
+  });
+
   it("쉬는 고양이는 예전 그대로 — 쉬는 중, 일 줄 · 단추 없음", () => {
     show(undefined, "box");
     expect(document.querySelector(".hm-info__state")).toHaveTextContent("쉬는 중");

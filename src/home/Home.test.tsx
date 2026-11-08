@@ -820,6 +820,29 @@ describe("고양이 집 — 일하는 고양이 (P7-05)", () => {
     await vi.waitFor(() => expect(spotOf("mukmul")).toBe("stone"));
   });
 
+  it("작업자의 권한 카드가 기다리면 그 작업자 고양이가 댓돌 (먹물은 쉰다) — 정보 패널은 기다리는 중 + 카드 수 + 채팅에서 보기", async () => {
+    const onOpenWork = vi.fn();
+    render(<Home {...NAV} onOpenWork={onOpenWork} />);
+    await loaded();
+    startSession(1);
+    put(1, [worker("harness-builder-ui", 1), worker("harness-tester", 2)]);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        chats: { ...state.chats, 1: { ...state.chats[1], buffer: [{ type: "permission_request", requestId: "r1", worker: { agentId: "a", toolUseId: "t-harness-builder-ui-1", name: null } } as ClaudeEvent] } },
+      })),
+    );
+    await vi.waitFor(() => expect(spotOf("danchu")).toBe("stone"));
+    expect(spotOf("mukmul")).not.toBe("stone");
+    await vi.waitFor(() => expect(spotOf("kkaebi")).toBe("wheel"));
+    fireEvent.click(screen.getByRole("button", { name: /^단추,/ }));
+    const panel = screen.getByRole("region", { name: "단추" });
+    expect(panel.querySelector(".hm-info__state")).toHaveTextContent("기다리는 중");
+    expect(panel.querySelector(".hm-info__doing")).toHaveTextContent("— 댓돌에서");
+    expect(panel).toHaveTextContent("답을 기다리는 카드1개");
+    fireEvent.click(within(panel).getByRole("button", { name: "채팅에서 보기" }));
+    expect(onOpenWork).toHaveBeenCalledWith(1, "chat");
+  });
+
   it("일하는 고양이의 정보 패널 — 프로젝트 · 맡은 일 · 일한 지 + 진행 보기가 그 프로젝트의 진행 탭을 연다", async () => {
     const onOpenWork = vi.fn();
     render(<Home {...NAV} onOpenWork={onOpenWork} clock={() => new Date(5 * 60_000)} />);

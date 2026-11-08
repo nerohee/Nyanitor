@@ -714,17 +714,22 @@
   --progress-h: 10px;
   --progress-track: var(--color-surface-sunken);
   --progress-fill: var(--accent);
-  /* 알림 띠 (정보 · 됨 · 주의 · 위험) */
-  --banner-info-bg: var(--accent-soft);
-  --banner-ok-bg: color-mix(in srgb, var(--color-success) 13%, var(--color-surface));
-  --banner-warn-bg: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
-  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
   /* 상태 동전 (준비 목록 · 설치 단계) — 동전 안에는 늘 그림 기호, 옆에는 글자 */
   --coin-size: 30px;
   --coin-ok: color-mix(in srgb, var(--color-success) 24%, var(--color-surface));
   --coin-missing: color-mix(in srgb, var(--color-warning) 26%, var(--color-surface));
   --coin-failed: color-mix(in srgb, var(--color-danger) 20%, var(--color-surface));
   --coin-wait: var(--color-surface-sunken);
+}
+
+/* 알림 띠 (정보 · 됨 · 주의 · 위험) — 시안 틀(`[data-variant]`)과 실제 화면 뿌리(`.home` · `.ws` 의 `data-skin`) 둘 다.
+ * var() 를 품은 변수라 선언한 요소에서 값이 정해진다 — 화면 안쪽 요소는 뿌리에서 물려받는다. */
+[data-variant],
+[data-skin] {
+  --banner-info-bg: var(--accent-soft);
+  --banner-ok-bg: color-mix(in srgb, var(--color-success) 13%, var(--color-surface));
+  --banner-warn-bg: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
+  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
 }
 
 [data-skin="1"] {

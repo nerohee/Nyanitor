@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { fakeProgress, type FakeProgressMode } from "../../lib/fakeProgress";
 import { fakeProjects } from "../../lib/fakeProjects";
 import { ipc } from "../../lib/ipc";
-import { AppError, type HandoffTask, type ProgressRead, type RawLogEntry } from "../../lib/ipc-types";
+import { AppError, type ClaudeEvent, type HandoffTask, type ProgressRead, type RawLogEntry } from "../../lib/ipc-types";
 import { newChat, resetSessionStore, useSessionStore } from "../chat/sessionStore";
 import { resetWorkerRoles } from "./workerCat";
 import { ProgressPane } from "./ProgressPane";
@@ -91,6 +91,43 @@ describe("일하는 고양이", () => {
     expect(second).toHaveTextContent("백그라운드");
     expect(second).toHaveTextContent("일하는 중 · 방금 시작했어요");
     expect(screen.getByRole("img", { name: /작업실 창문 — 일하는 고양이: 단추, 깨비/ })).toBeInTheDocument();
+    expect(screen.queryByText("지금 일하는 고양이가 없어요")).not.toBeInTheDocument();
+    await screen.findByRole("list", { name: "단계" });
+  });
+
+  it("작업자의 권한 카드가 기다리면 그 고양이 줄이 맨 위에 '답을 기다려요' + 기다린 지 — 같은 고양이 두 줄 아님, 창문 이름표는 그대로", async () => {
+    putWorkers([worker({ toolUseId: "t1" }), worker({ toolUseId: "t2", name: "harness-tester", description: "시험 쓰기", startedAtMs: NOW.getTime() - 20_000 })]);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        chats: {
+          ...state.chats,
+          1: { ...state.chats[1], buffer: [{ type: "permission_request", requestId: "r1", worker: { agentId: "a", toolUseId: "t2", name: null } } as ClaudeEvent], bufferAt: [NOW.getTime() - 3 * 60_000] },
+        },
+      })),
+    );
+    mount();
+    const items = within(screen.getByRole("list", { name: "일하는 고양이" })).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveAttribute("data-waiting", "true");
+    expect(items[0]).toHaveTextContent("깨비");
+    expect(items[0]).toHaveTextContent("답을 기다려요");
+    expect(items[0]).toHaveTextContent("시험 쓰기");
+    expect(items[0]).toHaveTextContent("기다린 지 3분");
+    expect(items[1]).toHaveTextContent("단추");
+    expect(items[1]).not.toHaveAttribute("data-waiting");
+    expect(screen.getAllByText("깨비")).toHaveLength(1);
+    await screen.findByRole("list", { name: "단계" });
+  });
+
+  it("먹물이 질문을 기다리면 먹물 줄이 맨 위 (작업자 없어도), 카드가 생긴 때를 모르면 시간 없이", async () => {
+    putWorkers([]);
+    act(() => useSessionStore.setState((state) => ({ chats: { ...state.chats, 1: { ...state.chats[1], buffer: [{ type: "question_request", requestId: "q1" } as ClaudeEvent], bufferAt: [] } } })));
+    mount();
+    const items = within(screen.getByRole("list", { name: "일하는 고양이" })).getAllByRole("listitem");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("먹물");
+    expect(items[0]).toHaveTextContent("답을 기다려요");
+    expect(items[0]).not.toHaveTextContent("기다린 지");
     expect(screen.queryByText("지금 일하는 고양이가 없어요")).not.toBeInTheDocument();
     await screen.findByRole("list", { name: "단계" });
   });

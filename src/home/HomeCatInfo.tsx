@@ -14,7 +14,7 @@ export const DUTIES_FOLD_LENGTH = 90;
 /** 일하는 고양이(캣휠 · 캣타워) · 댓돌에서 기다리는 먹물의 일 — 쉬는 고양이는 없다 */
 export type HomeCatWork =
   | { kind: "job"; projectName: string | null; description: string | null; worked: string; onOpen: () => void }
-  | { kind: "waiting"; projectName: string | null; count: number; onOpen: () => void };
+  | { kind: "waiting"; projectName: string | null; count: number; description?: string | null; onOpen: () => void };
 
 interface HomeCatInfoProps {
   home: HomeCat;
@@ -120,10 +120,18 @@ function WorkLines({ work }: { work: HomeCatWork }) {
             </div>
           </>
         ) : (
-          <div>
-            <dt>{t("home.info.waitingCards")}</dt>
-            <dd>{tf("home.info.cardCount", { n: work.count })}</dd>
-          </div>
+          <>
+            {work.description && (
+              <div>
+                <dt>{t("home.info.task")}</dt>
+                <dd>{work.description}</dd>
+              </div>
+            )}
+            <div>
+              <dt>{t("home.info.waitingCards")}</dt>
+              <dd>{tf("home.info.cardCount", { n: work.count })}</dd>
+            </div>
+          </>
         )}
       </dl>
       <button type="button" className="hm-link" onClick={work.onOpen}>
@@ -168,7 +176,9 @@ export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCa
   const { cat, entry } = home;
   const stateText = work === undefined ? t("cat.info.resting") : work.kind === "job" ? t("cat.info.working") : t("home.info.waiting");
   const { ref: statusRef, short: statusShort } = useStatusFits(activity, stateText);
-  const doing = t(`cat.activity.${activityTextKey(activity)}` as TextKey);
+  // 일하는 · 기다리는 중이면 뒤 설명은 자리만 ("캣휠에서") — 쉬는 중의 설명은 `cat.activity.*` 그대로
+  const placeKey = `home.info.at.${activity}`;
+  const doing = work && isTextKey(placeKey) ? t(placeKey) : t(`cat.activity.${activityTextKey(activity)}` as TextKey);
 
   // 열리면 제목으로 포커스 — 화면 읽기 프로그램이 바로 읽고, Tab 이 패널 안으로 이어진다
   useEffect(() => {
@@ -203,7 +213,7 @@ export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCa
         </button>
       </header>
 
-      <p className="hm-info__status" ref={statusRef} data-short={statusShort ? "true" : undefined} title={statusShort ? `${stateText} — ${doing}` : undefined}>
+      <p className={`hm-info__status${work ? ` hm-info__status--${work.kind === "job" ? "work" : "wait"}` : ""}`} ref={statusRef} data-short={statusShort ? "true" : undefined} title={statusShort ? `${stateText} — ${doing}` : undefined}>
         <span className="hm-dot" aria-hidden="true" />
         <span className="hm-info__state">{stateText}</span>
         {/* 뒤 설명은 한 줄에 다 들어갈 때만 — 좁은 패널에서 넘치면 통째로 숨긴다. 숨겨도 화면 읽기 프로그램에는 따로 남긴다 */}

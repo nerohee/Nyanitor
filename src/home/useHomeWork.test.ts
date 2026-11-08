@@ -25,14 +25,14 @@ const worker = (name: string, startedAtMs: number, extra: Partial<WorkerEntry> =
 
 describe("homeWork — 순수 부분", () => {
   it("세션이 없으면 모두 쉰다 (예전과 같은 의도)", () => {
-    const work = homeWork(null, [], 0);
+    const work = homeWork(null, [], 0, null);
     expect(work.intents).toBe(REST_ALL);
     expect(work.jobs).toEqual({});
     expect(work.waiting).toBeNull();
   });
 
   it("작업자 하나 — 그 고양이가 캣휠, 일 정보에 프로젝트 · 작업자 이름 · 설명 · 시작 시각", () => {
-    const work = homeWork(3, [worker("harness-builder-ui", 100, { description: " 사진 목록 화면 " })], 0);
+    const work = homeWork(3, [worker("harness-builder-ui", 100, { description: " 사진 목록 화면 " })], 0, null);
     expect(work.intents[cat("ui")]).toBe("making");
     expect(work.intents[cat("main")]).toBe("rest");
     expect(work.jobs[cat("ui")]).toEqual({ cat: cat("ui"), projectId: 3, worker: "harness-builder-ui", description: "사진 목록 화면", startedAtMs: 100, intent: "making" });
@@ -41,48 +41,68 @@ describe("homeWork — 순수 부분", () => {
   });
 
   it("설명이 비었으면 null", () => {
-    expect(homeWork(1, [worker("harness-tester", 1, { description: "  " })], 0).jobs[cat("tester")]?.description).toBeNull();
-    expect(homeWork(1, [worker("harness-tester", 1, { description: null })], 0).jobs[cat("tester")]?.description).toBeNull();
+    expect(homeWork(1, [worker("harness-tester", 1, { description: "  " })], 0, null).jobs[cat("tester")]?.description).toBeNull();
+    expect(homeWork(1, [worker("harness-tester", 1, { description: null })], 0, null).jobs[cat("tester")]?.description).toBeNull();
   });
 
   it("둘이 같은 자리를 원하면 먼저 시작한 쪽만 일하고 뒤는 쉰다 (일 정보도 앞쪽만)", () => {
-    const work = homeWork(1, [worker("harness-tester", 20), worker("harness-builder-ui", 10)], 0);
+    const work = homeWork(1, [worker("harness-tester", 20), worker("harness-builder-ui", 10)], 0, null);
     expect(work.intents[cat("ui")]).toBe("making");
     expect(work.intents[cat("tester")]).toBe("rest");
     expect(Object.keys(work.jobs)).toEqual([cat("ui")]);
   });
 
   it("점검(reviewer)은 캣타워 — 캣휠 작업자와 함께 있을 수 있다", () => {
-    const work = homeWork(1, [worker("harness-builder-ui", 1), worker("harness-reviewer", 2)], 0);
+    const work = homeWork(1, [worker("harness-builder-ui", 1), worker("harness-reviewer", 2)], 0, null);
     expect(work.intents[cat("reviewer")]).toBe("watching");
     expect(work.jobs[cat("reviewer")]?.intent).toBe("watching");
     expect(work.jobs[cat("ui")]?.intent).toBe("making");
   });
 
   it("하네스 밖 작업자(general-purpose)는 두부가 캣휠", () => {
-    const work = homeWork(1, [worker("general-purpose", 1)], 0);
+    const work = homeWork(1, [worker("general-purpose", 1)], 0, null);
     expect(work.intents[cat("helper")]).toBe("making");
     expect(work.jobs[cat("helper")]?.worker).toBe("general-purpose");
   });
 
   it("끝난 작업자는 일하지 않는다", () => {
-    const work = homeWork(1, [worker("harness-builder-ui", 1, { status: "done", endedAtMs: 5 })], 0);
+    const work = homeWork(1, [worker("harness-builder-ui", 1, { status: "done", endedAtMs: 5 })], 0, null);
     expect(work.intents[cat("ui")]).toBe("rest");
     expect(work.jobs).toEqual({});
   });
 
   it("기다리는 카드가 있으면 먹물이 댓돌 — 수도 같이", () => {
-    const work = homeWork(7, [], 2);
+    const work = homeWork(7, [], 2, null);
     expect(work.intents[cat("main")]).toBe("wait");
-    expect(work.waiting).toEqual({ cat: cat("main"), projectId: 7, count: 2 });
+    expect(work.waiting).toEqual({ cat: cat("main"), projectId: 7, count: 2, description: null });
     expect(work.jobs).toEqual({});
-    expect(homeWork(7, [], 0).waiting).toBeNull();
+    expect(homeWork(7, [], 0, null).waiting).toBeNull();
   });
 
   it("작업자와 기다림이 같이 있어도 따로 — 작업자는 캣휠, 먹물은 댓돌", () => {
-    const work = homeWork(1, [worker("harness-builder-ui", 1)], 1);
+    const work = homeWork(1, [worker("harness-builder-ui", 1)], 1, null);
     expect(work.intents[cat("ui")]).toBe("making");
     expect(work.intents[cat("main")]).toBe("wait");
+  });
+});
+
+describe("homeWork — 기다리는 카드를 보낸 이", () => {
+  it("작업자의 권한 카드가 기다리면 그 작업자 고양이가 댓돌 — 먹물은 쉰다, 맡은 일 설명은 남는다, 일 자리(jobs)에는 없다", () => {
+    const work = homeWork(1, [worker("harness-builder-ui", 1, { description: " 화면 " })], 2, { worker: "harness-builder-ui" });
+    expect(work.intents[cat("ui")]).toBe("wait");
+    expect(work.intents[cat("main")]).toBe("rest");
+    expect(work.waiting).toEqual({ cat: cat("ui"), projectId: 1, count: 2, description: "화면" });
+    expect(work.jobs).toEqual({});
+  });
+
+  it("다른 작업자는 그대로 일한다", () => {
+    const work = homeWork(1, [worker("harness-builder-ui", 1), worker("harness-tester", 2)], 1, { worker: "harness-builder-ui" });
+    expect(work.intents[cat("tester")]).toBe("making");
+    expect(work.jobs[cat("tester")]).toBeDefined();
+  });
+
+  it("카드 수가 0이면 보낸 이가 있어도 기다리지 않는다", () => {
+    expect(homeWork(1, [worker("harness-builder-ui", 1)], 0, { worker: "harness-builder-ui" }).waiting).toBeNull();
   });
 });
 

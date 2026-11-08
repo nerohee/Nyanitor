@@ -1,9 +1,12 @@
 // 일하는 고양이 목록 — 고양이 얼굴 · 이름 · 무엇을(`description`) · 지금 하는 일(`activity`) · 몇 분째 · 백그라운드 표시. 최근 끝난 작업자는 흐리게.
 // 시제품 `variants/shared/progress.tsx` 의 `WorkingCats`.
+// 답을 기다리는 카드가 있으면 그 카드를 보낸 고양이의 줄이 맨 위에 "답을 기다려요" 로 (버터 색, 글로도 알린다) — 그 작업자는 일하는 줄에서 이 줄로 바뀐다 (같은 고양이 두 줄 아님).
 import { CatFigure } from "../../components/cat/CatFigure";
 import type { CatId } from "../../components/cat/catalog";
 import { t, tf } from "../../i18n/ko";
 import { agoText, workedText } from "./elapsed";
+import type { WaitingCard } from "../chat/sessionStore";
+import { askerCat } from "./placement";
 import { catForWorker, catName, type WorkerRoles } from "./workerCat";
 import type { WorkerEntry } from "./workers";
 
@@ -34,21 +37,49 @@ const minutesText = (worker: WorkerEntry, nowMs: number): string => workedText(w
 
 const endedText = (worker: WorkerEntry, nowMs: number): string => agoText(worker.endedAtMs ?? worker.startedAtMs, nowMs);
 
+/** 기다린 지 — 카드가 생긴 때를 모르면 시간 없이 */
+function waitedText(sinceMs: number | null, nowMs: number): string | null {
+  if (sinceMs === null) return null;
+  const minutes = Math.floor((nowMs - sinceMs) / 60_000);
+  if (minutes < 1) return t("ws.progress.waitedNow");
+  return tf(minutes < 60 ? "ws.progress.waitedMinutes" : "ws.progress.waitedHours", { n: minutes < 60 ? minutes : Math.floor(minutes / 60) });
+}
+
 interface Props {
   working: readonly WorkerEntry[];
+  /** 맨 앞 기다리는 카드를 보낸 이 — 없으면 `null` */
+  waiting?: WaitingCard | null;
   recent: readonly WorkerEntry[];
   roles?: WorkerRoles;
   nowMs: number;
 }
 
-export function WorkingCats({ working, recent, roles, nowMs }: Props) {
+export function WorkingCats({ working, waiting = null, recent, roles, nowMs }: Props) {
+  const waitCat = waiting ? askerCat(waiting, roles) : null;
+  // 기다리는 고양이를 가리키는 일하는 작업자(먼저 시작한 하나)는 기다리는 줄로 바뀐다
+  const waitWorker = waitCat === null ? undefined : working.find((worker) => catForWorker(worker.name, { roles }) === waitCat);
+  const rest = working.filter((worker) => worker !== waitWorker);
+  const waited = waiting ? waitedText(waiting.sinceMs, nowMs) : null;
   return (
     <>
-      {working.length === 0 ? (
+      {working.length === 0 && waitCat === null ? (
         <p className="ws-wk__none">{t("ws.progress.none")}</p>
       ) : (
         <ul className="ws-wk" aria-label={t("ws.progress.workingTitle")}>
-          {working.map((worker) => {
+          {waitCat !== null && (
+            <li className="ws-wk__item" data-waiting="true">
+              <Face cat={waitCat} />
+              <span className="ws-wk__text">
+                <span className="ws-wk__who">
+                  <b>{catName(waitCat)}</b>
+                  <span className="ws-wk__wait">{t("ws.progress.waiting")}</span>
+                </span>
+                {waitWorker && <span className="ws-wk__task">{waitWorker.description?.trim() ? clip(waitWorker.description, TEXT_MAX) : t("ws.progress.untitled")}</span>}
+                {waited && <span className="ws-wk__where">{tf("ws.progress.waitedFor", { time: waited })}</span>}
+              </span>
+            </li>
+          )}
+          {rest.map((worker) => {
             const cat = catForWorker(worker.name, { roles });
             return (
               <li key={worker.toolUseId} className="ws-wk__item" data-background={worker.background ? "true" : undefined}>

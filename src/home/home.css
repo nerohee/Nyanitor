@@ -686,6 +686,32 @@ body:has(.home) {
   border-radius: 50%;
   background: var(--color-text-subtle);
 }
+/* 일하는 중 · 기다리는 중 — 작업 공간 채팅 머리의 상태 알약(chat.css .wc-head[data-state])과 같은 테이프 색 · 점 색. 글("일하는 중")이 먼저고 색은 덧붙임 */
+.hm-info__status--work {
+  background: var(--ui-1);
+}
+.hm-info__status--work .hm-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 0 1.5px var(--ui-line);
+}
+.hm-info__status--wait {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.hm-info__status--wait .hm-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--ui-line);
+}
+/* 일 줄 · "진행 보기" 와 고양이 소개(모델 · 수준 · 하는 일) 사이 — 지금 하는 일이 한 덩어리로 보이게 점선으로 나눈다 */
+.hm-info__work + .hm-link {
+  display: inline-block;
+  margin-top: var(--hm-1);
+}
+.hm-info__work + .hm-link + * {
+  margin-top: var(--hm-3);
+  padding-top: var(--hm-3);
+  border-top: 1.5px dashed var(--color-border-strong);
+}
 .hm-info__meta {
   display: flex;
   flex-wrap: wrap;

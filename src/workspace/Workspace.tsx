@@ -27,7 +27,7 @@ import { useProjects } from "./useProjects";
 import { useWide, WorkPanels } from "./WorkPanels";
 import { PendingAnnouncer } from "./chat/Announcer";
 import { ChatPane } from "./chat/ChatPane";
-import { selectPending, selectWorkers, startSessionStore, useSessionStore } from "./chat/sessionStore";
+import { selectPending, selectWaitingAsker, selectWorkers, startSessionStore, useSessionStore } from "./chat/sessionStore";
 import "./workspace.css";
 
 interface Props {
@@ -127,11 +127,12 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   const [editorConflict, setEditorConflict] = useState(false);
   /** 채팅 탭에 붙는, 답을 기다리는 카드 수 */
   const waitingCards = useSessionStore(selectPending(selectedId));
+  const waiting = useSessionStore(selectWaitingAsker(selectedId));
   /** 작은 창문 — 지금 일하는 고양이 (먼저 시작한 순) */
   const workers = useSessionStore(selectWorkers(selectedId));
   const roles = useWorkerRoles(selectedId !== null);
   const working = useMemo(() => workingWorkers(workers), [workers]);
-  const mini = useMemo(() => windowScene(working, false, roles), [working, roles]);
+  const mini = useMemo(() => windowScene(working, waiting, roles), [working, waiting, roles]);
 
   // 세션 저장소는 앱이 켜질 때 한 번 시작한다 (`App.tsx`) — 여기서 한 번 더 불러도 같은 것 (작업 공간만 따로 열어 본 시험)
   useEffect(() => {

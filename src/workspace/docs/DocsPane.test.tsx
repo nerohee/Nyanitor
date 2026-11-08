@@ -51,13 +51,17 @@ describe("목록", () => {
       .map((heading) => heading.textContent);
     expect(headings).toEqual([
       "docs/1개",
-      "docs/01-planning/1개",
-      "docs/01-planning/design/1개",
-      "docs/01-planning/design/refs/1개",
-      "docs/02-development/2개",
-      "docs/02-development/briefs/1개",
-      "docs/03-notes/2개",
+      "01-planning/1개",
+      "01-planning/design/1개",
+      "01-planning/design/refs/1개",
+      "02-development/2개",
+      "02-development/briefs/1개",
+      "03-notes/2개",
     ]);
+    // 마우스를 올리면 전체 경로 그대로
+    const titles = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.getAttribute("title"));
+    expect(titles[0]).toBe("docs");
+    expect(titles[3]).toBe("docs/01-planning/design/refs");
     const names = Array.from(listNav().querySelectorAll(".ws-dc__name")).map((node) => node.textContent);
     expect(names.slice(0, 2)).toEqual(["README.md", "decisions.md"]);
     // 같은 폴더 안은 이름 순

@@ -189,9 +189,15 @@
 .ws-dc__mod {
   flex: none;
   margin: 0;
-  padding: var(--space-1) var(--space-3) 0;
+  padding: 0 var(--space-3) var(--space-2);
+  border-bottom: var(--ui-line-w) dashed var(--color-border-strong);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+/* "고친 때" 줄이 있으면 머리 · 고친 때가 한 덩어리 — 점선은 그 아래에. 본문을 내려도 글이 "고친 때" 줄 바로 밑에서 잘려 겹쳐 보이지 않는다 */
+.ws-dc__head:has(+ .ws-dc__mod) {
+  padding-bottom: var(--space-1);
+  border-bottom: 0;
 }
 .ws-dc__body {
   flex: 1;

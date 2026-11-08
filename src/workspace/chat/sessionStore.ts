@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import { ipc } from "../../lib/ipc";
 import { AppError, type AppErrorKind, type ClaudeEvent, type ClaudeResponse, type ClaudeSessionState, type RawLogEntry, type StartInfo } from "../../lib/ipc-types";
+import type { WaitingAsker } from "../progress/placement";
 import { applyWorkerEvent, mergeHistoryWorkers, stopAllWorkers, type WorkerEntry } from "../progress/workers";
 import { emptyChat, foldEvent, fromEntries, mergeLive, prependEntries, settleWorkers, type ChatData } from "./model";
 
@@ -433,5 +434,47 @@ export function selectPending(projectId: number | null) {
       else if (event.type === "session_ended") waiting.clear();
     }
     return n + waiting.size;
+  };
+}
+
+/** 맨 앞 기다리는 카드를 보낸 이 — `worker` 는 작업자 이름(먹물 쪽 카드면 `null`), `sinceMs` 는 그 카드가 생긴 때(모르면 `null`) */
+export interface WaitingCard extends WaitingAsker {
+  sinceMs: number | null;
+}
+
+const lastWaiting = new Map<number, WaitingCard | null>();
+
+/** 그 프로젝트의 맨 앞(가장 먼저 온) 기다리는 카드를 보낸 이 — 카드가 없으면 `null`. `selectPending` 과 같은 범위(목록 · 아직 읽지 않은 이벤트).
+ *  작업자 이름은 `toolUseId` 로 그 프로젝트의 작업자 목록에서 찾고(`selectWorkerName` 과 같게), 없으면 요청의 `worker.name`, 그것도 없으면 먹물 쪽으로 본다.
+ *  값이 같으면 같은 객체를 돌려줘 `useSessionStore` 에 바로 쓴다 */
+export function selectWaitingAsker(projectId: number | null) {
+  return (state: State): WaitingCard | null => {
+    const chat = projectId === null ? undefined : state.chats[projectId];
+    let found: WaitingCard | null = null;
+    if (projectId !== null && chat) {
+      const nameOf = (ref: { toolUseId: string | null; name: string | null } | null | undefined): string | null => {
+        if (!ref) return null;
+        const listed = ref.toolUseId === null ? undefined : chat.workers.find((worker) => worker.toolUseId === ref.toolUseId);
+        return listed?.name ?? ref.name ?? null;
+      };
+      const card = chat.data.lines.find((line) => (line.kind === "question" || line.kind === "permission") && line.state.status === "pending");
+      if (card && (card.kind === "question" || card.kind === "permission")) {
+        found = { worker: nameOf(card.info.worker), sinceMs: card.atMs ?? null };
+      } else {
+        const open = new Map<string, { worker: string | null; sinceMs: number | null }>();
+        chat.buffer.forEach((event, index) => {
+          if (event.type === "permission_request" || event.type === "question_request") open.set(event.requestId, { worker: nameOf(event.worker), sinceMs: chat.bufferAt[index] ?? null });
+          else if (event.type === "request_answered" || event.type === "request_cancelled") open.delete(event.requestId);
+          else if (event.type === "session_ended") open.clear();
+        });
+        const first = open.values().next();
+        if (!first.done) found = first.value;
+      }
+    }
+    if (projectId === null) return found;
+    const before = lastWaiting.get(projectId) ?? null;
+    if (before === found || (before && found && before.worker === found.worker && before.sinceMs === found.sinceMs)) return before;
+    lastWaiting.set(projectId, found);
+    return found;
   };
 }

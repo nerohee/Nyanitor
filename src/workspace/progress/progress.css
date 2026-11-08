@@ -42,7 +42,8 @@
 .ws-mini__count {
   position: absolute;
   right: -5px;
-  bottom: -4px;
+  /* 탭 줄(40px) 아래 선을 넘지 않게 — 창문(36px) 아래로 2px 만 */
+  bottom: -2px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -59,7 +60,6 @@
 
 /* ── 진행 탭 ── */
 .ws-pg {
-  --banner-danger-bg: color-mix(in srgb, var(--color-danger) 13%, var(--color-surface));
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -130,6 +130,29 @@
 .ws-win__room {
   width: 100%;
   height: 100%;
+}
+/* 낮은 창(작은 화면 PC 를 최대화 — 683×384 등, workspace.css 의 같은 조건)에서는 큰 창문이 판을 다 덮어 고양이 · 보드가 아래로 밀린다.
+   창문을 줄이고, 판이 좁아 한 줄로 쌓일 때는 창문 옆에 일하는 고양이를 둔다 — 첫 화면에 창문과 누가 일하는지가 같이 보인다 */
+@media (max-height: 480px) {
+  .ws-win {
+    max-width: 220px;
+  }
+  @container (max-width: 639px) {
+    .ws-pg__live {
+      display: grid;
+      grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+      gap: var(--space-2) var(--space-3);
+      align-items: start;
+    }
+    .ws-pg__live > .ws-win {
+      grid-column: 1;
+      grid-row: 1 / span 4;
+      align-self: start;
+    }
+    .ws-pg__live > :not(.ws-win) {
+      grid-column: 2;
+    }
+  }
 }
 
 /* ── 일하는 고양이 ── */
@@ -203,6 +226,25 @@
 }
 .ws-wk__item[data-outcome="failed"] .ws-wk__outcome {
   background: var(--coin-failed);
+}
+/* 답을 기다리는 줄 — 버터 (집 패널 "기다리는 중" 칩과 같은 색). 글 "답을 기다려요" 로도 알린다 */
+.ws-wk__item[data-waiting="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.ws-wk__item[data-waiting="true"] .ws-wk__where {
+  color: var(--accent-soft-text);
+}
+.ws-wk__item[data-waiting="true"] .ws-wk__face {
+  background: var(--ui-4);
+}
+.ws-wk__wait {
+  padding: 0 var(--space-2);
+  border: 1.5px solid var(--ui-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-xs);
 }
 /* 방금 끝낸 일 — 흐리게 (글로도 "끝냄 · 못 끝냄 · 멈춤" 을 알린다) */
 .ws-wk--recent .ws-wk__item {
@@ -467,10 +509,15 @@
   border-radius: var(--radius-pill);
   background: var(--color-surface);
 }
+/* 채움은 집의 츄르 막대(home.css .hm-usage__bar)와 같은 ③ 재질 — 버터 위 빗금 + 끝선. 끝선이 있어 채움 · 바탕(대비가 낮은 두 밝은 색)의 경계가 보인다 */
 .ws-pt__bar > span {
   display: block;
+  box-sizing: border-box;
   height: 100%;
-  background: var(--accent);
+  border-right: 1.5px solid var(--ui-line);
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(var(--shadow-color) / 0.22) 4px 6px),
+    var(--accent);
 }
 .ws-pt__num {
   color: var(--color-text-muted);

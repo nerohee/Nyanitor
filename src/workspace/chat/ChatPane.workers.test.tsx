@@ -107,12 +107,12 @@ describe("작업자 줄 (가짜 세션)", () => {
     await waitFor(() => expect(row).toHaveAttribute("data-status", "done"), { timeout: 3000 });
   });
 
-  it("permission — 권한 카드 머리에 그 작업자 고양이와 '깨비의 요청'", async () => {
+  it("permission — 권한 카드 머리에 그 작업자 고양이와 '깨비가 보냄'", async () => {
     reset("permission");
     await mount(1);
     await say("권한이 필요한 일을 맡겨 줘");
     const card = await screen.findByRole("article", { name: "권한 요청" }, { timeout: 3000 });
-    expect(within(card).getByText("깨비의 요청")).toBeInTheDocument();
+    expect(within(card).getByText("깨비가 보냄")).toBeInTheDocument();
     expect(card.querySelector(".wc-card__avatar .cat-figure")).not.toBeNull();
     // 작업자 줄은 따로 — 일하는 중
     expect(workerRows()[0]).toHaveAttribute("data-status", "running");
@@ -123,7 +123,7 @@ describe("작업자 줄 (가짜 세션)", () => {
     await mount(1);
     await say("그냥 해 줘");
     const card = await screen.findByRole("article", { name: "권한 요청" });
-    expect(within(card).queryByText(/의 요청$/)).not.toBeInTheDocument();
+    expect(within(card).queryByText(/ 보냄$/)).not.toBeInTheDocument();
     expect(card.querySelector(".wc-card__who")).toBeNull();
   });
 });
@@ -151,9 +151,9 @@ const PENDING = { status: "pending", answer: null } as const;
 describe("카드 머리의 작업자", () => {
   it("요청의 작업자 이름으로 — 단추 · 나비 …, 하네스 밖 이름은 두부", () => {
     const { rerender } = render(<PermissionCard info={permInfo({ agentId: "a", toolUseId: "t", name: "harness-builder-ui" })} state={PENDING} onRespond={vi.fn()} />);
-    expect(screen.getByText("단추의 요청")).toBeInTheDocument();
+    expect(screen.getByText("단추가 보냄")).toBeInTheDocument();
     rerender(<PermissionCard info={permInfo({ agentId: "a", toolUseId: "t", name: "general-purpose" })} state={PENDING} onRespond={vi.fn()} />);
-    expect(screen.getByText("두부의 요청")).toBeInTheDocument();
+    expect(screen.getByText("두부가 보냄")).toBeInTheDocument();
   });
 
   it("작업자 목록(toolUseId)이 이름을 가진 것이 먼저 — 요청에 이름이 없어도 찾는다", () => {
@@ -175,7 +175,7 @@ describe("카드 머리의 작업자", () => {
       },
     });
     render(<PermissionCard info={permInfo({ agentId: "a", toolUseId: "tool-9", name: null })} state={PENDING} onRespond={vi.fn()} />);
-    expect(screen.getByText("나비의 요청")).toBeInTheDocument();
+    expect(screen.getByText("나비가 보냄")).toBeInTheDocument();
   });
 
   it("작업자 표시가 없거나(메인 쪽 · 기록에서 읽은 옛 카드) 누군지 모르면 지금 모양 그대로 (먹물)", () => {
@@ -190,9 +190,9 @@ describe("카드 머리의 작업자", () => {
   it("질문 카드 · 승인 카드에도", () => {
     const question: QuestionRequestInfo = { requestId: "q", toolUseId: null, worker: { agentId: "a", toolUseId: null, name: "harness-designer" }, questions: [{ question: "색은?", header: "색", multiSelect: false, options: [{ label: "파랑", description: null, preview: null }] }] };
     const { rerender } = render(<QuestionRequest info={question} state={PENDING} onRespond={vi.fn()} />);
-    expect(screen.getByText("물감의 요청")).toBeInTheDocument();
+    expect(screen.getByText("물감이 보냄")).toBeInTheDocument();
     const approval: QuestionRequestInfo = { ...question, questions: [{ question: "단계 승인 — P7 진행 보기\n- 무엇을: a\n- 왜 지금: b\n- 산출물: c\n- 하지 않는 것: d", header: null, multiSelect: false, options: [] }] };
     rerender(<QuestionRequest info={approval} state={PENDING} onRespond={vi.fn()} />);
-    expect(screen.getByText("물감의 요청")).toBeInTheDocument();
+    expect(screen.getByText("물감이 보냄")).toBeInTheDocument();
   });
 });

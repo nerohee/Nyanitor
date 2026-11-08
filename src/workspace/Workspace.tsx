@@ -37,6 +37,8 @@ interface Props {
   onGo: (place: NavPlace) => void;
   /** 열자마자 새 프로젝트 창을 띄운다 (고양이 집의 새 프로젝트 단추) */
   openNew?: boolean;
+  /** 열자마자 보일 탭 (고양이 집 정보 패널의 "진행 보기" 등) — 없으면 채팅 */
+  openTab?: "progress" | "chat";
   /** 시험에서 PC 시각을 바꿔 넣는다 */
   clock?: () => Date;
 }
@@ -103,13 +105,13 @@ function ProjectHead({ project, onSettings }: { project: ProjectEntry; onSetting
   );
 }
 
-export default function Workspace({ projectId, onSelect, onGo, openNew = false, clock }: Props) {
+export default function Workspace({ projectId, onSelect, onGo, openNew = false, openTab = "chat", clock }: Props) {
   const now = useClock(clock);
   const time = timeOfDay(now);
   const wide = useWide();
   const { state, reload } = useProjects();
   const [dialog, setDialog] = useState<Dialog>(openNew ? "new" : null);
-  const [active, setActive] = useState("chat");
+  const [active, setActive] = useState<string>(openTab);
   const paper = useRef<HTMLDivElement>(null);
   /** 편집기가 충돌 띠로 저장을 멈춘 동안만 채워진다 */
   const guard = useRef<EditorGuard | null>(null);

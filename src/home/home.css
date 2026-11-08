@@ -708,6 +708,14 @@ body:has(.home) {
   margin: 0;
   font-weight: var(--weight-semibold);
 }
+/* 일하는 고양이의 줄 — 맡은 일이 길면 줄을 바꾼다 */
+.hm-info__work > div {
+  min-width: 0;
+}
+.hm-info__work dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .hm-info__summary {
   margin: var(--hm-3) 0 0;
 }

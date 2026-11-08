@@ -7,13 +7,14 @@ import { TAB_ORDER } from "../components/house/schedule";
 import { fakeHouse } from "../lib/fakeHouse";
 import { fakeProjects } from "../lib/fakeProjects";
 import { ipc } from "../lib/ipc";
-import { AppError, type UsageSummary, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
+import { AppError, type ClaudeEvent, type UsageSummary, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
 import { spotHitBox } from "../components/house/blocked";
 import { SPOTS } from "../components/house/spots";
-import { resetSessionStore, useSessionStore } from "../workspace/chat/sessionStore";
+import { newChat, resetSessionStore, useSessionStore } from "../workspace/chat/sessionStore";
+import type { WorkerEntry } from "../workspace/progress/workers";
 import Home from "./Home";
 
-const NAV = { onGo: () => undefined, onOpenProject: () => undefined, onNewProject: () => undefined };
+const NAV = { onGo: () => undefined, onOpenProject: () => undefined, onNewProject: () => undefined, onOpenWork: () => undefined };
 
 const OK_USAGE: UsageResult = {
   state: "ok",
@@ -65,7 +66,7 @@ describe("고양이 집 — 아래 판 (프로젝트)", () => {
     const onGo = vi.fn();
     // 가짜 목록의 시각(fakeProjects.ts 의 NOW)에 맞춘 가짜 시계
     const clock = () => new Date(1_800_000_000 * 1000);
-    render(<Home onGo={onGo} onOpenProject={onOpenProject} onNewProject={onNewProject} clock={clock} />);
+    render(<Home onGo={onGo} onOpenProject={onOpenProject} onNewProject={onNewProject} onOpenWork={() => undefined} clock={clock} />);
 
     await screen.findByText("고양이 앨범");
     const items = within(slab()).getAllByRole("button");
@@ -748,5 +749,98 @@ describe("고양이 집 — 카드에 덮인 자리", () => {
     // 덮이지 않은 자리 — 나비의 상자는 그대로
     expect(SPOTS.box.kind).toBe("rest");
     expect(spots).toContain("box");
+  });
+});
+
+describe("고양이 집 — 일하는 고양이 (P7-05)", () => {
+  afterEach(() => resetSessionStore());
+  // 움직임 줄이기 — 자리가 바로 바뀐다 (걷기 · 엇갈린 출발을 기다리지 않는다)
+  beforeEach(() => {
+    document.documentElement.dataset.motion = "reduced";
+  });
+
+  const worker = (name: string, startedAtMs: number, extra: Partial<WorkerEntry> = {}): WorkerEntry => ({
+    toolUseId: `t-${name}-${startedAtMs}`,
+    agentId: null,
+    name,
+    description: "사진 목록 화면 만들기",
+    background: false,
+    depth: 1,
+    startedAtMs,
+    activity: null,
+    status: "running",
+    endedAtMs: null,
+    ...extra,
+  });
+  const put = (projectId: number, workers: WorkerEntry[]) =>
+    act(() => useSessionStore.setState((state) => ({ chats: { ...state.chats, [projectId]: { ...(state.chats[projectId] ?? newChat()), workers } } })));
+  const startSession = (projectId: number) => act(() => useSessionStore.setState({ session: { projectId, busy: false, sessionId: null } }));
+  const spotOf = (cat: string) => document.querySelector(`.hs-cat[data-cat="${cat}"]`)?.getAttribute("data-spot");
+
+  it("세션이 없으면 아무도 일하지 않는다 — 캣휠 · 캣타워 · 댓돌이 비어 있다", async () => {
+    put(1, [worker("harness-builder-ui", 1)]);
+    render(<Home {...NAV} />);
+    await loaded();
+    const spots = [...document.querySelectorAll(".hs-cat")].map((c) => c.getAttribute("data-spot"));
+    expect(spots).not.toContain("wheel");
+    expect(spots).not.toContain("tower");
+    expect(spots).not.toContain("stone");
+  });
+
+  it("작업자가 일하는 동안 그 고양이가 캣휠, 점검은 캣타워 — 끝나면 쉬는 자리로 돌아온다", async () => {
+    render(<Home {...NAV} />);
+    await loaded();
+    startSession(1);
+    put(1, [worker("harness-builder-ui", 1), worker("harness-reviewer", 2)]);
+    await vi.waitFor(() => expect(spotOf("danchu")).toBe("wheel"));
+    expect(spotOf("gureum")).toBe("tower");
+    // 일하는 중 이름표에 들어간다 (화면 읽기 프로그램용 — 따로 알리지는 않는다)
+    expect(screen.getByRole("button", { name: /^단추,.*캣휠에서 일하는 중/ })).toBeInTheDocument();
+
+    put(1, [worker("harness-builder-ui", 1, { status: "done", endedAtMs: 9 }), worker("harness-reviewer", 2, { status: "done", endedAtMs: 9 })]);
+    await vi.waitFor(() => expect(SPOTS[spotOf("danchu") as keyof typeof SPOTS].kind).toBe("rest"), { timeout: 5000 });
+    await vi.waitFor(() => expect(SPOTS[spotOf("gureum") as keyof typeof SPOTS].kind).toBe("rest"), { timeout: 5000 });
+  });
+
+  it("기다리는 카드가 있으면 먹물이 댓돌", async () => {
+    render(<Home {...NAV} />);
+    await loaded();
+    startSession(1);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        chats: {
+          ...state.chats,
+          1: {
+            ...newChat(),
+            buffer: [{ type: "permission_request", requestId: "r1" } as ClaudeEvent, { type: "question_request", requestId: "r2" } as ClaudeEvent],
+          },
+        },
+      })),
+    );
+    await vi.waitFor(() => expect(spotOf("mukmul")).toBe("stone"));
+  });
+
+  it("일하는 고양이의 정보 패널 — 프로젝트 · 맡은 일 · 일한 지 + 진행 보기가 그 프로젝트의 진행 탭을 연다", async () => {
+    const onOpenWork = vi.fn();
+    render(<Home {...NAV} onOpenWork={onOpenWork} clock={() => new Date(5 * 60_000)} />);
+    await loaded();
+    startSession(2);
+    put(2, [worker("harness-builder-ui", 0)]);
+    await vi.waitFor(() => expect(spotOf("danchu")).toBe("wheel"));
+    fireEvent.click(screen.getByRole("button", { name: /^단추,/ }));
+    const panel = screen.getByRole("region", { name: "단추" });
+    expect(panel.querySelector(".hm-info__state")).toHaveTextContent("일하는 중");
+    expect(panel).toHaveTextContent("프로젝트레시피 상자");
+    expect(panel).toHaveTextContent("맡은 일사진 목록 화면 만들기");
+    expect(panel).toHaveTextContent("일한 지5분째");
+    fireEvent.click(within(panel).getByRole("button", { name: "진행 보기" }));
+    expect(onOpenWork).toHaveBeenCalledWith(2, "progress");
+  });
+
+  it("쉬는 고양이의 패널에는 일 줄 · 단추가 없다", async () => {
+    render(<Home {...NAV} />);
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+    expect(screen.queryByRole("button", { name: "진행 보기" })).not.toBeInTheDocument();
   });
 });

@@ -1,11 +1,12 @@
 import { EditorView } from "@codemirror/view";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fakeProjects } from "./lib/fakeProjects";
 import { fakeClaude } from "./lib/fakeClaude";
 import { ipc } from "./lib/ipc";
-import { resetSessionStore } from "./workspace/chat/sessionStore";
+import { newChat, resetSessionStore, useSessionStore } from "./workspace/chat/sessionStore";
+import type { WorkerEntry } from "./workspace/progress/workers";
 
 // 작업 공간은 따로 불러온다(lazy) — 전체 시험으로 바쁠 때 처음 불러오기(CodeMirror 포함)가 기다림 1초를 넘길 수 있어 미리 한 번 불러 둔다
 beforeAll(async () => {
@@ -144,5 +145,87 @@ describe("화면 전환 (주소가 아니라 앱 상태)", () => {
     await waitFor(() => expect(screen.queryByTestId("home")).not.toBeInTheDocument());
     expect(screen.queryByTestId("workspace")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+  });
+});
+
+describe("집의 일하는 고양이 → 작업 공간 탭 (P7-05)", () => {
+  const worker: WorkerEntry = {
+    toolUseId: "t1",
+    agentId: null,
+    name: "harness-builder-ui",
+    description: "사진 목록 화면 만들기",
+    background: false,
+    depth: 1,
+    startedAtMs: 0,
+    activity: null,
+    status: "running",
+    endedAtMs: null,
+  };
+  const tab = (name: string) => within(screen.getByRole("tablist", { name: "작업 공간 보기" })).getByRole("tab", { name: new RegExp(`^${name}`) });
+
+  async function openPanel(name: RegExp) {
+    document.documentElement.dataset.motion = "reduced";
+    render(<App />);
+    await screen.findByTestId("home");
+    await screen.findByRole("meter", { name: "5시간 츄르" });
+    await waitFor(() => expect(useSessionStore.getState().restored).toBe(true));
+    return name;
+  }
+
+  afterEach(() => {
+    delete document.documentElement.dataset.motion;
+  });
+
+  it("'진행 보기' 는 그 프로젝트(레시피 상자)의 작업 공간을 진행 탭으로 연다", async () => {
+    const name = await openPanel(/^단추,/);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        session: { projectId: 2, busy: true, sessionId: null },
+        chats: { ...state.chats, 2: { ...newChat(), workers: [worker] } },
+      })),
+    );
+    await waitFor(() => expect(document.querySelector('.hs-cat[data-cat="danchu"]')).toHaveAttribute("data-spot", "wheel"));
+    fireEvent.click(screen.getByRole("button", { name }));
+    fireEvent.click(await screen.findByRole("button", { name: "진행 보기" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "레시피 상자" })).toBeInTheDocument();
+    expect(tab("진행")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "진행" })).toBeInTheDocument();
+  });
+
+  it("집으로 갔다가 작업 공간 메뉴로 들어가면 처음처럼 채팅 탭", async () => {
+    const name = await openPanel(/^단추,/);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        session: { projectId: 2, busy: true, sessionId: null },
+        chats: { ...state.chats, 2: { ...newChat(), workers: [worker] } },
+      })),
+    );
+    await waitFor(() => expect(document.querySelector('.hs-cat[data-cat="danchu"]')).toHaveAttribute("data-spot", "wheel"));
+    fireEvent.click(screen.getByRole("button", { name }));
+    fireEvent.click(await screen.findByRole("button", { name: "진행 보기" }));
+    await screen.findByRole("heading", { level: 2, name: "레시피 상자" });
+
+    fireEvent.click(screen.getByRole("button", { name: "집" }));
+    await screen.findByTestId("home");
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    await screen.findByRole("heading", { level: 2, name: "레시피 상자" });
+    expect(tab("채팅")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("먹물이 댓돌에서 기다릴 때의 단추는 채팅 탭을 연다", async () => {
+    await openPanel(/^먹물,/);
+    act(() =>
+      useSessionStore.setState((state) => ({
+        session: { projectId: 2, busy: true, sessionId: null },
+        chats: { ...state.chats, 2: { ...newChat(), buffer: [{ type: "permission_request", requestId: "r1" } as never] } },
+      })),
+    );
+    await waitFor(() => expect(document.querySelector('.hs-cat[data-cat="mukmul"]')).toHaveAttribute("data-spot", "stone"));
+    fireEvent.click(screen.getByRole("button", { name: /^먹물,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "채팅에서 보기" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "레시피 상자" })).toBeInTheDocument();
+    expect(tab("채팅")).toHaveAttribute("aria-selected", "true");
   });
 });

@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { PANEL_ID } from "../components/house/useCatPanel";
 import { activityTextKey, type Activity } from "../components/house/spots";
-import { isTextKey, t, type TextKey } from "../i18n/ko";
+import { isTextKey, t, tf, type TextKey } from "../i18n/ko";
 import type { AgentEntry, AgentInfo, AgentUnreadable } from "../lib/ipc-types";
 import { Icon } from "../variants/shared/icons";
 import type { HomeCat } from "./useAgents";
@@ -11,10 +11,17 @@ import type { HomeCat } from "./useAgents";
 /** 이 글자 수를 넘으면 맡는 일을 접어 둔다 (CSS 가 3줄에서 자른다) */
 export const DUTIES_FOLD_LENGTH = 90;
 
+/** 일하는 고양이(캣휠 · 캣타워) · 댓돌에서 기다리는 먹물의 일 — 쉬는 고양이는 없다 */
+export type HomeCatWork =
+  | { kind: "job"; projectName: string | null; description: string | null; worked: string; onOpen: () => void }
+  | { kind: "waiting"; projectName: string | null; count: number; onOpen: () => void };
+
 interface HomeCatInfoProps {
   home: HomeCat;
   /** 지금 있는 자리 = 하는 일 */
   activity: Activity;
+  /** 지금 맡은 일 (있으면 "쉬는 중" 대신 일하는 중 · 기다리는 중과 일 줄 · 단추) */
+  work?: HomeCatWork;
   onClose: () => void;
   className?: string;
 }
@@ -88,9 +95,47 @@ function ReadableBody({ info, cat }: { info: AgentInfo; cat: HomeCat["cat"] }) {
   );
 }
 
+/** 맡은 일 — 프로젝트 · 맡긴 일 · 일한 시간 (먹물이 기다릴 때는 기다리는 카드 수) + 그 프로젝트의 진행 · 채팅 열기 */
+function WorkLines({ work }: { work: HomeCatWork }) {
+  return (
+    <>
+      <dl className="hm-info__meta hm-info__work">
+        {work.projectName && (
+          <div>
+            <dt>{t("home.info.project")}</dt>
+            <dd>{work.projectName}</dd>
+          </div>
+        )}
+        {work.kind === "job" ? (
+          <>
+            {work.description && (
+              <div>
+                <dt>{t("home.info.task")}</dt>
+                <dd>{work.description}</dd>
+              </div>
+            )}
+            <div>
+              <dt>{t("home.info.worked")}</dt>
+              <dd>{work.worked}</dd>
+            </div>
+          </>
+        ) : (
+          <div>
+            <dt>{t("home.info.waitingCards")}</dt>
+            <dd>{tf("home.info.cardCount", { n: work.count })}</dd>
+          </div>
+        )}
+      </dl>
+      <button type="button" className="hm-link" onClick={work.onOpen}>
+        {t(work.kind === "job" ? "home.info.openProgress" : "home.info.openChat")}
+      </button>
+    </>
+  );
+}
+
 /** 상태 칩("쉬는 중 — 상자 안에서 쉬는 중")이 패널 한 줄에 다 들어가는가 — 안 들어가면 뒤 설명을 숨기고 "쉬는 중" 만 (P6-08 고객).
  *  칩 조각(점 · 상태 · 설명)의 제 폭을 더해 패널 안쪽 폭과 견준다. 숨긴 설명도 자리만 빠지고 폭은 잴 수 있게 둔다 (home.css) */
-function useStatusFits(activity: Activity) {
+function useStatusFits(activity: Activity, state: string) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [short, setShort] = useState(false);
   useLayoutEffect(() => {
@@ -114,14 +159,15 @@ function useStatusFits(activity: Activity) {
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(check) : null;
     observer?.observe(panel);
     return () => observer?.disconnect();
-  }, [activity]);
+  }, [activity, state]);
   return { ref, short };
 }
 
-export function HomeCatInfo({ home, activity, onClose, className }: HomeCatInfoProps) {
+export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCatInfoProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const { cat, entry } = home;
-  const { ref: statusRef, short: statusShort } = useStatusFits(activity);
+  const stateText = work === undefined ? t("cat.info.resting") : work.kind === "job" ? t("cat.info.working") : t("home.info.waiting");
+  const { ref: statusRef, short: statusShort } = useStatusFits(activity, stateText);
   const doing = t(`cat.activity.${activityTextKey(activity)}` as TextKey);
 
   // 열리면 제목으로 포커스 — 화면 읽기 프로그램이 바로 읽고, Tab 이 패널 안으로 이어진다
@@ -157,15 +203,17 @@ export function HomeCatInfo({ home, activity, onClose, className }: HomeCatInfoP
         </button>
       </header>
 
-      <p className="hm-info__status" ref={statusRef} data-short={statusShort ? "true" : undefined} title={statusShort ? `${t("cat.info.resting")} — ${doing}` : undefined}>
+      <p className="hm-info__status" ref={statusRef} data-short={statusShort ? "true" : undefined} title={statusShort ? `${stateText} — ${doing}` : undefined}>
         <span className="hm-dot" aria-hidden="true" />
-        <span className="hm-info__state">{t("cat.info.resting")}</span>
+        <span className="hm-info__state">{stateText}</span>
         {/* 뒤 설명은 한 줄에 다 들어갈 때만 — 좁은 패널에서 넘치면 통째로 숨긴다. 숨겨도 화면 읽기 프로그램에는 따로 남긴다 */}
         <span className="hm-info__doing" aria-hidden={statusShort ? "true" : undefined}>
           — {doing}
         </span>
         {statusShort && <span className="hm-sr">— {doing}</span>}
       </p>
+
+      {work && <WorkLines work={work} />}
 
       {entry?.state === "unreadable" ? (
         <>

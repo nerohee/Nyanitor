@@ -25,11 +25,13 @@ interface View {
   place: NavPlace;
   projectId: number | null;
   openNew: boolean;
+  /** 작업 공간을 열 때 먼저 보일 탭 (집의 정보 패널 단추) — 없으면 채팅 */
+  tab: "progress" | "chat" | null;
 }
 
 function App() {
   const search = window.location.search;
-  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false });
+  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false, tab: null });
   // 세션 이벤트는 앱이 켜질 때 한 번만 듣는다 — 고양이 집 · 작업 공간을 오가도 끊기지 않고 대화 · 기다리는 카드가 쌓인다
   useEffect(() => {
     void startSessionStore();
@@ -61,17 +63,19 @@ function App() {
         <Workspace
           projectId={view.projectId}
           openNew={view.openNew}
+          openTab={view.tab ?? undefined}
           onSelect={(projectId) => setView((prev) => ({ ...prev, projectId, openNew: false }))}
-          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false }))}
+          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null }))}
         />
       </Suspense>
     );
   }
   return (
     <Home
-      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false }))}
-      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false })}
-      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true }))}
+      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null }))}
+      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false, tab: null })}
+      onOpenWork={(projectId, tab) => setView({ place: "workspace", projectId, openNew: false, tab })}
+      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true, tab: null }))}
     />
   );
 }

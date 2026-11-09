@@ -39,6 +39,8 @@ interface Props {
   openNew?: boolean;
   /** 열자마자 보일 탭 (고양이 집 정보 패널의 "진행 보기" 등) — 없으면 채팅 */
   openTab?: "progress" | "chat";
+  /** 숨었던 창이 다시 열렸을 때 기다리는 카드로 — `n` 이 바뀔 때마다 그 프로젝트의 채팅 탭 · 맨 앞 기다리는 카드로 (D-25) */
+  reopen?: { n: number; projectId: number } | null;
   /** 시험에서 PC 시각을 바꿔 넣는다 */
   clock?: () => Date;
 }
@@ -105,7 +107,7 @@ function ProjectHead({ project, onSettings }: { project: ProjectEntry; onSetting
   );
 }
 
-export default function Workspace({ projectId, onSelect, onGo, openNew = false, openTab = "chat", clock }: Props) {
+export default function Workspace({ projectId, onSelect, onGo, openNew = false, openTab = "chat", reopen = null, clock }: Props) {
   const now = useClock(clock);
   const time = timeOfDay(now);
   const wide = useWide();
@@ -162,6 +164,28 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
       setActive("chat");
     });
   };
+  // 창을 다시 열었을 때 — 다른 프로젝트로 가는 것은 직접 옮길 때와 같은 길(`leave`)로 묻고, 같은 프로젝트면 탭만 채팅으로
+  const [cardRequest, setCardRequest] = useState(0);
+  /** 채팅이 처리한(옮겼거나 버린) 마지막 카드 요청 — 채팅이 다시 그려져도(프로젝트를 바꿨다 돌아옴) 옛 요청으로 다시 끌려가지 않게 */
+  const [cardDone, setCardDone] = useState(0);
+  const handledReopen = useRef(0);
+  useEffect(() => {
+    if (!reopen || reopen.n === handledReopen.current || !ready) return;
+    handledReopen.current = reopen.n;
+    const target = projects.find((project) => project.id === reopen.projectId);
+    if (!target || leaving) return;
+    const show = () => {
+      setActive("chat");
+      setCardRequest((n) => n + 1);
+    };
+    if (target.id === selectedId) show();
+    else
+      leave(() => {
+        onSelect(target.id);
+        show();
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 요청(`reopen`)이 올 때만 움직인다
+  }, [reopen, ready]);
   const go = (place: NavPlace) => {
     if (place === "workspace") onGo(place);
     else leave(() => onGo(place));
@@ -236,7 +260,7 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
                       id: "chat",
                       label: t("variant.ws.tab.chat"),
                       badge: waitingCards,
-                      content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} />,
+                      content: <ChatPane key={selected.id} project={selected} projects={projects} onGoProject={pick} focusCard={cardRequest > cardDone ? cardRequest : 0} onCardHandled={setCardDone} />,
                     },
                     {
                       id: "progress",

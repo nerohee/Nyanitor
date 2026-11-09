@@ -2,7 +2,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "./fakeClaude";
 import { fakeProjects } from "./fakeProjects";
-import { AppError, CLAUDE_SESSION_EVENT, ipc, type ClaudeEvent } from "./ipc";
+import { AppError, CLAUDE_SESSION_EVENT, WINDOW_SHOWN_EVENT, ipc, type ClaudeEvent, type WindowShownEvent } from "./ipc";
 
 afterEach(() => {
   clearMocks();
@@ -93,6 +93,80 @@ describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
     stop();
     await emit({ type: "request_cancelled", requestId: "r2" });
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe("ipc — 숨어 있던 창이 열림 (D-50)", () => {
+  afterEach(() => {
+    fakeClaude.reset();
+  });
+
+  it("Tauri 안에서는 Rust 이벤트를 듣고, 그만 들으면 더 받지 않는다", async () => {
+    mockIPC(() => null, { shouldMockEvents: true });
+    const seen: WindowShownEvent[] = [];
+    const stop = await ipc.onWindowShown((event) => seen.push(event));
+
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> } })
+      .__TAURI_INTERNALS__;
+    const emit = (payload: WindowShownEvent) => internals.invoke("plugin:event|emit", { event: WINDOW_SHOWN_EVENT, payload });
+
+    await emit({ reason: "tray" });
+    await emit({ reason: "second_instance" });
+    expect(seen).toEqual([{ reason: "tray" }, { reason: "second_instance" }]);
+
+    stop();
+    await emit({ reason: "tray_menu" });
+    expect(seen).toHaveLength(2);
+  });
+
+  it("창 이벤트는 세션 이벤트와 따로 온다 (서로의 구독에 섞이지 않는다)", async () => {
+    mockIPC(() => null, { shouldMockEvents: true });
+    const sessions: ClaudeEvent[] = [];
+    const shown: WindowShownEvent[] = [];
+    await ipc.onClaudeEvent((event) => sessions.push(event));
+    await ipc.onWindowShown((event) => shown.push(event));
+
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> } })
+      .__TAURI_INTERNALS__;
+    await internals.invoke("plugin:event|emit", { event: WINDOW_SHOWN_EVENT, payload: { reason: "tray" } });
+    expect(shown).toEqual([{ reason: "tray" }]);
+    expect(sessions).toEqual([]);
+  });
+
+  it("브라우저 가짜 모드는 흉내 낸 이벤트를 듣는 쪽마다 한 번씩 준다", async () => {
+    const first: WindowShownEvent[] = [];
+    const second: WindowShownEvent[] = [];
+    const stopFirst = await ipc.onWindowShown((event) => first.push(event));
+    await ipc.onWindowShown((event) => second.push(event));
+
+    fakeClaude.simulateWindowShown();
+    fakeClaude.simulateWindowShown("tray_menu");
+    expect(first).toEqual([{ reason: "tray" }, { reason: "tray_menu" }]);
+    expect(second).toEqual(first);
+
+    stopFirst();
+    fakeClaude.simulateWindowShown("second_instance");
+    expect(first).toHaveLength(2);
+    expect(second).toHaveLength(3);
+  });
+
+  it("한 듣는 쪽이 오류를 던져도 다른 쪽은 받는다", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const seen: WindowShownEvent[] = [];
+    await ipc.onWindowShown(() => {
+      throw new Error("boom");
+    });
+    await ipc.onWindowShown((event) => seen.push(event));
+    fakeClaude.simulateWindowShown();
+    expect(seen).toEqual([{ reason: "tray" }]);
+    expect(quiet).toHaveBeenCalledTimes(1);
+    quiet.mockRestore();
+  });
+
+  it("출시 빌드의 Tauri 밖에서는 가짜로 돌지 않고 internal 오류를 낸다", async () => {
+    vi.stubEnv("DEV", false);
+    await expect(ipc.onWindowShown(() => undefined)).rejects.toMatchObject({ kind: "internal" });
+    vi.unstubAllEnvs();
   });
 });
 

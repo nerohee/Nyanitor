@@ -1077,6 +1077,18 @@ export type DocRead = ({ state: "ok" } & DocText) | { state: "absent" } | { stat
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */
 export const CLAUDE_SESSION_EVENT = "claude:session";
 
+/** `src-tauri/src/tray.rs` 의 `WINDOW_SHOWN_EVENT` — 숨어 있던(또는 최소화였던) 창이 열렸다 (D-50 · D-25). 앱이 처음 뜰 때는 오지 않는다 */
+export const WINDOW_SHOWN_EVENT = "app:window-shown";
+
+/** 창을 연 까닭 — `tray`: 트레이 아이콘을 눌렀다 · `tray_menu`: 트레이 메뉴의 열기 · `second_instance`: 앱을 한 번 더 실행했다 */
+export const WINDOW_SHOWN_REASONS = ["tray", "tray_menu", "second_instance"] as const;
+export type WindowShownReason = (typeof WINDOW_SHOWN_REASONS)[number];
+
+/** `WINDOW_SHOWN_EVENT` 의 내용 (`src-tauri/src/tray.rs` 의 `WindowShown`) */
+export interface WindowShownEvent {
+  reason: WindowShownReason;
+}
+
 function isAppErrorKind(value: unknown): value is AppErrorKind {
   return APP_ERROR_KINDS.some((kind) => kind === value);
 }

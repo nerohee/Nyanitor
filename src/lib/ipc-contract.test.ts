@@ -21,6 +21,7 @@ import projectsRs from "../../src-tauri/src/projects/mod.rs?raw";
 import projectsProgressRs from "../../src-tauri/src/projects/progress.rs?raw";
 import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs?raw";
 import skillsRs from "../../src-tauri/src/skills/mod.rs?raw";
+import trayRs from "../../src-tauri/src/tray.rs?raw";
 import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
@@ -940,6 +941,25 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
     const { CLAUDE_SESSION_EVENT } = await import("./ipc");
     expect(commandsRs).toContain(`pub const SESSION_EVENT: &str = "${CLAUDE_SESSION_EVENT}";`);
+  });
+
+  it("숨은 창 열림 이벤트 이름 · 까닭은 tray.rs 와 같다 (D-50)", async () => {
+    const { WINDOW_SHOWN_EVENT, WINDOW_SHOWN_REASONS } = await import("./ipc");
+    expect(trayRs).toContain(`pub const WINDOW_SHOWN_EVENT: &str = "${WINDOW_SHOWN_EVENT}";`);
+    // Rust 가 내보내는 까닭(`ShowCause::reason`)이 화면의 목록과 같다 — `Startup` 은 None 이라 화면에 오지 않는다
+    const reasons = [...trayRs.matchAll(/ShowCause::[A-Za-z]+ => Some\("([a-z_]+)"\)/g)].map((m) => m[1] as string);
+    expect(reasons.length).toBeGreaterThan(0);
+    expect([...reasons].sort()).toEqual([...WINDOW_SHOWN_REASONS].sort());
+    expect(trayRs).toMatch(/struct WindowShown \{\s*reason: &'static str,\s*\}/);
+  });
+
+  it("화면은 알림을 띄우지 못한다 — capabilities 에 notification 권한이 없고 알림 패키지도 없다 (D-50)", async () => {
+    const capability = (await import("../../src-tauri/capabilities/default.json?raw")).default;
+    expect(capability).not.toMatch(/notification/i);
+    const pkg = (await import("../../package.json?raw")).default;
+    expect(pkg).not.toMatch(/plugin-notification/);
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).not.toMatch(/notification/i);
   });
 
   it("화면이 부르는 명령 이름은 모두 Rust 에 등록돼 있다 (lib.rs 목록)", async () => {

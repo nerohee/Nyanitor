@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -30,6 +30,8 @@ tauri-plugin-log = "2"
 rusqlite = { version = "0.41", features = ["bundled"] }
 # 폴더 고르기 대화상자 — Rust 에서만 쓴다 (D-47). 화면 권한(`capabilities/`)에는 dialog 를 열지 않는다.
 tauri-plugin-dialog = "2"
+# OS 알림 — Rust 에서만 띄운다 (D-50). 화면 권한(`capabilities/`)에는 notification 을 열지 않는다. src/attention/ 에서만 쓴다.
+tauri-plugin-notification = "2"
 
 # 자식 프로세스 트리를 한꺼번에 끄기 (claude 가 시킨 bash · node 가 남지 않게) — src/claude/process_tree.rs 에서만 쓴다.
 # Windows 는 Job Object (앱이 비정상 종료해도 OS 가 자식을 끈다), 그 밖에는 프로세스 그룹.

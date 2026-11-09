@@ -22,6 +22,10 @@ interface Props {
   projects: readonly ProjectEntry[];
   /** 다른 프로젝트로 가기 (저장하지 않은 글을 묻는 일은 작업 공간이 한다) */
   onGoProject: (id: number) => void;
+  /** 바깥에서 "기다리는 카드로" 를 시킨다 (창을 다시 열었을 때, D-25) — 값이 바뀔 때마다 한 번, 카드가 그려진 뒤에 옮긴다 */
+  focusCard?: number;
+  /** `focusCard` 요청을 처리했다 (옮겼거나, 카드가 없어 버렸다) — 작업 공간이 기억해 다시 넘기지 않는다 */
+  onCardHandled?: (request: number) => void;
 }
 
 type Status = "idle" | "working" | "waiting" | "stopped";
@@ -66,7 +70,7 @@ function modelText(model: string | null, effort: string | null): string {
   return `${model ?? t("ws.chat.model.default")} · ${effort ?? t("ws.chat.model.default")}`;
 }
 
-export function ChatPane({ project, projects, onGoProject }: Props) {
+export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCardHandled }: Props) {
   const restored = useSessionStore((state) => state.restored);
   const session = useSessionStore((state) => state.session);
   const chat = useSessionStore((state) => state.chats[project.id]) ?? newChat();
@@ -120,6 +124,21 @@ export function ChatPane({ project, projects, onGoProject }: Props) {
     card?.scrollIntoView?.({ block: "start" });
     card?.focus();
   };
+
+  // 바깥 요청 — 목록을 읽고 카드가 그려진 뒤에 옮긴다. 읽기를 마쳤는데도 카드가 없으면 그 요청은 버린다 (나중에 온 카드로 뜬금없이 옮기지 않게)
+  const handledFocus = useRef(0);
+  useEffect(() => {
+    if (focusCard === 0 || handledFocus.current === focusCard) return;
+    const found = root.current?.querySelector('[data-pending-card="true"]');
+    if (found) {
+      handledFocus.current = focusCard;
+      jump();
+      onCardHandled?.(focusCard);
+    } else if (chat.load === "ready" || chat.load === "failed") {
+      handledFocus.current = focusCard;
+      onCardHandled?.(focusCard);
+    }
+  });
 
   const startWithSkill = () => {
     if (!project.skill) return;

@@ -16,6 +16,7 @@ use super::events::{
 use super::exec::ClaudeCommand;
 use super::launch;
 use super::session::{EventSink, SessionManager};
+use crate::attention::AttentionHandle;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::projects::ProjectsState;
@@ -23,14 +24,15 @@ use crate::projects::ProjectsState;
 /// 화면이 듣는 이벤트 이름 (`src/lib/ipc.ts` 와 같이 바꾼다).
 pub const SESSION_EVENT: &str = "claude:session";
 
-/// 세션 이벤트를 Tauri 이벤트로 내보낸다.
+/// 세션 이벤트를 Tauri 이벤트로 내보내고, 알림 · 트레이 상태(`attention`)에도 넘긴다.
 pub struct TauriSink {
     app: AppHandle,
+    attention: AttentionHandle,
 }
 
 impl TauriSink {
-    pub fn new(app: AppHandle) -> Arc<Self> {
-        Arc::new(Self { app })
+    pub fn new(app: AppHandle, attention: AttentionHandle) -> Arc<Self> {
+        Arc::new(Self { app, attention })
     }
 }
 
@@ -39,6 +41,8 @@ impl EventSink for TauriSink {
         if let Err(err) = self.app.emit(SESSION_EVENT, &event) {
             log::warn!("could not emit a session event: {err}");
         }
+        // 세션의 읽기 스레드가 부른다 — 줄에 넣기만 하고 바로 돌아온다 (창 · 파일 · 알림은 `attention` 의 스레드가 한다).
+        self.attention.session_event(event);
     }
 }
 

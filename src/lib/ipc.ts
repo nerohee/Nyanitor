@@ -8,6 +8,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   AppError,
   CLAUDE_SESSION_EVENT,
+  WINDOW_SHOWN_EVENT,
   toAppError,
   type AgentsList,
   type AppInfo,
@@ -37,6 +38,7 @@ import {
   type StopInfo,
   type UsageResult,
   type UsageSummary,
+  type WindowShownEvent,
 } from "./ipc-types";
 
 export * from "./ipc-types";
@@ -89,6 +91,21 @@ async function onClaudeEvent(handler: (event: ClaudeEvent) => void): Promise<() 
   return unlisten;
 }
 
+/**
+ * 숨어 있던(또는 최소화였던) 창이 열렸을 때를 듣는다 (D-50 · D-25 — 트레이 · 다시 실행). 앱이 처음 뜰 때는 오지 않는다.
+ * 돌려주는 함수를 부르면 그만 듣는다. 브라우저에서는 가짜 모드가 흉내 낸다 (`fakeClaude.simulateWindowShown`).
+ */
+async function onWindowShown(handler: (event: WindowShownEvent) => void): Promise<() => void> {
+  if (!inTauri()) {
+    const { fakeClaude } = await loadFake().catch((raw: unknown) => {
+      throw toAppError(raw);
+    });
+    return fakeClaude.subscribeWindowShown(handler);
+  }
+  const unlisten: UnlistenFn = await listen<WindowShownEvent>(WINDOW_SHOWN_EVENT, (event) => handler(event.payload));
+  return unlisten;
+}
+
 export const ipc = {
   appInfo: () => call<AppInfo>("app_info"),
 
@@ -108,6 +125,7 @@ export const ipc = {
   claudeLastSession: (projectId: number) => call<string | null>("claude_last_session", { projectId }),
   claudeRawLog: () => call<RawLogEntry[]>("claude_raw_log"),
   onClaudeEvent,
+  onWindowShown,
 
   // 하네스 설치 · 업데이트 (P4-02). 넘기는 값은 백업 번호 하나뿐 — 실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다.
   /** 위치 · 원본(개발자 모드) · 받은 원본 · git · Git Bash. 읽기만 한다 */

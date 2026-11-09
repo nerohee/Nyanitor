@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { NavPlace } from "./components/nav/AppNav";
 import Home from "./home/Home";
-import { startSessionStore } from "./workspace/chat/sessionStore";
+import { ipc } from "./lib/ipc";
+import { selectPending, startSessionStore, useSessionStore } from "./workspace/chat/sessionStore";
 import { wantsHarnessLab, wantsSessionLab } from "./lab/query";
 import { wantsVariantFrame } from "./variants/query";
 
@@ -27,15 +28,43 @@ interface View {
   openNew: boolean;
   /** 작업 공간을 열 때 먼저 보일 탭 (집의 정보 패널 단추) — 없으면 채팅 */
   tab: "progress" | "chat" | null;
+  /** 숨었던 창이 다시 열려 기다리는 카드로 가는 요청 (`n` 이 바뀔 때마다) — 다른 곳으로 가면 잊는다 */
+  reopen: { n: number; projectId: number } | null;
 }
 
 function App() {
   const search = window.location.search;
-  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false, tab: null });
+  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false, tab: null, reopen: null });
   // 세션 이벤트는 앱이 켜질 때 한 번만 듣는다 — 고양이 집 · 작업 공간을 오가도 끊기지 않고 대화 · 기다리는 카드가 쌓인다
   useEffect(() => {
     void startSessionStore();
   }, []);
+  // 숨었던(트레이 · 최소화) 창이 다시 열리면 — 답을 기다리는 카드가 있는 프로젝트의 채팅 탭으로 (D-25 · D-50). 카드가 없으면 그대로.
+  // 시안 틀 · 시험 화면에서는 듣지 않는다. 해제가 늦게 와도(StrictMode) 두 번 붙지 않게 한다.
+  useEffect(() => {
+    if (wantsSessionLab(search) || wantsHarnessLab(search) || wantsVariantFrame(search)) return;
+    let stopped = false;
+    let unlisten: (() => void) | null = null;
+    void ipc
+      .onWindowShown(() => {
+        const state = useSessionStore.getState();
+        if (!state.session || selectPending(state.session.projectId)(state) === 0) return;
+        const projectId = state.session.projectId;
+        setView((prev) => {
+          const reopen = { n: (prev.reopen?.n ?? 0) + 1, projectId };
+          return prev.place === "workspace" ? { ...prev, reopen } : { place: "workspace", projectId, openNew: false, tab: "chat", reopen };
+        });
+      })
+      .then((off) => {
+        if (stopped) off();
+        else unlisten = off;
+      })
+      .catch(() => undefined);
+    return () => {
+      stopped = true;
+      unlisten?.();
+    };
+  }, [search]);
   if (SessionLab && wantsSessionLab(search)) {
     return (
       <Suspense fallback={null}>
@@ -64,18 +93,19 @@ function App() {
           projectId={view.projectId}
           openNew={view.openNew}
           openTab={view.tab ?? undefined}
+          reopen={view.reopen}
           onSelect={(projectId) => setView((prev) => ({ ...prev, projectId, openNew: false }))}
-          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null }))}
+          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))}
         />
       </Suspense>
     );
   }
   return (
     <Home
-      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null }))}
-      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false, tab: null })}
-      onOpenWork={(projectId, tab) => setView({ place: "workspace", projectId, openNew: false, tab })}
-      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true, tab: null }))}
+      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))}
+      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false, tab: null, reopen: null })}
+      onOpenWork={(projectId, tab) => setView({ place: "workspace", projectId, openNew: false, tab, reopen: null })}
+      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true, tab: null, reopen: null }))}
     />
   );
 }

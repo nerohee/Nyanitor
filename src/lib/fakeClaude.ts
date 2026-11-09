@@ -28,6 +28,8 @@ import {
   type StartRequest,
   type StopInfo,
   type TurnSummary,
+  type WindowShownEvent,
+  type WindowShownReason,
   type WorkerOutcome,
   type WorkerRef,
 } from "./ipc-types";
@@ -103,6 +105,7 @@ function turnSummary(outcome: TurnSummary["outcome"], total: number): TurnSummar
 
 export function createFakeClaude() {
   const listeners = new Set<(event: ClaudeEvent) => void>();
+  const windowShownListeners = new Set<(event: WindowShownEvent) => void>();
   const lastSessions = new Map<string, string>();
   const rawLog: RawLogEntry[] = [];
   let session: { projectId: number; projectDir: string; sessionId: string; busy: boolean; turns: number; finishedTurns: number } | null = null;
@@ -519,6 +522,23 @@ export function createFakeClaude() {
         listeners.delete(handler);
       };
     },
+    /** 숨어 있던 창이 열린 것을 듣는다 (`ipc.onWindowShown` 의 브라우저 가짜 — 진짜는 Rust 가 트레이 · 다시 실행 때 보낸다) */
+    subscribeWindowShown(handler: (event: WindowShownEvent) => void): () => void {
+      windowShownListeners.add(handler);
+      return () => {
+        windowShownListeners.delete(handler);
+      };
+    },
+    /** 개발 · 시험용: 숨어 있던 창이 열린 것을 흉내 낸다 (듣는 쪽마다 따로 불린다 — 한쪽의 오류가 다른 쪽을 막지 않는다) */
+    simulateWindowShown(reason: WindowShownReason = "tray") {
+      for (const listener of [...windowShownListeners]) {
+        try {
+          listener({ reason });
+        } catch (error) {
+          console.error("fake window shown: a listener threw", error);
+        }
+      }
+    },
     /** 지금 돌고 있는 가짜 세션 (없으면 null) — 츄르 요약의 "지금 세션" (`fakeHistory.ts`). 끝난 턴만 센다 */
     liveRun(): { projectId: number; sessionId: string | null; turns: number } | null {
       return session ? { projectId: session.projectId, sessionId: session.turns > 0 ? session.sessionId : null, turns: session.finishedTurns } : null;
@@ -534,6 +554,7 @@ export function createFakeClaude() {
       lastSessions.clear();
       rawLog.length = 0;
       listeners.clear();
+      windowShownListeners.clear();
       counter = 0;
     },
   };

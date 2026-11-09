@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod attention;
 pub mod claude;
 pub mod commands;
 pub mod db;
@@ -38,7 +39,7 @@ pub fn run() {
     tauri::Builder::default()
         // single-instance 는 다른 플러그인보다 먼저 등록해야 한다.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            tray::show_main_window(app);
+            tray::show_main_window(app, tray::ShowCause::SecondInstance);
         }))
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -48,6 +49,8 @@ pub fn run() {
         .plugin(log_plugin().build())
         // 폴더 고르기 대화상자 — Rust 에서만 부른다 (`projects::commands`). 화면 권한(`capabilities/`)에는 dialog 를 열지 않는다 (D-47).
         .plugin(tauri_plugin_dialog::init())
+        // OS 알림 — Rust 에서만 띄운다 (`attention`). 화면 권한(`capabilities/`)에는 notification 을 열지 않는다 (D-50).
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             log::info!(
                 "{} {} started",
@@ -55,6 +58,9 @@ pub fn run() {
                 app.package_info().version
             );
             tray::setup(app.handle())?;
+            // 알림 · 트레이 상태 (P8, D-50): 세션 이벤트를 받아 창이 앞에 없을 때만 OS 알림을 띄우고 트레이 모양을 바꾼다.
+            let attention = attention::start(app.handle().clone());
+            app.manage(attention.clone());
             // 앱 DB (프로젝트 목록 · 세션 ID · 채팅 기록 · 츄르): 앱 데이터 폴더의 SQLite 하나. 못 열어도 앱은 뜨고, DB 를 쓰는 명령만 오류를 돌려준다 (P6-01).
             let app_data = app.path().app_data_dir()?;
             let app_db = db::AppDb::open(&app_data.join(db::DB_FILE));
@@ -63,7 +69,7 @@ pub fn run() {
             claude::store::import_legacy(&app_db, &app_data.join(claude::store::LEGACY_FILE));
             // 세션 관리자 (Claude 연결): 이어 하기 세션 ID · 채팅 기록 · 츄르를 같은 DB 에 쓴다 (P6-03).
             app.manage(claude::session::SessionManager::new(
-                claude::commands::TauriSink::new(app.handle().clone()),
+                claude::commands::TauriSink::new(app.handle().clone(), attention),
                 app_db.clone(),
                 claude::session::ManagerConfig::default(),
             ));
@@ -75,7 +81,7 @@ pub fn run() {
             app.manage(projects::ProjectsState::new(app_data));
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
-            tray::show_main_window(app.handle());
+            tray::show_main_window(app.handle(), tray::ShowCause::Startup);
             Ok(())
         })
         .on_window_event(tray::handle_window_event)

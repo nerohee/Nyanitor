@@ -70,7 +70,13 @@ pub trait Host {
     fn window(&self) -> WindowState;
     /// 등록된 프로젝트의 이름 (모르면 `None`)
     fn project_name(&self, project_id: i64) -> Option<String>;
+    /// 지금 (밀리초 — 알림이 몰릴 때 묶는 데만 쓴다)
+    fn now_ms(&self) -> u64;
 }
+
+/// 아직 안 본 알림이 있을 때, 마지막 질문 · 승인 알림 뒤 이 시간 안에 온 질문 · 승인은 띄우지 않는다
+/// (작업자 여럿이 한꺼번에 묻는 경우 — P8-03 점검 2). 트레이는 기다림, 채팅 탭에는 카드 수가 보인다.
+pub const BURST_MS: u64 = 10_000;
 
 /// 읽은 진행 문서를 어디에 쓸 것인가
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +251,8 @@ pub struct Tracker {
     /// 알린 할 일을 아직 창에서 안 봤다 (알림을 띄웠고 그 뒤 창이 보이며 포커스를 얻은 적 없음)
     unseen: bool,
     mood: Mood,
+    /// 마지막으로 띄운 질문 · 승인 알림의 때 (`BURST_MS`)
+    last_request_notice_ms: Option<u64>,
 }
 
 impl Default for Tracker {
@@ -260,6 +268,7 @@ impl Tracker {
             session: None,
             unseen: false,
             mood: Mood::Idle,
+            last_request_notice_ms: None,
         }
     }
 
@@ -321,6 +330,18 @@ impl Tracker {
         }
         if host.window().in_front() {
             return None;
+        }
+        // 몰려오는 질문 · 승인은 하나로 (오류 · 실행 확인 · 단계 완료는 늘 띄운다)
+        if matches!(kind, NoticeKind::Question | NoticeKind::Approval) {
+            let now = host.now_ms();
+            if self.unseen
+                && self
+                    .last_request_notice_ms
+                    .is_some_and(|last| now.saturating_sub(last) < BURST_MS)
+            {
+                return None;
+            }
+            self.last_request_notice_ms = Some(now);
         }
         let name = session.project_id.and_then(|id| host.project_name(id));
         self.unseen = true;
@@ -427,10 +448,10 @@ impl Tracker {
                     }
                 }
             }
-            SessionEvent::SessionEnded {
-                ended, mid_turn, ..
-            } => {
-                let died = *ended == EndKind::Died || *mid_turn;
+            SessionEvent::SessionEnded { ended, .. } => {
+                // CLI 가 스스로 죽었을 때만 (D-50). `mid_turn` 은 보지 않는다 — 앱 · 사용자가 끝내라고 해서
+                // 턴 도중에 꺼진 세션도 `Normal` + `mid_turn` 이다 (`session.rs` `announce_end`, P8-03 점검 3).
+                let died = *ended == EndKind::Died;
                 // 같은 일(오류로 끝난 턴 뒤에 CLI 가 죽음)로 두 번 알리지 않는다
                 let already = self.session.as_ref().is_some_and(|s| s.error_noticed);
                 if died && !already {
@@ -532,6 +553,9 @@ mod tests {
     struct FakeHost {
         window: Cell<WindowState>,
         name: Option<String>,
+        /// 가짜 시계 — 읽을 때마다 `step` 만큼 간다 (처음엔 `BURST_MS` — 알림이 몰리지 않는 보통 경우)
+        now: Cell<u64>,
+        step: Cell<u64>,
     }
 
     const HIDDEN: WindowState = WindowState {
@@ -550,6 +574,8 @@ mod tests {
             Self {
                 window: Cell::new(HIDDEN),
                 name: Some("우리 집".into()),
+                now: Cell::new(1_000_000),
+                step: Cell::new(BURST_MS),
             }
         }
         fn set(&self, window: WindowState) {
@@ -563,6 +589,11 @@ mod tests {
         }
         fn project_name(&self, _: i64) -> Option<String> {
             self.name.clone()
+        }
+        fn now_ms(&self) -> u64 {
+            let now = self.now.get();
+            self.now.set(now + self.step.get());
+            now
         }
     }
 
@@ -875,8 +906,8 @@ mod tests {
     #[test]
     fn the_title_is_plain_nyanitor_when_the_project_name_is_unknown() {
         let host = FakeHost {
-            window: Cell::new(HIDDEN),
             name: None,
+            ..FakeHost::hidden()
         };
         let (mut tracker, _) = running(&host);
         let effects = tracker.on_event(&permission("r1"), &host);
@@ -1168,11 +1199,11 @@ mod tests {
         let effects = died.on_event(&session_ended(EndKind::Died, false), &host);
         assert_eq!(notices(&effects)[0].kind, NoticeKind::Error);
 
-        // 정상으로 끝났지만 턴 도중이었다
+        // 정상으로 끝났지만 턴 도중이었다 = 앱 · 사용자가 끝내라고 했다 — 오류가 아니다 (D-50, P8-03 점검 3)
         let (mut mid, _) = running(&host);
         mid.on_event(&turn_started(), &host);
         let effects = mid.on_event(&session_ended(EndKind::Normal, true), &host);
-        assert_eq!(notices(&effects).len(), 1);
+        assert!(notices(&effects).is_empty());
     }
 
     #[test]
@@ -1294,6 +1325,35 @@ mod tests {
         assert_eq!(tracker.mood(), Mood::Waiting);
         host.set(FRONT);
         assert_eq!(moods(&tracker.on_window_changed(&host)), [Mood::Idle]);
+    }
+
+    #[test]
+    fn questions_and_approvals_that_pile_up_while_unseen_show_one_notice() {
+        let host = FakeHost::hidden();
+        host.step.set(1_000); // 1초씩
+        let (mut tracker, _) = running(&host);
+        tracker.on_event(&turn_started(), &host);
+        // 작업자 여럿이 한꺼번에 — 첫 것만
+        let first = tracker.on_event(&permission("r1"), &host);
+        assert_eq!(notices(&first).len(), 1);
+        let more = [
+            tracker.on_event(&permission("r2"), &host),
+            tracker.on_event(&question("r3", "어느 쪽?", None), &host),
+        ];
+        assert!(more.iter().all(|effects| notices(effects).is_empty()));
+        // 오류는 몰려와도 띄운다
+        let error = tracker.on_event(&turn_ended(TurnOutcome::Error), &host);
+        assert_eq!(notices(&error).len(), 1);
+        // 10초가 지나면 다시 띄운다
+        host.now.set(host.now.get() + BURST_MS);
+        let later = tracker.on_event(&permission("r4"), &host);
+        assert_eq!(notices(&later).len(), 1);
+        // 창에서 본 뒤엔 바로 다시 띄운다 (안 본 알림이 없다)
+        host.set(FRONT);
+        tracker.on_window_changed(&host);
+        host.set(HIDDEN);
+        let after_seen = tracker.on_event(&permission("r5"), &host);
+        assert_eq!(notices(&after_seen).len(), 1);
     }
 
     #[test]

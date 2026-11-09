@@ -359,6 +359,21 @@ describe("숨었던 창이 다시 열리면 기다리는 카드로 (P8-02, D-25)
     expect(scroll).not.toHaveBeenCalled();
   });
 
+  it("프로젝트 설정 창이 열려 있으면 옮기지 않는다 — 설정 창 · 프로젝트 그대로 (P8-03 점검 1)", async () => {
+    await start();
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    await screen.findByRole("heading", { level: 2, name: "고양이 앨범" });
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 설정" }));
+    const dialog = await screen.findByRole("dialog");
+    waitOn();
+    shown();
+    await act(async () => undefined);
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.getByRole("heading", { level: 2, name: "고양이 앨범" })).toBeInTheDocument();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(focusedCard()).toBe(false);
+  });
+
   it("옮긴 뒤 다른 프로젝트에 갔다 돌아와도 옛 요청으로 다시 끌려가지 않는다", async () => {
     await start();
     waitOn();

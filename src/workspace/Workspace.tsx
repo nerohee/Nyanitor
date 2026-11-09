@@ -173,7 +173,8 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
     if (!reopen || reopen.n === handledReopen.current || !ready) return;
     handledReopen.current = reopen.n;
     const target = projects.find((project) => project.id === reopen.projectId);
-    if (!target || leaving) return;
+    // 대화상자(설정 · 새 프로젝트 · 떠나기)가 열려 있으면 하던 일을 그대로 둔다 — 카드는 채팅 탭 숫자 · 트레이로 보인다 (고객, P8-03 점검 1)
+    if (!target || leaving || dialog) return;
     const show = () => {
       setActive("chat");
       setCardRequest((n) => n + 1);
@@ -307,6 +308,7 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
         )}
         {dialog === "settings" && selected && (
           <ProjectSettingsDialog
+            key={selected.id}
             project={selected}
             readOnly={readOnly}
             onClose={closeDialog}

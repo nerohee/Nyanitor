@@ -10,13 +10,15 @@ use std::time::SystemTime;
 use common::*;
 use nyanitor_lib::attention::Mood;
 use nyanitor_lib::attention::decide::{
-    Effect, Host, Notice, NoticeKind, ProgressSnapshot, Tracker, WindowState,
+    BURST_MS, Effect, Host, Notice, NoticeKind, ProgressSnapshot, Tracker, WindowState,
 };
 use nyanitor_lib::claude::events::{Response, SessionEvent, TurnOutcome};
 use nyanitor_lib::projects::progress;
 
 struct FakeHost {
     window: Cell<WindowState>,
+    /// 가짜 시계 — 읽을 때마다 `BURST_MS` 만큼 간다 (알림이 몰리지 않는 보통 경우)
+    now: Cell<u64>,
 }
 
 const HIDDEN: WindowState = WindowState {
@@ -34,6 +36,7 @@ impl FakeHost {
     fn new(window: WindowState) -> Self {
         Self {
             window: Cell::new(window),
+            now: Cell::new(1_000_000),
         }
     }
 }
@@ -44,6 +47,11 @@ impl Host for FakeHost {
     }
     fn project_name(&self, project_id: i64) -> Option<String> {
         (project_id == 1).then(|| "시험 프로젝트".to_string())
+    }
+    fn now_ms(&self) -> u64 {
+        let now = self.now.get();
+        self.now.set(now + BURST_MS);
+        now
     }
 }
 

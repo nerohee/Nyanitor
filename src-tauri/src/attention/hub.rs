@@ -179,6 +179,14 @@ impl Host for TauriHost {
         }
     }
 
+    fn now_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| {
+                u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+            })
+    }
+
     fn project_name(&self, project_id: i64) -> Option<String> {
         let db = self.app.try_state::<AppDb>()?;
         match db.read(|conn| projects::store::get(conn, project_id)) {

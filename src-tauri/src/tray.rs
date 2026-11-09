@@ -139,23 +139,33 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
             return;
         }
         if QUIT_PROMPT_OPEN.swap(true, Ordering::SeqCst) {
+            // 이미 떠 있다 — 다른 창 뒤에 숨었을 수 있다 (P8-03 점검 5)
+            log::info!("the quit prompt is already open — ignoring another quit");
             return;
         }
         let quit_app = app.clone();
-        app.dialog()
+        let mut dialog = app
+            .dialog()
             .message(strings::QUIT_MESSAGE)
             .title(strings::QUIT_TITLE)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
                 strings::QUIT_CONFIRM.into(),
                 strings::QUIT_CANCEL.into(),
-            ))
-            .show(move |confirmed| {
-                QUIT_PROMPT_OPEN.store(false, Ordering::SeqCst);
-                if confirmed {
-                    quit(&quit_app);
-                }
-            });
+            ));
+        // 메인 창이 보이면 그 위에 띄운다 (다른 창 뒤로 숨지 않게). 숨었거나 최소화면 그대로 — 트레이에서 누른 것이다.
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW)
+            && window.is_visible().unwrap_or(false)
+            && !window.is_minimized().unwrap_or(true)
+        {
+            dialog = dialog.parent(&window);
+        }
+        dialog.show(move |confirmed| {
+            QUIT_PROMPT_OPEN.store(false, Ordering::SeqCst);
+            if confirmed {
+                quit(&quit_app);
+            }
+        });
     });
 }
 

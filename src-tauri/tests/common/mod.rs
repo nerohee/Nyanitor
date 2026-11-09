@@ -530,3 +530,152 @@ pub fn make_origin_repo(dir: &Path) {
 pub fn as_url(path: &Path) -> String {
     path.display().to_string().replace('\\', "/")
 }
+
+// ───────────────────────────── 내 수정 시험 도우미 (P9-01) ─────────────────────────────
+
+use nyanitor_lib::custom::Env;
+
+/// 시험용 하네스 한 벌 — 가짜 `~/.claude` · 하네스 폴더 · 가짜 원본(`<하네스 폴더>/repo`: 에이전트 · 스킬 · 가짜 설치 스크립트)
+pub struct CustomRoot {
+    pub h: HarnessRoot,
+    /// 원본 폴더 (`<하네스 폴더>/repo`)
+    pub source: PathBuf,
+    /// 내 수정 폴더 (`<하네스 폴더>/custom`)
+    pub custom: PathBuf,
+}
+
+fn custom_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/custom")
+        .join(name)
+}
+
+fn harness_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/harness")
+        .join(name)
+}
+
+pub const SOURCE_AGENT_UI: &str = "---\nname: harness-builder-ui\ndescription: 화면 구현자\nmodel: sonnet\neffort: medium\ncolor: blue\n---\n\n너는 화면 구현자다.\n";
+pub const SOURCE_AGENT_DESIGNER: &str = "---\nname: harness-designer\ndescription: 디자이너\nmodel: opus\neffort: high\n---\n\n너는 디자이너다.\n";
+pub const SOURCE_SKILL_WEB: &str = "---\nname: web-full\ndescription: 웹 서비스 만들기\nargument-hint: [요구사항.md]\n---\n\n웹을 만든다.\n";
+pub const SOURCE_SKILL_DESKTOP: &str =
+    "---\nname: desktop-app\ndescription: 데스크톱 앱 만들기\n---\n\n앱을 만든다.\n";
+pub const SOURCE_CONFIG_EXAMPLE: &str = "{\n  \"language\": \"ko\",\n  \"planner\": {\n    \"model\": \"opus\",\n    \"effort\": \"high\"\n  },\n  \"agents\": {\n    \"ui\": \"harness-builder-ui\"\n  }\n}\n";
+
+impl CustomRoot {
+    /// 원본이 있는 시험 폴더 (`harness-builder-ui` · `harness-designer` · 스킬 `web-full` · `desktop-app` · 공통 폴더 `agents/_common`)
+    pub fn new(name: &str) -> Self {
+        let root = Self::empty(name);
+        root.write_source("agents/harness-builder-ui.md", SOURCE_AGENT_UI);
+        root.write_source("agents/harness-designer.md", SOURCE_AGENT_DESIGNER);
+        root.write_source("agents/_common/rules.md", "공통 규칙\n");
+        root.write_source("skills/web-full/SKILL.md", SOURCE_SKILL_WEB);
+        root.write_source("skills/desktop-app/SKILL.md", SOURCE_SKILL_DESKTOP);
+        root.write_source("config.example.json", SOURCE_CONFIG_EXAMPLE);
+        root
+    }
+
+    /// 원본 폴더가 아직 없는 시험 폴더 (하네스를 받기 전)
+    pub fn empty(name: &str) -> Self {
+        let h = HarnessRoot::new(name);
+        let source = h.locations.repo_dir();
+        let custom = h.locations.harness_home.join("custom");
+        Self { h, source, custom }
+    }
+
+    /// 가짜 설치 스크립트를 원본에 둔다 (`install` 은 성공 녹화를 내보낸다). 스크립트는 `custom/agents` · `custom/skills` 에서 본 파일을 `calls.log` 에 남긴다.
+    pub fn with_script(self) -> Self {
+        fs::create_dir_all(&self.source).unwrap();
+        let name = nyanitor_lib::harness::locate::script_name();
+        fs::copy(custom_fixture(name), self.source.join(name)).unwrap();
+        self.script_out("install", "install-change.json", 0);
+        self
+    }
+
+    /// 가짜 스크립트가 `op` 에서 내보낼 녹화와 종료 코드
+    pub fn script_out(&self, op: &str, json_fixture: &str, exit: i32) {
+        fs::copy(
+            harness_fixture(json_fixture),
+            self.source.join(format!("{op}.out")),
+        )
+        .unwrap();
+        fs::write(self.source.join(format!("{op}.exit")), format!("{exit}\n")).unwrap();
+    }
+
+    /// 가짜 스크립트가 받은 호출 — `(명령, 그때 본 custom 파일들(정렬))`
+    pub fn script_calls(&self) -> Vec<(String, Vec<String>)> {
+        fs::read_to_string(self.source.join("calls.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| {
+                let (op, files) = line.split_once('|').unwrap_or((line, ""));
+                let mut files: Vec<String> = files
+                    .split(',')
+                    .filter(|f| !f.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                files.sort();
+                (op.to_string(), files)
+            })
+            .collect()
+    }
+
+    pub fn install_calls(&self) -> usize {
+        self.script_calls()
+            .iter()
+            .filter(|(op, _)| op == "install")
+            .count()
+    }
+
+    pub fn write_source(&self, rel: &str, text: &str) {
+        let path = self.source.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    pub fn write_custom(&self, rel: &str, text: &str) {
+        let path = self.custom.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    pub fn read_custom(&self, rel: &str) -> String {
+        fs::read_to_string(self.custom.join(rel)).unwrap()
+    }
+
+    pub fn custom_exists(&self, rel: &str) -> bool {
+        self.custom.join(rel).exists()
+    }
+
+    pub fn ctx(&self) -> Context {
+        self.h.ctx()
+    }
+
+    pub fn ctx_without_git(&self) -> Context {
+        self.h.ctx_without_git()
+    }
+
+    /// `~/.claude` 안에 파일을 둔다 (사용자 자신의 에이전트 · 스킬 · 상태 파일)
+    pub fn write_claude(&self, rel: &str, text: &str) {
+        let path = self.h.locations.claude_dir.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    /// 내 수정 폴더의 git (시험용 — 앱이 쓰는 설정과 따로)
+    pub fn git(&self, args: &[&str]) -> String {
+        git(&self.custom, args)
+    }
+
+    /// 커밋 제목들 (최신이 먼저)
+    pub fn subjects(&self) -> Vec<String> {
+        let out = self.git(&["log", "--format=%s"]);
+        out.lines().map(str::to_string).collect()
+    }
+}
+
+/// `Context` 로 `Env` 를 만든다
+pub fn env_of(ctx: &Context) -> Env<'_> {
+    Env::new(ctx)
+}

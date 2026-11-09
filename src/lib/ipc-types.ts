@@ -1107,3 +1107,286 @@ export function toAppError(raw: unknown): AppError {
   const message = raw instanceof Error ? raw.message : String(raw);
   return new AppError("internal", message);
 }
+
+// ───────────────────────── 내 수정 (P9-01, D-51) — `src-tauri/src/custom/model.rs` 와 같이 맞춘다 ─────────────────────────
+// 화면이 보내는 것은 항목 id · 값 · 글 · 새 항목 요청 · 커밋 번호 · 에이전트 이름 · 고양이 id 뿐이다 — 경로 · 파일 이름을 보내는 길은 없다.
+// 화면으로 오는 파일 이름(`file` · `path`)은 표시용 상대 경로(`agents/x.md`)이고 다시 보내지 않는다.
+// 상태 때문에 안 되는 일은 오류(`AppError`)가 아니라 결과의 `outcome` · `reason` 이다. 오류는 보낸 값의 모양이 틀렸을 때(`invalid_input`) · 파일을 쓰지 못했을 때(`file_write_failed`) ·
+// 다른 하네스 일이 도는 중일 때(`harness_busy`) 등이다.
+
+/** `main` 오케스트레이터 (하네스 설정 `planner`) · `agent` 에이전트 · `skill` 스킬 */
+export type CustomItemKind = "main" | "agent" | "skill";
+
+/** 이 파일에 내가 한 것 — 값 바꿈 · 덧붙임 · 통째 · 내가 만든 것 (값과 덧붙임은 함께일 수 있다) */
+export type CustomMark = "values" | "append" | "replace" | "mine";
+
+/** 항목을 읽을 수 없는 이유 (D-22 — 그 항목만 "읽을 수 없음") */
+export type CustomUnreadableReason =
+  | "too_large"
+  | "read_failed"
+  | "not_utf8"
+  | "no_frontmatter"
+  | "unclosed_frontmatter"
+  | "name_mismatch"
+  | "bad_values"
+  | "bad_origin"
+  | "link_in_custom"
+  | "target_gone"
+  | "bad_config";
+
+/** 고를 수 있는 모델 · 수준 (`src-tauri/src/custom/values.rs` 의 `MODELS` · `EFFORTS` 와 같다 — 나중에 늘릴 수 있다) */
+export const CUSTOM_MODELS = ["opus", "sonnet", "haiku"] as const;
+export const CUSTOM_EFFORTS = ["low", "medium", "high"] as const;
+/** 글 파일 하나의 최대 크기 (`fsx::TEXT_MAX_BYTES`) — 넘으면 `too_large` */
+export const CUSTOM_TEXT_MAX_BYTES = 256 * 1024;
+/** 새로 만들 때 소개 글의 최대 글자 수 (`write::DESCRIPTION_MAX_CHARS`) */
+export const CUSTOM_DESCRIPTION_MAX_CHARS = 300;
+/** 적용 메시지(한 줄 요약)의 최대 글자 수 (`history::MESSAGE_MAX_CHARS`) — 넘으면 Rust 가 자른다 */
+export const CUSTOM_MESSAGE_MAX_CHARS = 200;
+/** 이름 · 고양이 id 모양 (`id.rs`) — 틀리면 `invalid_input` */
+export const CUSTOM_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+export const CUSTOM_CAT_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** 목록의 항목 하나 (읽을 수 있는 것) */
+export interface CustomItemInfo {
+  /** `main` · `agent:<이름>` · `skill:<이름>` — 화면이 다시 보내는 것은 이것뿐이다 */
+  id: string;
+  kind: CustomItemKind;
+  name: string;
+  description: string | null;
+  /** 표시용 상대 파일 이름 (오케스트레이터는 `config.local.json`) — 다시 보내지 않는다 */
+  file: string;
+  /** 원본 값 (없으면 null). 내가 만든 것은 그 파일 자신의 앞머리 값 */
+  model: string | null;
+  effort: string | null;
+  /** 내 값 (`values.yml` 의 것 · 오케스트레이터는 설정의 `planner` 중 원본과 다른 것) */
+  myModel: string | null;
+  myEffort: string | null;
+  /** 지금 쓰이는 값 (내 값 → 원본 값) */
+  currentModel: string | null;
+  currentEffort: string | null;
+  marks: CustomMark[];
+  /** 통째 바꾼(`.origin` 이 있는) 것만: true (원본 해시가 다름 · 원본에서 사라짐) · false · null (`.origin` 없음) */
+  originChanged: boolean | null;
+}
+
+/** 목록의 읽을 수 없는 항목 */
+export interface CustomItemUnreadable {
+  id: string;
+  kind: CustomItemKind;
+  name: string;
+  file: string;
+  reason: CustomUnreadableReason;
+}
+
+export type CustomListEntry = ({ state: "ok" } & CustomItemInfo) | ({ state: "unreadable" } & CustomItemUnreadable);
+
+/** 기록(로컬 git)의 상태 — `no_git`: 이 PC 에 git 이 없다 (저장 · 적용은 되고 기록만 없다) · `not_started`: 아직 시작 전 (처음 저장할 때 시작) · `failed`: git 을 부르지 못했다 */
+export type CustomHistoryState = "ok" | "no_git" | "not_started" | "failed";
+
+export interface CustomHistoryInfo {
+  state: CustomHistoryState;
+  detail: string | null;
+}
+
+export type CustomFileStatus = "added" | "changed" | "removed";
+
+export interface CustomUnappliedFile {
+  /** 내 수정 폴더 기준 상대 경로 (표시용) */
+  path: string;
+  status: CustomFileStatus;
+}
+
+/** 적용 안 한 것 = 커밋 안 된 변경 (새 파일 포함). `known: false` 는 git 이 없거나 못 불러서 모른다 (적용은 늘 설치만 한다) */
+export interface CustomUnapplied {
+  known: boolean;
+  count: number;
+  /** 앞 200개까지 */
+  files: CustomUnappliedFile[];
+}
+
+export interface CustomList {
+  /** 원본 폴더가 있는가 — 없으면 false + `reason: "no_source"` (오류 아님, 목록은 비었다) */
+  available: boolean;
+  reason: string | null;
+  developerMode: boolean;
+  history: CustomHistoryInfo;
+  unapplied: CustomUnapplied;
+  /** 오케스트레이터가 맨 앞, 그 뒤는 에이전트 · 스킬 (이름 순) */
+  items: CustomListEntry[];
+}
+
+/** 글 한 덩이 (원본 글 · 덧붙임 글 · 통째 글) */
+export type CustomTextPart =
+  | { state: "absent" }
+  | { state: "text"; text: string }
+  | { state: "too_large" }
+  | { state: "unreadable"; reason: CustomUnreadableReason };
+
+/** 항목 하나 읽기 — 비교(원본 글 ↔ 내 통째 글)는 화면이 두 글로 한다 */
+export interface CustomItemDetail {
+  info: CustomItemInfo;
+  /** 원본 글 (읽기 전용). 오케스트레이터 · 내가 만든 것은 없다 */
+  originText: CustomTextPart;
+  /** 덧붙임 글 */
+  appendText: CustomTextPart;
+  /** 통째 글 — 원본을 통째로 바꿨으면 그 글, 내가 만든 것이면 그 파일의 글 */
+  replaceText: CustomTextPart;
+  /** 원본에서 파일이 사라졌다 (`.origin` 만 남음) */
+  originGone: boolean;
+}
+
+export type CustomItemRead = ({ state: "ok" } & CustomItemDetail) | ({ state: "unreadable" } & CustomItemUnreadable) | { state: "not_found" };
+
+/** 값 바꾸기 요청 — 바라는 값 **전체** (null = 원본 값으로 = 그 키를 지운다). 목록 밖 값은 `invalid_input` (이미 파일에 든 값을 그대로 돌려보내는 것은 받는다) */
+export interface CustomValues {
+  model: string | null;
+  effort: string | null;
+}
+
+/** 새 에이전트 · 스킬 만들기 요청 — 종류 · 이름 · 소개(한 줄) · 모델 · 수준(선택) */
+export interface CustomNewItem {
+  kind: "agent" | "skill";
+  name: string;
+  description: string;
+  model?: string | null;
+  effort?: string | null;
+}
+
+export type CustomWriteOutcome = "saved" | "refused";
+
+/**
+ * 저장 · 지움 · 새로 만들기 · 원본 바뀜 고르기의 결과. `refused` 의 `reason`:
+ * `no_source` (원본이 없다) · `not_found` · `link_in_path` · `too_large` · `not_utf8` · `unreadable` · `bad_values` (값 파일이 설치가 받아들이는 모양이 아니다) · `bad_config` ·
+ * `bad_frontmatter` · `invalid_agent` (둘째 줄 `name` 이 다름 · `hooks:` 가 있음 · 스킬 `name` 이 폴더 이름과 다름) · `name_in_source` (원본에 같은 이름) · `name_taken` (내 수정에 이미 있음) ·
+ * `not_mine` · `not_replaced` · `already_replaced` · `not_supported` (오케스트레이터 · 내가 만든 것의 덧붙임 …) · `no_origin` (원본에서 사라져 "원본으로" 가 없다)
+ */
+export interface CustomWriteResult {
+  outcome: CustomWriteOutcome;
+  reason: string | null;
+  detail: string | null;
+  /** 실제로 파일이 바뀌었는가 */
+  changed: boolean;
+  /** 새로 만들기: `~/.claude` 에 사용자 자신의 같은 이름 파일이 이미 있다 (설치가 건너뛴다) */
+  notOurs: boolean;
+}
+
+/** 줄 하나의 차이 — `" "` 그대로 · `"+"` 더함 · `"-"` 뺌 · `"@"` 위치 표시 */
+export interface CustomDiffLine {
+  sign: " " | "+" | "-" | "@";
+  text: string;
+  /** 옛 파일 · 새 파일 줄 번호 */
+  old?: number;
+  new?: number;
+}
+
+export interface CustomFileDiff {
+  path: string;
+  status: CustomFileStatus;
+  /** 글이 아니라서 · 너무 커서 줄 차이를 못 준다 */
+  binary: boolean;
+  lines: CustomDiffLine[];
+  /** 줄 수 상한 때문에 뒤를 잘랐다 */
+  truncated: boolean;
+  /** 더한 줄 · 뺀 줄 수 (잘리기 전의 전체) */
+  added: number;
+  removed: number;
+}
+
+/** 적용하면 바뀌는 것 (적용 안 한 것의 줄 단위 차이) */
+export interface CustomChanges {
+  state: CustomHistoryState;
+  detail: string | null;
+  files: CustomFileDiff[];
+  /** 파일 수 상한 때문에 뒤를 빼면 `files.length` 보다 크다 */
+  filesTotal: number;
+}
+
+/** 커밋 종류 — 커밋 메시지 끝 표시 줄로 알아본다. `new`: 새 에이전트 · 스킬이 든 적용 · `other`: 앱이 만들지 않은 커밋 */
+export type CustomCommitKind = "apply" | "new" | "restore" | "origin_update" | "cats" | "start" | "other";
+
+export interface CustomCommit {
+  /** 전체 번호 (40글자) — 화면은 이것이나 `short` 를 다시 보낸다 */
+  hash: string;
+  /** 짧은 번호 (7글자) */
+  short: string;
+  /** 커밋한 때 (ISO 8601, 시간대 포함) */
+  date: string;
+  /** 메시지 첫 줄 */
+  message: string;
+  kind: CustomCommitKind;
+  /** 바뀐 파일 (앞 50개까지) */
+  files: string[];
+  filesTotal: number;
+}
+
+/** 기록 목록 — 최신이 먼저, 최근 200개까지 (`truncated`: 더 있다) */
+export interface CustomHistory {
+  state: CustomHistoryState;
+  detail: string | null;
+  commits: CustomCommit[];
+  truncated: boolean;
+}
+
+export type CustomCommitDiff =
+  | { state: "ok"; commit: CustomCommit; files: CustomFileDiff[]; filesTotal: number }
+  | { state: "unknown_commit" }
+  | { state: "no_git" }
+  | { state: "not_started" }
+  | { state: "failed"; detail: string };
+
+export type CustomDiscardOutcome = "discarded" | "nothing" | "no_git" | "not_started";
+
+export interface CustomDiscardResult {
+  outcome: CustomDiscardOutcome;
+  /** 버린 파일 수 */
+  files: number;
+}
+
+/** 적용(또는 되돌리기)의 기록(커밋) 쪽 결과 — `committed` 커밋을 만들었다 · `no_git` git 이 없어 기록하지 않았다 (설치는 됐다) · `failed` 설치는 됐는데 커밋하지 못했다 (적용 안 한 것으로 남는다) · `skipped` 설치하지 않아서 커밋도 없다 */
+export type CustomCommitOutcome = "committed" | "no_git" | "failed" | "skipped";
+
+export type CustomApplyOutcome = "applied" | "nothing" | "failed";
+
+/** 적용 결과 — `failed` 면 `script`(설치 결과 그대로)로 이유를 보이고, 커밋하지 않았다 (적용 안 한 것으로 남는다) */
+export interface CustomApplyResult {
+  outcome: CustomApplyOutcome;
+  /** 설치를 돌렸으면 그 결과 (`ipc.harnessInstall` 과 같은 모양) */
+  script: ScriptResult | null;
+  commit: CustomCommitOutcome;
+  /** 만든 커밋의 짧은 번호 */
+  commitShort: string | null;
+  /** 적용한(하려던) 파일 수 */
+  files: number;
+  detail: string | null;
+}
+
+/** 어느 때로 되돌리기 결과 — `has_unapplied`: 적용 안 한 것이 있어 하지 않았다 (먼저 적용하거나 버린다) · `same_as_now`: 그 모습이 지금과 같다 · `rollback_failed`: 설치가 실패했는데 되돌려 놓지도 못했다 */
+export type CustomRestoreOutcome = "restored" | "has_unapplied" | "unknown_commit" | "same_as_now" | "no_git" | "not_started" | "failed" | "rollback_failed";
+
+export interface CustomRestoreResult {
+  outcome: CustomRestoreOutcome;
+  script: ScriptResult | null;
+  commit: CustomCommitOutcome;
+  commitShort: string | null;
+  detail: string | null;
+}
+
+/** `absent`: `custom/agent-cats.json` 이 아직 없다 (화면 기본 연결을 쓴다) · `unreadable`: 있는데 읽을 수 없다 */
+export type CustomCatsState = "ok" | "absent" | "unreadable";
+
+/** 고양이 연결 — 키 = 에이전트 이름(또는 `main`), 값 = 고양이 id. 파일에 적힌 것만 (기본 연결은 화면이 안다) */
+export interface CustomCats {
+  state: CustomCatsState;
+  agents: Record<string, string>;
+}
+
+/** 고양이 쓰기 결과 — 그 파일만 바로 커밋한다 (다른 적용 안 한 것은 그대로). `refused` 의 `reason`: `unreadable` · `too_large` · `link_in_path` */
+export interface CustomCatsWriteResult {
+  outcome: CustomWriteOutcome;
+  reason: string | null;
+  changed: boolean;
+  commit: CustomCommitOutcome;
+  commitShort: string | null;
+  detail: string | null;
+}

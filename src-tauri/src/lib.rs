@@ -2,6 +2,7 @@ pub mod agents;
 pub mod attention;
 pub mod claude;
 pub mod commands;
+pub mod custom;
 pub mod db;
 pub mod error;
 pub mod harness;
@@ -106,6 +107,24 @@ pub fn run() {
             harness::commands::harness_backups,
             harness::commands::harness_restore_plan,
             harness::commands::harness_restore,
+            custom::commands::custom_list,
+            custom::commands::custom_item_read,
+            custom::commands::custom_values_save,
+            custom::commands::custom_append_save,
+            custom::commands::custom_replace_start,
+            custom::commands::custom_text_save,
+            custom::commands::custom_replace_stop,
+            custom::commands::custom_origin_keep,
+            custom::commands::custom_new,
+            custom::commands::custom_mine_delete,
+            custom::commands::custom_changes,
+            custom::commands::custom_discard,
+            custom::commands::custom_apply,
+            custom::commands::custom_history,
+            custom::commands::custom_commit_diff,
+            custom::commands::custom_restore,
+            custom::commands::custom_cats_read,
+            custom::commands::custom_cat_save,
             agents::commands::agents_list,
             skills::commands::skills_list,
             usage::commands::usage_read,

@@ -297,7 +297,8 @@ fn git_command(ctx: &Context, git: &Path) -> ClaudeCommand {
     command
 }
 
-fn run_git<S: AsRef<OsStr>>(
+/// git 을 한 번 돌린다 (시간 제한 · 환경 정리 · 상위 저장소 방지). 내 수정 기록(`custom::history`)도 이것으로 돌린다.
+pub fn run_git<S: AsRef<OsStr>>(
     ctx: &Context,
     git: &Path,
     repo: Option<&Path>,

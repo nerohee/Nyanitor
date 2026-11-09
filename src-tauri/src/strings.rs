@@ -31,3 +31,19 @@ pub const QUIT_TITLE: &str = "Nyanitor 끝내기";
 pub const QUIT_MESSAGE: &str = "먹물이 아직 일하고 있어요. 끝내면 지금 하던 일이 멈춰요.";
 pub const QUIT_CONFIRM: &str = "끝내기";
 pub const QUIT_CANCEL: &str = "취소";
+
+// 내 수정 (P9-01, D-51) — 기록(로컬 git)의 커밋 메시지와, 새로 만든 에이전트 · 스킬 파일의 본문 틀. 화면 밖(파일 · 기록)에 남는 글이라 여기에 둔다.
+pub const CUSTOM_COMMIT_START: &str = "처음 기록";
+pub const CUSTOM_COMMIT_CATS: &str = "고양이 연결 바꿈";
+pub fn custom_commit_apply(files: usize) -> String {
+    format!("적용 — 파일 {files}개")
+}
+pub fn custom_commit_restore(short: &str) -> String {
+    format!("{short} 때로 되돌림")
+}
+pub fn custom_commit_origin_update(source_short: &str) -> String {
+    format!("원본 업데이트 받음 ({source_short})")
+}
+pub const CUSTOM_NEW_AGENT_BODY: &str =
+    "너는 이 프로젝트의 도우미다. 여기에 맡은 일과 지킬 규칙을 한두 줄로 적는다.";
+pub const CUSTOM_NEW_SKILL_BODY: &str = "이 스킬이 하는 일과 쓰는 때를 한두 줄로 적는다.";

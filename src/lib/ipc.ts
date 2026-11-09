@@ -17,6 +17,19 @@ import {
   type ClaudeResponse,
   type ClaudeSessionState,
   type ClaudeStatus,
+  type CustomApplyResult,
+  type CustomCats,
+  type CustomCatsWriteResult,
+  type CustomChanges,
+  type CustomCommitDiff,
+  type CustomDiscardResult,
+  type CustomHistory,
+  type CustomItemRead,
+  type CustomList,
+  type CustomNewItem,
+  type CustomRestoreResult,
+  type CustomValues,
+  type CustomWriteResult,
   type DocRead,
   type DocsList,
   type GitResult,
@@ -146,6 +159,45 @@ export const ipc = {
   harnessRestorePlan: (backupId: string) => call<ScriptResult>("harness_restore_plan", { backupId }),
   /** 되돌리기 (같은 번호의 되돌리기 미리보기를 본 뒤에만) */
   harnessRestore: (backupId: string) => call<ScriptResult>("harness_restore", { backupId }),
+
+  // 내 수정 (P9-01, D-51). **넘기는 값은 항목 id · 값 · 글 · 새 항목 요청 · 커밋 번호 · 에이전트 이름 · 고양이 id 뿐이다** — 경로 · 파일 이름 · 실행 파일 · 인자를 넘기는 길은 없다 (Rust 가 모양을 다시 확인한다).
+  // 항목 id: `main` (오케스트레이터) · `agent:<이름>` · `skill:<이름>` (이름은 `^[a-z][a-z0-9-]{0,63}$`). 상태 때문에 안 되는 일은 오류가 아니라 결과의 `outcome` · `reason` 이다.
+  /** 목록 — 오케스트레이터 · 에이전트 · 스킬 (원본 + 내 수정에만 있는 것), 기록 상태, 적용 안 한 것 개수 · 파일. 하네스가 없으면 `available: false`. 잠그지 않는다 */
+  customList: () => call<CustomList>("custom_list"),
+  /** 항목 하나 읽기 — 원본 글(읽기 전용) · 덧붙임 글 · 통째 글 · 값. 비교(원본 ↔ 내 통째 글)는 두 글로 화면이 한다. 파일 하나 256KB 까지 (넘으면 그 부분 `too_large`) */
+  customItemRead: (itemId: string) => call<CustomItemRead>("custom_item_read", { itemId }),
+  /** 값 바꾸기 — 바라는 값 전체 (`null` = 원본 값으로 = 그 키를 지운다, 남은 키가 없으면 값 파일을 지운다). 에이전트 · 스킬 · `main`(하네스 설정 `planner`) 모두. 목록 밖 값은 `invalid_input` */
+  customValuesSave: (itemId: string, values: CustomValues) => call<CustomWriteResult>("custom_values_save", { itemId, values }),
+  /** 덧붙임 글 저장 — 원본 끝에 덧붙는다. 빈 글(공백뿐 포함) = 지움. 원본이 있는 에이전트 · 스킬만 (`main` · 내가 만든 것은 `not_supported`) */
+  customAppendSave: (itemId: string, text: string) => call<CustomWriteResult>("custom_append_save", { itemId, text }),
+  /** 통째 시작 — 지금 원본 글을 내 수정으로 복사하고 그때 원본 해시를 남긴다 (원본에 있는 것만) */
+  customReplaceStart: (itemId: string) => call<CustomWriteResult>("custom_replace_start", { itemId }),
+  /** 통째 글 저장 — 통째로 바꾼 것 · 내가 만든 것의 글. 에이전트는 둘째 줄 `name: <이름>` · `hooks:` 없음을 지켜야 한다 (아니면 `refused` · `invalid_agent`) */
+  customTextSave: (itemId: string, text: string) => call<CustomWriteResult>("custom_text_save", { itemId, text }),
+  /** 통째 그만 = **원본으로** (원본 바뀜의 "원본으로" 도 이것) — 통째 글과 원본 해시를 지운다. 값 · 덧붙임은 그대로. 원본에서 사라진 것은 `no_origin` */
+  customReplaceStop: (itemId: string) => call<CustomWriteResult>("custom_replace_stop", { itemId }),
+  /** 원본 바뀜 — **내 것 유지** (원본 해시를 지금 것으로 다시 쓴다. 원본에서 사라졌으면 `.origin` 만 지운다). 고른 뒤는 적용 안 한 것이 된다 */
+  customOriginKeep: (itemId: string) => call<CustomWriteResult>("custom_origin_keep", { itemId }),
+  /** 새 에이전트 · 스킬 만들기 — 틀 파일 하나. 거절: 원본에 같은 이름(`name_in_source`) · 내 수정에 이미 있음(`name_taken`). `~/.claude` 에 사용자 자신의 같은 이름 파일이 있으면 만들되 `notOurs: true` */
+  customNew: (request: CustomNewItem) => call<CustomWriteResult>("custom_new", { request }),
+  /** 내가 만든 것 지우기 (스킬은 폴더째). 원본에 있는 것은 `not_mine` (그만두려면 `customReplaceStop`) */
+  customMineDelete: (itemId: string) => call<CustomWriteResult>("custom_mine_delete", { itemId }),
+  /** 적용하면 바뀌는 것 — 적용 안 한 것의 파일별 줄 단위 차이 (상한 있음). 잠그지 않는다 */
+  customChanges: () => call<CustomChanges>("custom_changes"),
+  /** 적용 안 한 것 버리기 — 작업 트리를 마지막 적용 모습으로 (새 파일도 지운다) */
+  customDiscard: () => call<CustomDiscardResult>("custom_discard"),
+  /** 적용 — 적용 안 한 것이 있을 때만: 설치(`install --json`) → 성공하면 커밋. `summary` 는 한 줄 요약 (200자 · 한 줄로 Rust 가 다듬는다, `null` 이면 기본 문구). 실패하면 커밋하지 않고 `script` 로 이유를 보인다 */
+  customApply: (summary: string | null = null) => call<CustomApplyResult>("custom_apply", { summary }),
+  /** 기록 목록 — 최근 200개, 커밋마다 짧은 번호 · 때 · 메시지 · 종류 · 바뀐 파일. 잠그지 않는다 */
+  customHistory: () => call<CustomHistory>("custom_history"),
+  /** 커밋 하나의 차이 (`commit` = 기록 목록의 `hash` 또는 `short`, 7~40글자 16진수 소문자 — 모양이 틀리면 `invalid_input`) */
+  customCommitDiff: (commit: string) => call<CustomCommitDiff>("custom_commit_diff", { commit }),
+  /** 어느 때로 되돌리기 — 적용 안 한 것이 있으면 `has_unapplied`. 아니면 그때 모습 + 설치 + **새 커밋** (이력은 지우지 않는다). 설치가 실패하면 처음 모습으로 되돌려 놓는다 */
+  customRestore: (commit: string) => call<CustomRestoreResult>("custom_restore", { commit }),
+  /** 고양이 연결 읽기 — 파일에 적힌 것만 (기본 연결은 화면 쪽 `agent-cats.json`) */
+  customCatsRead: () => call<CustomCats>("custom_cats_read"),
+  /** 한 에이전트의 고양이 쓰기 (`agent` = 에이전트 이름 또는 `main`, `cat` = 고양이 id, `null` = 지움) — 그 파일만 바로 커밋한다 */
+  customCatSave: (agent: string, cat: string | null) => call<CustomCatsWriteResult>("custom_cat_save", { agent, cat }),
 
   // 고양이 집 (P5-01). 넘기는 값이 없다 — 경로 · 파일 이름 · 실행 파일 · 인자를 넘기는 길은 없다.
   /** 설치된 에이전트 목록 — 오케스트레이터 + `<설정 폴더>/agents/*.md` 앞머리. 깨진 파일 · 설정 · 하네스 없음은 오류가 아니라 결과의 상태다 */

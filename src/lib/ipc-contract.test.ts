@@ -2,6 +2,14 @@
 // Rust 쪽 목록은 소스 파일 글을 읽어(`?raw`) 뽑는다. 읽는 모양이 바뀌면 이 시험이 먼저 "못 찾음" 으로 실패한다.
 import agentsConfigRs from "../../src-tauri/src/agents/config.rs?raw";
 import agentsRs from "../../src-tauri/src/agents/mod.rs?raw";
+import customCatsRs from "../../src-tauri/src/custom/cats.rs?raw";
+import customFlowRs from "../../src-tauri/src/custom/flow.rs?raw";
+import customFsxRs from "../../src-tauri/src/custom/fsx.rs?raw";
+import customHistoryRs from "../../src-tauri/src/custom/history.rs?raw";
+import customIdRs from "../../src-tauri/src/custom/id.rs?raw";
+import customModelRs from "../../src-tauri/src/custom/model.rs?raw";
+import customValuesRs from "../../src-tauri/src/custom/values.rs?raw";
+import customWriteRs from "../../src-tauri/src/custom/write.rs?raw";
 import errorRs from "../../src-tauri/src/error.rs?raw";
 import eventsRs from "../../src-tauri/src/claude/events.rs?raw";
 import harnessBackupsRs from "../../src-tauri/src/harness/backups.rs?raw";
@@ -27,6 +35,13 @@ import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
 import {
   AppError,
+  CUSTOM_CAT_ID_PATTERN,
+  CUSTOM_DESCRIPTION_MAX_CHARS,
+  CUSTOM_EFFORTS,
+  CUSTOM_MESSAGE_MAX_CHARS,
+  CUSTOM_MODELS,
+  CUSTOM_NAME_PATTERN,
+  CUSTOM_TEXT_MAX_BYTES,
   toAppError,
   type AgentInfo,
   type AgentRole,
@@ -101,6 +116,36 @@ import {
   type TurnOutcome,
   type WorkerOutcome,
   type WorkerRef,
+  type CustomApplyOutcome,
+  type CustomApplyResult,
+  type CustomCats,
+  type CustomCatsState,
+  type CustomCatsWriteResult,
+  type CustomChanges,
+  type CustomCommit,
+  type CustomCommitKind,
+  type CustomCommitOutcome,
+  type CustomDiffLine,
+  type CustomDiscardOutcome,
+  type CustomDiscardResult,
+  type CustomFileDiff,
+  type CustomFileStatus,
+  type CustomHistory,
+  type CustomHistoryInfo,
+  type CustomHistoryState,
+  type CustomItemDetail,
+  type CustomItemInfo,
+  type CustomItemKind,
+  type CustomItemUnreadable,
+  type CustomList,
+  type CustomMark,
+  type CustomRestoreOutcome,
+  type CustomRestoreResult,
+  type CustomUnapplied,
+  type CustomUnappliedFile,
+  type CustomUnreadableReason,
+  type CustomWriteOutcome,
+  type CustomWriteResult,
   type DocFile,
   type DocRead,
   type DocsList,
@@ -406,6 +451,68 @@ const TS_HISTORY_FIELDS = {
   ProjectUsage: { projectId: 1, today: 1, total: 1 } satisfies Record<keyof ProjectUsage, 1>,
   SessionUsage: { projectId: 1, sessionId: 1, usage: 1 } satisfies Record<keyof SessionUsage, 1>,
   UsageSummary: { since: 1, today: 1, projects: 1, session: 1 } satisfies Record<keyof UsageSummary, 1>,
+};
+
+// 내 수정 (P9-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_CUSTOM_ITEM_KINDS: Record<CustomItemKind, true> = { main: true, agent: true, skill: true };
+const TS_CUSTOM_MARKS: Record<CustomMark, true> = { values: true, append: true, replace: true, mine: true };
+const TS_CUSTOM_UNREADABLE: Record<CustomUnreadableReason, true> = {
+  too_large: true,
+  read_failed: true,
+  not_utf8: true,
+  no_frontmatter: true,
+  unclosed_frontmatter: true,
+  name_mismatch: true,
+  bad_values: true,
+  bad_origin: true,
+  link_in_custom: true,
+  target_gone: true,
+  bad_config: true,
+};
+const TS_CUSTOM_HISTORY_STATES: Record<CustomHistoryState, true> = { ok: true, no_git: true, not_started: true, failed: true };
+const TS_CUSTOM_FILE_STATUSES: Record<CustomFileStatus, true> = { added: true, changed: true, removed: true };
+const TS_CUSTOM_WRITE_OUTCOMES: Record<CustomWriteOutcome, true> = { saved: true, refused: true };
+const TS_CUSTOM_COMMIT_KINDS: Record<CustomCommitKind, true> = { apply: true, new: true, restore: true, origin_update: true, cats: true, start: true, other: true };
+const TS_CUSTOM_COMMIT_OUTCOMES: Record<CustomCommitOutcome, true> = { committed: true, no_git: true, failed: true, skipped: true };
+const TS_CUSTOM_APPLY_OUTCOMES: Record<CustomApplyOutcome, true> = { applied: true, nothing: true, failed: true };
+const TS_CUSTOM_RESTORE_OUTCOMES: Record<CustomRestoreOutcome, true> = {
+  restored: true,
+  has_unapplied: true,
+  unknown_commit: true,
+  same_as_now: true,
+  no_git: true,
+  not_started: true,
+  failed: true,
+  rollback_failed: true,
+};
+const TS_CUSTOM_DISCARD_OUTCOMES: Record<CustomDiscardOutcome, true> = { discarded: true, nothing: true, no_git: true, not_started: true };
+const TS_CUSTOM_CATS_STATES: Record<CustomCatsState, true> = { ok: true, absent: true, unreadable: true };
+/** 줄 안내 종류 (`ListEntry` · `ItemRead` · `TextPart` · `CommitDiff` 의 `state` 값) */
+const TS_CUSTOM_TAGS = {
+  ListEntry: ["ok", "unreadable"],
+  ItemRead: ["ok", "unreadable", "not_found"],
+  TextPart: ["absent", "text", "too_large", "unreadable"],
+  CommitDiff: ["ok", "unknown_commit", "no_git", "not_started", "failed"],
+} as const;
+const TS_CUSTOM_FIELDS = {
+  ItemInfo: { id: 1, kind: 1, name: 1, description: 1, file: 1, model: 1, effort: 1, myModel: 1, myEffort: 1, currentModel: 1, currentEffort: 1, marks: 1, originChanged: 1 } satisfies Record<keyof CustomItemInfo, 1>,
+  ItemUnreadable: { id: 1, kind: 1, name: 1, file: 1, reason: 1 } satisfies Record<keyof CustomItemUnreadable, 1>,
+  HistoryInfo: { state: 1, detail: 1 } satisfies Record<keyof CustomHistoryInfo, 1>,
+  UnappliedFile: { path: 1, status: 1 } satisfies Record<keyof CustomUnappliedFile, 1>,
+  Unapplied: { known: 1, count: 1, files: 1 } satisfies Record<keyof CustomUnapplied, 1>,
+  CustomList: { available: 1, reason: 1, developerMode: 1, history: 1, unapplied: 1, items: 1 } satisfies Record<keyof CustomList, 1>,
+  ItemDetail: { info: 1, originText: 1, appendText: 1, replaceText: 1, originGone: 1 } satisfies Record<keyof CustomItemDetail, 1>,
+  WriteResult: { outcome: 1, reason: 1, detail: 1, changed: 1, notOurs: 1 } satisfies Record<keyof CustomWriteResult, 1>,
+  DiffLine: { sign: 1, text: 1, old: 1, new: 1 } satisfies Record<keyof CustomDiffLine, 1>,
+  FileDiff: { path: 1, status: 1, binary: 1, lines: 1, truncated: 1, added: 1, removed: 1 } satisfies Record<keyof CustomFileDiff, 1>,
+  ChangesList: { state: 1, detail: 1, files: 1, filesTotal: 1 } satisfies Record<keyof CustomChanges, 1>,
+  CommitEntry: { hash: 1, short: 1, date: 1, message: 1, kind: 1, files: 1, filesTotal: 1 } satisfies Record<keyof CustomCommit, 1>,
+  HistoryList: { state: 1, detail: 1, commits: 1, truncated: 1 } satisfies Record<keyof CustomHistory, 1>,
+  DiscardResult: { outcome: 1, files: 1 } satisfies Record<keyof CustomDiscardResult, 1>,
+  ApplyResult: { outcome: 1, script: 1, commit: 1, commitShort: 1, files: 1, detail: 1 } satisfies Record<keyof CustomApplyResult, 1>,
+  RestoreResult: { outcome: 1, script: 1, commit: 1, commitShort: 1, detail: 1 } satisfies Record<keyof CustomRestoreResult, 1>,
+  CatsRead: { state: 1, agents: 1 } satisfies Record<keyof CustomCats, 1>,
+  CatsWriteResult: { outcome: 1, reason: 1, changed: 1, commit: 1, commitShort: 1, detail: 1 } satisfies Record<keyof CustomCatsWriteResult, 1>,
 };
 
 const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
@@ -969,7 +1076,9 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(called.length).toBeGreaterThan(8);
     for (const command of called) {
       if (command === "app_info") continue;
-      const module = command.startsWith("harness_")
+      const module = command.startsWith("custom_")
+        ? "custom"
+        : command.startsWith("harness_")
         ? "harness"
         : command.startsWith("agents_")
           ? "agents"
@@ -987,6 +1096,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     // 반대로, Rust 에 등록된 Claude · 하네스 명령은 화면이 모두 부른다 (안 쓰는 명령을 열어 두지 않는다)
     const registered = [
       ...libRs.matchAll(/claude::commands::(claude_[a-z_]+)/g),
+      ...libRs.matchAll(/custom::commands::(custom_[a-z_]+)/g),
       ...libRs.matchAll(/harness::commands::(harness_[a-z_]+)/g),
       ...libRs.matchAll(/agents::commands::(agents_[a-z_]+)/g),
       ...libRs.matchAll(/usage::commands::(usage_[a-z_]+)/g),
@@ -1111,5 +1221,197 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     const same = new AppError("no_session", "x");
     expect(toAppError(same)).toBe(same);
     expect(toAppError(new Error("boom"))).toMatchObject({ kind: "internal", message: "boom" });
+  });
+});
+
+describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
+  it("종류: model.rs · id.rs 의 enum 과 ipc-types 의 글 종류", () => {
+    expect(sorted(Object.keys(TS_CUSTOM_ITEM_KINDS))).toEqual(sorted(rustVariants(customIdRs, "ItemKind").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_MARKS))).toEqual(sorted(rustVariants(customModelRs, "Mark").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_UNREADABLE))).toEqual(sorted(rustVariants(customModelRs, "UnreadableReason").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_HISTORY_STATES))).toEqual(sorted(rustVariants(customModelRs, "HistoryState").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_FILE_STATUSES))).toEqual(sorted(rustVariants(customModelRs, "FileStatus").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_WRITE_OUTCOMES))).toEqual(sorted(rustVariants(customModelRs, "WriteOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_COMMIT_KINDS))).toEqual(sorted(rustVariants(customModelRs, "CommitKind").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_COMMIT_OUTCOMES))).toEqual(sorted(rustVariants(customModelRs, "CommitOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_APPLY_OUTCOMES))).toEqual(sorted(rustVariants(customModelRs, "ApplyOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_RESTORE_OUTCOMES))).toEqual(sorted(rustVariants(customModelRs, "RestoreOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_DISCARD_OUTCOMES))).toEqual(sorted(rustVariants(customModelRs, "DiscardOutcome").map(snake)));
+    expect(sorted(Object.keys(TS_CUSTOM_CATS_STATES))).toEqual(sorted(rustVariants(customModelRs, "CatsState").map(snake)));
+    // `state` 로 갈리는 값 (serde `tag = "state"`)
+    for (const [name, tags] of Object.entries(TS_CUSTOM_TAGS)) {
+      expect(sorted(tags), name).toEqual(sorted(rustVariants(customModelRs, name).map(snake)));
+    }
+    // 커밋 메시지 끝 표시 줄의 글이 화면의 종류와 같다
+    const marker = customModelRs.slice(customModelRs.indexOf("pub fn marker(self)"));
+    const markers = [...marker.slice(0, marker.indexOf("\n    }\n")).matchAll(/=> "([a-z_]+)"/g)].map((m) => m[1] as string);
+    expect(sorted(markers)).toEqual(sorted(Object.keys(TS_CUSTOM_COMMIT_KINDS)));
+  });
+
+  it("결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다", () => {
+    const sources: Record<keyof typeof TS_CUSTOM_FIELDS, string> = {
+      ItemInfo: "ItemInfo",
+      ItemUnreadable: "ItemUnreadable",
+      HistoryInfo: "HistoryInfo",
+      UnappliedFile: "UnappliedFile",
+      Unapplied: "Unapplied",
+      CustomList: "CustomList",
+      ItemDetail: "ItemDetail",
+      WriteResult: "WriteResult",
+      DiffLine: "DiffLine",
+      FileDiff: "FileDiff",
+      ChangesList: "ChangesList",
+      CommitEntry: "CommitEntry",
+      HistoryList: "HistoryList",
+      DiscardResult: "DiscardResult",
+      ApplyResult: "ApplyResult",
+      RestoreResult: "RestoreResult",
+      CatsRead: "CatsRead",
+      CatsWriteResult: "CatsWriteResult",
+    };
+    for (const [name, struct] of Object.entries(sources)) {
+      const ts = TS_CUSTOM_FIELDS[name as keyof typeof TS_CUSTOM_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(customModelRs, struct)));
+    }
+  });
+
+  it("고를 수 있는 값 · 상한 · 이름 모양이 Rust 와 같다", () => {
+    const list = (source: string, name: string) => {
+      const match = new RegExp(String.raw`pub const ${name}: \[&str; \d+\] = \[([^\]]*)\];`).exec(source);
+      if (!match) throw new Error(`${name} not found`);
+      return [...(match[1] as string).matchAll(/"([a-z]+)"/g)].map((m) => m[1] as string);
+    };
+    expect(list(customValuesRs, "MODELS")).toEqual([...CUSTOM_MODELS]);
+    expect(list(customValuesRs, "EFFORTS")).toEqual([...CUSTOM_EFFORTS]);
+    const constant = (source: string, name: string) => {
+      const match = new RegExp(String.raw`pub const ${name}: [a-z0-9]+ = ([0-9 *_]+);`).exec(source);
+      if (!match) throw new Error(`${name} not found`);
+      return (match[1] as string).split("*").reduce((product, part) => product * Number(part.replace(/_/g, "").trim()), 1);
+    };
+    expect(constant(customFsxRs, "TEXT_MAX_BYTES")).toBe(CUSTOM_TEXT_MAX_BYTES);
+    expect(constant(customWriteRs, "DESCRIPTION_MAX_CHARS")).toBe(CUSTOM_DESCRIPTION_MAX_CHARS);
+    expect(constant(customHistoryRs, "MESSAGE_MAX_CHARS")).toBe(CUSTOM_MESSAGE_MAX_CHARS);
+    expect(constant(customIdRs, "NAME_MAX")).toBe(64);
+    expect(constant(customIdRs, "CAT_ID_MAX")).toBe(32);
+    expect(CUSTOM_NAME_PATTERN.source).toBe("^[a-z][a-z0-9-]{0,63}$");
+    expect(CUSTOM_CAT_ID_PATTERN.source).toBe("^[a-z][a-z0-9-]{0,31}$");
+  });
+
+  it("화면이 부르는 내 수정 명령은 열여덟 개이고 이름 · 인자가 ipc.ts 와 Rust 에서 같다 (경로 · 파일 이름을 받는 길이 없다)", async () => {
+    const commandsRs = (await import("../../src-tauri/src/custom/commands.rs?raw")).default;
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    const rust = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (custom_[a-z_]+)\(([^)]*)\)/g)];
+    expect(rust.length).toBe(18);
+    // Rust: 매개변수 이름은 아래 목록 안의 것뿐 (State 는 앱이 채운다)
+    const allowed: Record<string, string[]> = {
+      custom_list: [],
+      custom_item_read: ["item_id"],
+      custom_values_save: ["state", "item_id", "values"],
+      custom_append_save: ["state", "item_id", "text"],
+      custom_replace_start: ["state", "item_id"],
+      custom_text_save: ["state", "item_id", "text"],
+      custom_replace_stop: ["state", "item_id"],
+      custom_origin_keep: ["state", "item_id"],
+      custom_new: ["state", "request"],
+      custom_mine_delete: ["state", "item_id"],
+      custom_changes: [],
+      custom_discard: ["state"],
+      custom_apply: ["state", "summary"],
+      custom_history: [],
+      custom_commit_diff: ["commit"],
+      custom_restore: ["state", "commit"],
+      custom_cats_read: [],
+      custom_cat_save: ["state", "agent", "cat"],
+    };
+    expect(sorted(rust.map((m) => m[1] as string))).toEqual(sorted(Object.keys(allowed)));
+    for (const [, name, params] of rust) {
+      const names = (params as string)
+        .replace(/<[^>]*>/g, "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "")
+        .map((p) => p.split(":")[0]?.trim());
+      expect(names, `${name as string} 의 매개변수`).toEqual(allowed[name as string]);
+    }
+    expect(commandsRs).not.toMatch(/PathBuf|\bPath\b|OsString/);
+    // 화면: 호출마다 같은 이름의 인자만 (State 는 없다)
+    const calls = [...ipcTs.matchAll(/custom[A-Za-z]+: \(([^)]*)\) => call<[^>]*>\("(custom_[a-z_]+)"(?:, \{ ([^}]*) \})?/g)];
+    expect(calls.length).toBe(18);
+    for (const [, , command, args] of calls) {
+      const wanted = (allowed[command as string] ?? []).filter((name) => name !== "state").map(camel);
+      const sent = (args ?? "").split(",").map((a) => a.trim()).filter((a) => a !== "");
+      expect(sent, `${command as string} 의 보내는 값`).toEqual(wanted);
+    }
+  });
+
+  it("쓰는 내 수정 명령은 모두 flow 를 거쳐 잠그고, 읽는 명령은 flow 를 부르지 않는다", async () => {
+    const commandsRs = (await import("../../src-tauri/src/custom/commands.rs?raw")).default;
+    const bodies = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (custom_[a-z_]+)\([^)]*\)[^{]*\{([\s\S]*?)\n\}/g)];
+    expect(bodies.length).toBe(18);
+    const writes: Record<string, string> = {
+      custom_values_save: "save_values",
+      custom_append_save: "save_append",
+      custom_replace_start: "replace_start",
+      custom_text_save: "save_text",
+      custom_replace_stop: "replace_stop",
+      custom_origin_keep: "origin_keep",
+      custom_new: "create",
+      custom_mine_delete: "delete_mine",
+      custom_discard: "discard",
+      custom_apply: "apply",
+      custom_restore: "restore_to",
+      custom_cat_save: "cats_write",
+    };
+    for (const [, name, body] of bodies) {
+      const flowFn = writes[name as string];
+      if (flowFn !== undefined) {
+        expect(body, `${name as string} 은 flow::${flowFn} 를 불러야 한다`).toMatch(new RegExp(`flow::${flowFn}\\b`));
+        // 저장 · git · 설치를 직접 부르지 않는다 (잠금을 건너뛰게 된다)
+        expect(body, `${name as string} 이 write/apply/history/cats 를 직접 부름`).not.toMatch(/\b(write|apply|history|cats|script|git)::/);
+      } else {
+        expect(body, `${name as string} 은 읽기만 한다`).not.toMatch(/flow::/);
+      }
+    }
+    // flow 의 함수는 모두 맨 앞에서 잠금(begin)을 잡는다
+    const fns = [...customFlowRs.matchAll(/pub fn ([a-z_]+)\([^)]*\)[^{]*\{\n([\s\S]*?)\n\}/g)];
+    expect(sorted(fns.map((m) => m[1] as string))).toEqual(sorted(Object.values(writes)));
+    for (const [, name, body] of fns) {
+      expect((body as string).trimStart(), `flow::${name as string} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.begin\(\)\?;/);
+    }
+  });
+
+  it("내 수정은 항목 id · 이름을 Rust 에서 다시 확인하고, git 은 run_git 하나로만 부른다", () => {
+    // 모든 쓰기 함수가 화면이 보낸 id 를 `ItemId::parse` 로 읽는다
+    expect(customWriteRs).toContain("ItemId::parse(text)");
+    expect(customWriteRs.match(/parse_id\(id_text\)\?/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(customCatsRs).toContain("valid_cat_id");
+    // 파일 쓰기는 fsx 한 곳 — 링크 단계 확인을 건너뛰는 직접 쓰기가 없다
+    for (const [name, source] of [["write.rs", customWriteRs], ["cats.rs", customCatsRs]] as const) {
+      const production = source.slice(0, source.includes("#[cfg(test)]") ? source.indexOf("#[cfg(test)]") : undefined);
+      expect(production, name).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions)/);
+      expect(production, name).not.toMatch(/Command::new/);
+    }
+    const historyProduction = customHistoryRs.slice(0, customHistoryRs.indexOf("#[cfg(test)]") < 0 ? undefined : customHistoryRs.indexOf("#[cfg(test)]"));
+    expect(historyProduction).not.toMatch(/Command::new/);
+    expect(historyProduction).toContain("run_git(env.ctx, git, Some(dir), &full, GIT_TIMEOUT)");
+    // 앱 전용 저장소 설정: 이름 · 메일 · 서명 · 줄바꿈 · 인용 · hook · 무시 목록
+    for (const setting of ["user.name", "user.email", "commit.gpgsign", "core.autocrlf", "core.quotepath", "core.hooksPath", "core.excludesFile", "gc.auto"]) {
+      expect(historyProduction, setting).toContain(`"${setting}"`);
+    }
+  });
+
+  it("원본 업데이트 받기가 내 수정 기록에 빈 커밋을 남기는 줄이 업데이트 흐름에 있다", () => {
+    expect(harnessFlowRs).toContain("crate::custom::history::record_origin_update(ctx, head);");
+  });
+
+  it("창 권한(capabilities) · 의존성은 내 수정 때문에 넓어지지 않았다", async () => {
+    const capability = JSON.parse((await import("../../src-tauri/capabilities/default.json?raw")).default) as { permissions: string[] };
+    expect(capability.permissions).toEqual(["core:default"]);
+    const cargo = (await import("../../src-tauri/Cargo.toml?raw")).default;
+    // 해시는 `sha2` 하나만 (P9-01 검수 — 이미 Tauri 쪽에 있던 판을 직접 의존성으로). git 은 라이브러리가 아니라 git 실행 파일로.
+    expect(cargo).toMatch(/^sha2 = "0\.10"$/m);
+    expect(cargo).not.toMatch(/sha1|md-5|^digest|git2|gix/m);
+    const pkg = (await import("../../package.json?raw")).default;
+    expect(pkg).not.toMatch(/plugin-fs|plugin-shell/);
   });
 });

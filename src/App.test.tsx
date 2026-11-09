@@ -13,6 +13,7 @@ import type { WorkerEntry } from "./workspace/progress/workers";
 // 작업 공간은 따로 불러온다(lazy) — 전체 시험으로 바쁠 때 처음 불러오기(CodeMirror 포함)가 기다림 1초를 넘길 수 있어 미리 한 번 불러 둔다
 beforeAll(async () => {
   await import("./workspace/Workspace");
+  await import("./edit/EditScreen");
 }, 30_000);
 
 beforeEach(() => {
@@ -56,11 +57,11 @@ describe("화면 전환 (주소가 아니라 앱 상태)", () => {
     expect(listen).toHaveBeenCalledTimes(1);
   });
 
-  it("왼쪽 메뉴로 고양이 집 ↔ 작업 공간 — 메뉴는 두 곳뿐이고 지금 있는 곳이 표시된다", async () => {
+  it("왼쪽 메뉴로 고양이 집 ↔ 작업 공간 ↔ 내 수정 — 지금 있는 곳이 표시된다", async () => {
     render(<App />);
     await screen.findByTestId("home");
     const nav = screen.getByRole("navigation", { name: "탐색" });
-    expect(within(nav).getAllByRole("button")).toHaveLength(2);
+    expect(within(nav).getAllByRole("button")).toHaveLength(3);
     expect(within(nav).getByRole("button", { name: "집" })).toHaveAttribute("aria-current", "page");
 
     fireEvent.click(within(nav).getByRole("button", { name: "작업 공간" }));
@@ -72,6 +73,19 @@ describe("화면 전환 (주소가 아니라 앱 상태)", () => {
     fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "집" }));
     expect(await screen.findByTestId("home")).toBeInTheDocument();
     expect(screen.queryByTestId("workspace")).not.toBeInTheDocument();
+
+    // 집 → 내 수정 → 작업 공간 → 내 수정 → 집 (라우터 없이 앱 상태로)
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "내 수정" }));
+    expect(await screen.findByTestId("edit")).toBeInTheDocument();
+    expect(screen.queryByTestId("home")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "내 수정" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { level: 1, name: "내 수정" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "작업 공간" }));
+    expect(await screen.findByTestId("workspace")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "내 수정" }));
+    expect(await screen.findByTestId("edit")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "집" }));
+    expect(await screen.findByTestId("home")).toBeInTheDocument();
   });
 
   it("작업 공간을 처음 열면 가장 최근 프로젝트가 열려 있다", async () => {

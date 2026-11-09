@@ -29,6 +29,9 @@
 .an li:nth-child(2) {
   --tab: var(--ui-1);
 }
+.an li:nth-child(3) {
+  --tab: var(--ui-2);
+}
 .an button {
   box-sizing: border-box;
   display: flex;

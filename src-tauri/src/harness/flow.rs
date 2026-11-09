@@ -40,6 +40,12 @@ pub fn update_pull(state: &HarnessState, ctx: &Context) -> Result<GitResult, App
     let guard = state.begin()?;
     let checked = guard.take_check();
     let result = git::update_pull(ctx, checked.as_ref());
+    // 받기에 성공해 원본이 바뀌었고 내 수정 기록이 시작돼 있으면 "원본 업데이트 받음" 빈 커밋 하나 (P9-01 — 실패해도 업데이트 결과는 그대로, 로그만)
+    if result.outcome == GitOutcome::Updated
+        && let Some(head) = result.head.as_deref()
+    {
+        crate::custom::history::record_origin_update(ctx, head);
+    }
     // 받았거나 받다가 실패했으면 원본이 달라졌을 수 있다 — 미리보기를 다시 보게 한다
     if matches!(
         result.outcome,

@@ -141,7 +141,7 @@ describe("고양이 집 — 가짜 데이터 기본", () => {
     expect(await screen.findByRole("heading", { name: "최근 프로젝트" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "새 프로젝트 시작" })).toBeEnabled();
     const nav = screen.getByRole("navigation", { name: "탐색" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["집", "작업 공간"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["집", "작업 공간", "내 수정"]);
     // 모델별 한도는 보이지 않는다
     expect(screen.queryByText(/Opus/)).not.toBeInTheDocument();
   });

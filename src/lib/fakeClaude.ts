@@ -7,6 +7,7 @@
 //    중단 · 끝내기는 일하는 작업자를 `stopped` 로 끝낸다 (진짜 세션 관리자와 같다)
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
+import { fakeCustom } from "./fakeCustom";
 import { fakeHarness } from "./fakeHarness";
 import { FAKE_TURN_COST, FAKE_TURN_USAGE, fakeHistory } from "./fakeHistory";
 import { fakeHouse } from "./fakeHouse";
@@ -570,6 +571,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     app_info: (): AppInfo => ({ name: "Nyanitor", version: "0.0.0-browser" }),
     ...fakeClaude.handlers,
     ...fakeHarness.handlers,
+    ...fakeCustom.handlers,
     ...fakeHouse.handlers,
     ...fakeHistory.handlersFor(() => fakeClaude.liveRun()),
     ...fakeProjects.handlers,

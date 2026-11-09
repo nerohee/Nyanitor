@@ -9,6 +9,9 @@ import { wantsVariantFrame } from "./variants/query";
 // 작업 공간 — 편집기(CodeMirror) · 미리보기가 무거워 따로 불러온다. 첫 화면(고양이 집)은 그만큼 가볍게 뜬다.
 const Workspace = lazy(() => import("./workspace/Workspace"));
 
+// 내 수정 (P9-02) — 편집기(CodeMirror)를 쓰므로 같은 이유로 따로 불러온다.
+const EditScreen = lazy(() => import("./edit/EditScreen"));
+
 // 시안 틀 (P2) — 주소에 ?variant= 나 ?screen= 이 있을 때만 불러온다. 시안을 고른 뒤 이 연결은 지운다.
 const VariantFrame = lazy(() => import("./variants/VariantFrame"));
 
@@ -19,7 +22,7 @@ const SessionLab = import.meta.env.DEV ? lazy(() => import("./lab/SessionLab")) 
 const HarnessLab = import.meta.env.DEV ? lazy(() => import("./lab/HarnessLab")) : null;
 
 /**
- * 실제 화면 둘(고양이 집 · 작업 공간)은 주소가 아니라 앱 상태로 바꾼다 — Tauri 창에는 주소창이 없다. 라우터 라이브러리는 쓰지 않는다.
+ * 실제 화면 셋(고양이 집 · 작업 공간 · 내 수정)은 주소가 아니라 앱 상태로 바꾼다 — Tauri 창에는 주소창이 없다. 라우터 라이브러리는 쓰지 않는다.
  * 고른 프로젝트(`projectId`)는 화면을 오가도 남는다. `openNew` 는 고양이 집의 새 프로젝트 단추로 들어왔을 때 새 프로젝트 창을 바로 연다.
  */
 interface View {
@@ -83,6 +86,13 @@ function App() {
     return (
       <Suspense fallback={null}>
         <VariantFrame search={search} />
+      </Suspense>
+    );
+  }
+  if (view.place === "edit") {
+    return (
+      <Suspense fallback={null}>
+        <EditScreen onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))} />
       </Suspense>
     );
   }

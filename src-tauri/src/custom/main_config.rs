@@ -6,6 +6,9 @@
 //! - 저장은 `custom/config.local.json` 의 `planner.model` · `planner.effort` 만 바꾼다. 파일이 없으면 위 순서로 찾은 설정을 바탕으로 만든다 —
 //!   모르는 키 · 키 순서 · 들여쓰기는 그대로 (`json_edit`). `None` = 원본 값(예시의 값)으로.
 
+use std::collections::BTreeMap;
+
+use crate::agents::AgentRole;
 use crate::agents::config as agent_config;
 use crate::error::AppError;
 
@@ -117,6 +120,33 @@ pub fn view(env: &Env) -> MainView {
     view_of(&read_sources(env))
 }
 
+/// 하네스 작업자 이름 → 역할 — 설치 스크립트와 같은 순서로 처음 찾은 설정의 `agents` (비었거나 못 읽으면 예시의 것).
+/// 하네스를 아직 설치하지 않았어도 화면이 작업자를 한국어 이름 · 기본 고양이로 보이게 한다 (설치된 에이전트 목록은 적용 전엔 비어 있다).
+pub fn roles(env: &Env) -> BTreeMap<String, AgentRole> {
+    roles_of(&read_sources(env))
+}
+
+fn roles_of(sources: &Sources) -> BTreeMap<String, AgentRole> {
+    let workers_of = |cfg: &Cfg| match cfg {
+        Cfg::Text(text) => agent_config::parse(text)
+            .map(|config| config.workers)
+            .filter(|workers| !workers.is_empty()),
+        _ => None,
+    };
+    [
+        &sources.custom,
+        &sources.source_local,
+        &sources.installed_local,
+        &sources.example,
+    ]
+    .into_iter()
+    .find_map(workers_of)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(role, name)| (name, role))
+    .collect()
+}
+
 fn edit_refusal(error: EditError) -> WriteResult {
     WriteResult::refused_with(
         "bad_config",
@@ -188,5 +218,59 @@ pub fn save(env: &Env, wanted: &Values) -> Result<WriteResult, AppError> {
         Err(FsError::Link) => Ok(WriteResult::refused("link_in_path")),
         Err(FsError::TooLarge) => Ok(WriteResult::refused("too_large")),
         Err(other) => Err(AppError::FileWriteFailed(format!("{other:?}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(value: &str) -> Cfg {
+        Cfg::Text(value.to_string())
+    }
+
+    fn sources(custom: Cfg, installed_local: Cfg, example: Cfg) -> Sources {
+        Sources {
+            example,
+            custom,
+            source_local: Cfg::Absent,
+            installed_local,
+        }
+    }
+
+    const EXAMPLE: &str =
+        r#"{ "agents": { "designer": "harness-designer", "ui": "harness-builder-ui" } }"#;
+
+    #[test]
+    fn roles_come_from_the_first_config_with_agents() {
+        let found = roles_of(&sources(
+            text(r#"{ "agents": { "ui": "my-ui" } }"#),
+            text(r#"{ "agents": { "ui": "installed-ui" } }"#),
+            text(EXAMPLE),
+        ));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found.get("my-ui"), Some(&AgentRole::Ui));
+    }
+
+    #[test]
+    fn roles_fall_back_to_the_example_before_install() {
+        // 설치 전 — 내 설정은 planner 만, 설치된 설정은 없다
+        let found = roles_of(&sources(
+            text(r#"{ "planner": { "model": "opus" } }"#),
+            Cfg::Absent,
+            text(EXAMPLE),
+        ));
+        assert_eq!(found.get("harness-designer"), Some(&AgentRole::Designer));
+        assert_eq!(found.get("harness-builder-ui"), Some(&AgentRole::Ui));
+    }
+
+    #[test]
+    fn broken_configs_are_skipped_and_nothing_found_is_empty() {
+        let found = roles_of(&sources(
+            Cfg::Failed(UnreadableReason::NotUtf8),
+            text("not json"),
+            Cfg::Absent,
+        ));
+        assert!(found.is_empty());
     }
 }

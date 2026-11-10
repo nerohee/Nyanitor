@@ -1146,6 +1146,10 @@ export const CUSTOM_MESSAGE_MAX_CHARS = 200;
 /** 이름 · 고양이 id 모양 (`id.rs`) — 틀리면 `invalid_input` */
 export const CUSTOM_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 export const CUSTOM_CAT_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+/** 보이는 이름의 최대 글자 수 — 앞뒤 공백을 뗀 뒤 문자 수 (`labels::LABEL_MAX_CHARS`). 넘으면 `bad_label` */
+export const CUSTOM_LABEL_MAX_CHARS = 20;
+/** 고양이 여러 줄 한 번에 쓰기의 줄 수 상한 (`cats::CHANGES_MAX`) — 넘으면 `invalid_input` */
+export const CUSTOM_CATS_CHANGES_MAX = 64;
 
 /** 목록의 항목 하나 (읽을 수 있는 것) */
 export interface CustomItemInfo {
@@ -1214,6 +1218,8 @@ export interface CustomList {
   unapplied: CustomUnapplied;
   /** 오케스트레이터가 맨 앞, 그 뒤는 에이전트 · 스킬 (이름 순) */
   items: CustomListEntry[];
+  /** 하네스 작업자 이름 → 역할 — 설치 스크립트와 같은 순서로 찾은 설정의 `agents` (하네스를 설치하기 전에도 있다) */
+  roles: Record<string, AgentRole>;
 }
 
 /** 글 한 덩이 (원본 글 · 덧붙임 글 · 통째 글) */
@@ -1302,8 +1308,8 @@ export interface CustomChanges {
   filesTotal: number;
 }
 
-/** 커밋 종류 — 커밋 메시지 끝 표시 줄로 알아본다. `new`: 새 에이전트 · 스킬이 든 적용 · `other`: 앱이 만들지 않은 커밋 */
-export type CustomCommitKind = "apply" | "new" | "restore" | "origin_update" | "cats" | "start" | "other";
+/** 커밋 종류 — 커밋 메시지 끝 표시 줄로 알아본다. `new`: 새 에이전트 · 스킬이 든 적용 · `cats`: 고양이 연결 · `labels`: 보이는 이름 · `other`: 앱이 만들지 않은 커밋 */
+export type CustomCommitKind = "apply" | "new" | "restore" | "origin_update" | "cats" | "labels" | "start" | "other";
 
 export interface CustomCommit {
   /** 전체 번호 (40글자) — 화면은 이것이나 `short` 를 다시 보낸다 */
@@ -1381,7 +1387,7 @@ export interface CustomCats {
   agents: Record<string, string>;
 }
 
-/** 고양이 쓰기 결과 — 그 파일만 바로 커밋한다 (다른 적용 안 한 것은 그대로). `refused` 의 `reason`: `unreadable` · `too_large` · `link_in_path` */
+/** 고양이 쓰기 결과 — 그 파일만 바로 커밋한다 (다른 적용 안 한 것은 그대로). `refused` 의 `reason`: `unreadable` · `too_large` · `link_in_path` · `bad_label` (보이는 이름 쓰기만) */
 export interface CustomCatsWriteResult {
   outcome: CustomWriteOutcome;
   reason: string | null;
@@ -1390,3 +1396,18 @@ export interface CustomCatsWriteResult {
   commitShort: string | null;
   detail: string | null;
 }
+
+/** 고양이 여러 줄 쓰기의 한 줄 — `cat` 은 꼭 적는다 (`null` = 지움). 한 번에 1~64 줄, 같은 `agent` 는 한 번만 */
+export interface CustomCatChange {
+  agent: string;
+  cat: string | null;
+}
+
+/** 보이는 이름 — 직접 만든 에이전트의 화면 이름 (`custom/agent-labels.json`). 키 = 에이전트 이름, 값 = 보이는 이름 (앞뒤 공백 없음 · 1~20 글자). `state` 는 고양이 연결과 같다 */
+export interface CustomLabels {
+  state: CustomCatsState;
+  agents: Record<string, string>;
+}
+
+/** 보이는 이름 쓰기 결과 — 고양이 쓰기 결과와 같은 모양. 이름이 규칙(앞뒤 공백을 뗀 뒤 1~20 글자, 줄바꿈 · 탭 · 제어 문자 없음)에 어긋나면 `refused` + `bad_label` */
+export type CustomLabelWriteResult = CustomCatsWriteResult;

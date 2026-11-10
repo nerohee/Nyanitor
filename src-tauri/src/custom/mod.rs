@@ -9,7 +9,7 @@
 //! - `items` — 목록 · 항목 하나 읽기 (읽기만, 잠금 없음) / `main_config` — 오케스트레이터(`planner`) 설정
 //! - `write` — 값 · 덧붙임 · 통째 · 새로 만들기 · 지우기 · 원본 바뀜 고르기 (검사 포함)
 //! - `history` — 로컬 git (적용 안 한 것 · 차이 · 버리기 · 기록 · 커밋)
-//! - `apply` — 적용 · 어느 때로 되돌리기 (설치 + 커밋) / `cats` — 고양이 연결
+//! - `apply` — 적용 · 어느 때로 되돌리기 (설치 + 커밋) / `cats` — 고양이 연결 / `labels` — 보이는 이름 (D-52)
 //! - `flow` — 한 번에 하나 잠금(`HarnessState::begin`)을 잡고 위 함수를 부른다 (쓰는 일은 모두 여기를 거친다)
 //! - `commands` — Tauri 명령 (얇게)
 //!
@@ -26,6 +26,7 @@ pub mod history;
 pub mod id;
 pub mod items;
 pub mod json_edit;
+pub mod labels;
 pub mod main_config;
 pub mod model;
 pub mod template;

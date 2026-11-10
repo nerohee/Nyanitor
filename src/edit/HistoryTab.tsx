@@ -17,6 +17,7 @@ const KIND_ICON: Record<CustomCommitKind, IconName> = {
   restore: "undo",
   origin_update: "download",
   cats: "paw",
+  labels: "custom",
   start: "flag",
   other: "dot",
 };

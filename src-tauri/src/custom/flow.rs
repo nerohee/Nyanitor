@@ -1,7 +1,7 @@
-//! 한 번에 하나 — 내 수정을 **쓰는** 일(저장 · 지움 · 새로 만들기 · 버리기 · 적용 · 되돌리기 · 원본 바뀜 · 고양이)은 모두 하네스 잠금(`HarnessState::begin`)을 잡고 한다
+//! 한 번에 하나 — 내 수정을 **쓰는** 일(저장 · 지움 · 새로 만들기 · 버리기 · 적용 · 되돌리기 · 원본 바뀜 · 고양이 · 보이는 이름)은 모두 하네스 잠금(`HarnessState::begin`)을 잡고 한다
 //! (받기 · 업데이트 · 설치와 겹치지 않게 — 잠겨 있으면 `harness_busy`). Tauri 명령(`commands`)이 부르는 일반 함수다 — 시험은 이 함수들로 한다.
 //!
-//! 읽기(목록 · 항목 읽기 · 적용 안 한 것의 차이 · 기록 목록 · 커밋 차이 · 고양이 읽기)는 잠그지 않는다 (`items` · `history` · `cats` 를 바로 부른다).
+//! 읽기(목록 · 항목 읽기 · 적용 안 한 것의 차이 · 기록 목록 · 커밋 차이 · 고양이 · 보이는 이름 읽기)는 잠그지 않는다 (`items` · `history` · `cats` · `labels` 를 바로 부른다).
 //! 모든 함수는 맨 앞에서 잠금을 잡는다.
 
 use crate::error::AppError;
@@ -9,7 +9,8 @@ use crate::harness::{Context, HarnessState};
 
 use super::Env;
 use super::apply;
-use super::cats;
+use super::cats::{self, CatChange};
+use super::labels;
 use super::model::{ApplyResult, CatsWriteResult, DiscardResult, RestoreResult, WriteResult};
 use super::values::Values;
 use super::write::{self, NewItem};
@@ -124,4 +125,25 @@ pub fn cats_write(
 ) -> Result<CatsWriteResult, AppError> {
     let _guard = state.begin()?;
     cats::write(&Env::new(ctx), agent, cat)
+}
+
+/// 여러 에이전트의 고양이를 한 번에 쓰기 (맞바꿈 · 모두 기본값으로) — 파일을 한 번 쓰고 커밋 하나
+pub fn cats_write_many(
+    state: &HarnessState,
+    ctx: &Context,
+    changes: &[CatChange],
+) -> Result<CatsWriteResult, AppError> {
+    let _guard = state.begin()?;
+    cats::write_many(&Env::new(ctx), changes)
+}
+
+/// 보이는 이름 쓰기 (`None` = 지움) — 그 파일만 바로 커밋
+pub fn labels_write(
+    state: &HarnessState,
+    ctx: &Context,
+    agent: &str,
+    label: Option<&str>,
+) -> Result<CatsWriteResult, AppError> {
+    let _guard = state.begin()?;
+    labels::write(&Env::new(ctx), agent, label)
 }

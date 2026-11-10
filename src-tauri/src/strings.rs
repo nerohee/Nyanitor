@@ -35,6 +35,7 @@ pub const QUIT_CANCEL: &str = "취소";
 // 내 수정 (P9-01, D-51) — 기록(로컬 git)의 커밋 메시지와, 새로 만든 에이전트 · 스킬 파일의 본문 틀. 화면 밖(파일 · 기록)에 남는 글이라 여기에 둔다.
 pub const CUSTOM_COMMIT_START: &str = "처음 기록";
 pub const CUSTOM_COMMIT_CATS: &str = "고양이 연결 바꿈";
+pub const CUSTOM_COMMIT_LABELS: &str = "보이는 이름을 바꿈";
 pub fn custom_commit_apply(files: usize) -> String {
     format!("적용 — 파일 {files}개")
 }

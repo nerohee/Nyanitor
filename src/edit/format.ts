@@ -20,8 +20,12 @@ import type {
 /** 에이전트 파일 이름(확장자 뺀 것) → 하네스 역할. 이름을 한국어로 · 고양이를 기본 연결로 찾는 데 쓴다 */
 export type RoleMap = ReadonlyMap<string, AgentRole>;
 
-export function rolesOf(list: AgentsList | null): RoleMap {
-  const roles = new Map<string, AgentRole>();
+/**
+ * 설정의 대응(`custom_list` 의 `roles` — 설치 전에도 있다) 위에 설치된 에이전트 목록의 역할을 얹는다.
+ * 설치된 목록만 보면 하네스를 아직 설치하지 않았거나 적용 전일 때 비어서, 이름이 파일 이름(`harness-designer`)으로 남는다.
+ */
+export function rolesOf(list: AgentsList | null, configured: Readonly<Record<string, AgentRole>> = {}): RoleMap {
+  const roles = new Map<string, AgentRole>(Object.entries(configured));
   for (const entry of list?.agents ?? []) {
     if (entry.role === null || entry.role === "main" || entry.file === null) continue;
     roles.set(entry.file.replace(/\.md$/, ""), entry.role);
@@ -51,10 +55,10 @@ export function itemCat(kind: CustomItemKind, name: string, roles: RoleMap, user
 
 // ───────────────────────────── 적용 요약 ─────────────────────────────
 
-type Part = "values" | "append" | "whole" | "origin" | "cats";
+type Part = "values" | "append" | "whole" | "origin" | "cats" | "labels";
 
 interface ParsedPath {
-  kind: CustomItemKind | "cats";
+  kind: CustomItemKind | "cats" | "labels";
   name: string;
   part: Part;
 }
@@ -73,6 +77,7 @@ function partOf(suffix: string): Part {
 export function parseCustomPath(path: string): ParsedPath | null {
   if (path === "config.local.json") return { kind: "main", name: "main", part: "values" };
   if (path === "agent-cats.json") return { kind: "cats", name: "cats", part: "cats" };
+  if (path === "agent-labels.json") return { kind: "labels", name: "labels", part: "labels" };
   const agent = AGENT_FILE.exec(path);
   if (agent) return { kind: "agent", name: agent[1]!, part: partOf(agent[2]!) };
   const skill = SKILL_FILE.exec(path);
@@ -158,11 +163,14 @@ export function buildSummary({ files, diffs, items, roles }: SummaryInput): stri
       case "origin":
         what = t("edit.what.origin");
         break;
+      case "labels":
+        what = t("edit.what.labels");
+        break;
       default:
         what = t("edit.what.cats");
     }
-    const key = parsed.kind === "cats" ? "cats" : id;
-    const label = parsed.kind === "cats" ? t("edit.what.catsName") : itemLabel(parsed.kind, parsed.name, roles);
+    const key = parsed.kind === "cats" || parsed.kind === "labels" ? parsed.kind : id;
+    const label = parsed.kind === "cats" ? t("edit.what.catsName") : parsed.kind === "labels" ? t("edit.what.labelsName") : itemLabel(parsed.kind, parsed.name, roles);
     const group = groups.get(key) ?? { label, whats: [] };
     if (!group.whats.includes(what)) group.whats.push(what);
     groups.set(key, group);

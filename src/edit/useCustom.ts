@@ -120,7 +120,8 @@ export function useCustom(): EditData {
     });
   }, []);
 
-  const roles = useMemo(() => rolesOf(agents.status === "ready" ? agents.list : null), [agents]);
+  const configured = list.status === "ready" ? list.list.roles : undefined;
+  const roles = useMemo(() => rolesOf(agents.status === "ready" ? agents.list : null, configured), [agents, configured]);
 
   const clearRefreshError = useCallback(() => setRefreshError(null), []);
 

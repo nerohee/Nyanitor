@@ -3,8 +3,11 @@
 //! 화면으로 가는 값에 경로는 없다 (표시용 상대 파일 이름 `agents/x.md` 뿐 — 다시 받지 않는다). 상태 때문에 안 되는 일은 오류가 아니라 결과의 `outcome` · `reason` 이다
 //! (화면이 문구를 고른다). 오류(`AppError`)는 화면이 보낸 값의 모양이 틀렸거나(`invalid_input`) 파일을 쓰지 못했을 때(`file_write_failed`) · 잠겨 있을 때(`harness_busy`) 등이다.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
+use crate::agents::AgentRole;
 use crate::harness::script::ScriptResult;
 
 use super::id::ItemKind;
@@ -169,6 +172,8 @@ pub struct CustomList {
     pub unapplied: Unapplied,
     /// 오케스트레이터가 맨 앞, 그 뒤는 에이전트 · 스킬 (이름 순)
     pub items: Vec<ListEntry>,
+    /// 하네스 작업자 이름 → 역할 (설정의 `agents` — 설치 전에도 있다)
+    pub roles: BTreeMap<String, AgentRole>,
 }
 
 /// 글 한 덩이 (원본 글 · 덧붙임 글 · 통째 글)
@@ -315,6 +320,8 @@ pub enum CommitKind {
     OriginUpdate,
     /// 고양이 연결
     Cats,
+    /// 보이는 이름
+    Labels,
     /// 처음 기록
     Start,
     Other,
@@ -329,6 +336,7 @@ impl CommitKind {
             CommitKind::Restore => "restore",
             CommitKind::OriginUpdate => "origin_update",
             CommitKind::Cats => "cats",
+            CommitKind::Labels => "labels",
             CommitKind::Start => "start",
             CommitKind::Other => "other",
         }
@@ -341,6 +349,7 @@ impl CommitKind {
             CommitKind::Restore,
             CommitKind::OriginUpdate,
             CommitKind::Cats,
+            CommitKind::Labels,
             CommitKind::Start,
         ]
         .into_iter()
@@ -497,6 +506,7 @@ pub enum CatsState {
 }
 
 /// 고양이 연결 — 키 = 에이전트 이름(또는 `main`), 값 = 고양이 id. 파일에 적힌 것만 (기본 연결은 화면이 안다).
+/// 보이는 이름(`custom/agent-labels.json`)도 같은 모양으로 읽는다 — 키 = 에이전트 이름, 값 = 보이는 이름.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatsRead {
@@ -508,7 +518,7 @@ pub struct CatsRead {
 #[serde(rename_all = "camelCase")]
 pub struct CatsWriteResult {
     pub outcome: WriteOutcome,
-    /// `Refused` 의 이유: `unreadable` (파일이 깨져 있다) · `too_large` · `link_in_path`
+    /// `Refused` 의 이유: `unreadable` (파일이 깨져 있다) · `too_large` · `link_in_path` · `bad_label` (보이는 이름이 규칙에 어긋난다 — 보이는 이름 쓰기만)
     pub reason: Option<String>,
     /// 실제로 파일이 바뀌었는가
     pub changed: bool,

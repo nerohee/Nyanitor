@@ -419,6 +419,11 @@ pub fn list(env: &Env) -> CustomList {
         history,
         unapplied,
         items,
+        roles: if available {
+            main_config::roles(env)
+        } else {
+            Default::default()
+        },
     }
 }
 

@@ -1954,6 +1954,8 @@ const ko = {
   "edit.what.origin": "원본 바뀜에서 고름",
   "edit.what.cats": "고양이 연결을 바꿈",
   "edit.what.catsName": "고양이",
+  "edit.what.labels": "보이는 이름을 바꿈",
+  "edit.what.labelsName": "이름",
   "edit.summary.one": "{name} — {what}",
   "edit.summary.many": "{name} 외 {n}개",
   "edit.hist.loading": "기록을 읽는 중…",

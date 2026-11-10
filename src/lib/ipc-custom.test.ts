@@ -29,7 +29,7 @@ async function failure(call: Promise<unknown>): Promise<AppError> {
 }
 
 describe("내 수정 ipc (Tauri 안)", () => {
-  it("함수마다 정해진 명령을 부르고, 넘기는 인자는 항목 id · 값 · 글 · 새 항목 요청 · 커밋 번호 · 에이전트 이름 · 고양이 id 뿐이다", async () => {
+  it("함수마다 정해진 명령을 부르고, 넘기는 인자는 항목 id · 값 · 글 · 새 항목 요청 · 커밋 번호 · 에이전트 이름 · 고양이 id · 보이는 이름 뿐이다", async () => {
     const handler = vi.fn(() => null);
     mockIPC(handler);
     await ipc.customList();
@@ -52,6 +52,13 @@ describe("내 수정 ipc (Tauri 안)", () => {
     await ipc.customCatsRead();
     await ipc.customCatSave("designer", "mulgam");
     await ipc.customCatSave("designer", null);
+    await ipc.customCatsSave([
+      { agent: "ui", cat: "mulgam" },
+      { agent: "designer", cat: null },
+    ]);
+    await ipc.customLabelsRead();
+    await ipc.customLabelSave("translator", "번역");
+    await ipc.customLabelSave("translator", null);
     expect(handler.mock.calls).toEqual([
       ["custom_list", {}],
       ["custom_item_read", { itemId: "agent:harness-designer" }],
@@ -73,6 +80,18 @@ describe("내 수정 ipc (Tauri 안)", () => {
       ["custom_cats_read", {}],
       ["custom_cat_save", { agent: "designer", cat: "mulgam" }],
       ["custom_cat_save", { agent: "designer", cat: null }],
+      [
+        "custom_cats_save",
+        {
+          changes: [
+            { agent: "ui", cat: "mulgam" },
+            { agent: "designer", cat: null },
+          ],
+        },
+      ],
+      ["custom_labels_read", {}],
+      ["custom_label_save", { agent: "translator", label: "번역" }],
+      ["custom_label_save", { agent: "translator", label: null }],
     ]);
   });
 
@@ -350,6 +369,77 @@ describe("내 수정 ipc (브라우저 가짜)", () => {
     }
   });
 
+  it("고양이 여러 줄: 한 번 쓰고 커밋 하나 · 맞바꿈 · 지움 섞기 · 바뀐 것 없음 · 하나라도 틀리면 아무것도 안 씀", async () => {
+    await ipc.customCatsSave([
+      { agent: "ui", cat: "danchu" },
+      { agent: "designer", cat: "mulgam" },
+    ]);
+    await ipc.customValuesSave("agent:harness-helper", { model: "sonnet", effort: null }); // 적용 안 한 것
+    const before = (await ipc.customHistory()).commits.length;
+    const swapped = await ipc.customCatsSave([
+      { agent: "ui", cat: "mulgam" },
+      { agent: "designer", cat: "danchu" },
+      { agent: "translator", cat: null },
+    ]);
+    expect(swapped).toMatchObject({ outcome: "saved", changed: true, commit: "committed" });
+    const history = await ipc.customHistory();
+    expect(history.commits.length).toBe(before + 1);
+    expect(history.commits[0]).toMatchObject({ kind: "cats", files: ["agent-cats.json"], short: swapped.commitShort });
+    expect((await ipc.customCatsRead()).agents).toEqual({ ui: "mulgam", designer: "danchu" });
+    expect((await ipc.customList()).unapplied.files.map((f) => f.path)).toEqual(["agents/harness-helper.values.yml"]);
+    // 바뀐 것 없음 — 커밋 없음
+    expect(await ipc.customCatsSave([{ agent: "designer", cat: "danchu" }])).toMatchObject({ changed: false, commit: "skipped", commitShort: null });
+    expect((await ipc.customHistory()).commits.length).toBe(before + 1);
+    // 하나라도 틀리면 아무것도 쓰지 않는다 (줄 수 · 같은 agent 두 번 · 틀린 이름 · 틀린 고양이 id · `cat` 빠뜨림 · 모르는 필드)
+    const many = Array.from({ length: 65 }, (_, i) => ({ agent: `agent-${i}`, cat: "nabi" }));
+    const wrong: Array<[string, unknown]> = [
+      ["빈 목록", []],
+      ["65 줄", many],
+      ["같은 agent 두 번", [{ agent: "ui", cat: "nabi" }, { agent: "ui", cat: null }]],
+      ["뒤의 틀린 이름", [{ agent: "system", cat: "nabi" }, { agent: "Bad", cat: "nabi" }]],
+      ["뒤의 틀린 고양이", [{ agent: "system", cat: "nabi" }, { agent: "ui", cat: "Bad Cat" }]],
+      ["cat 빠뜨림", [{ agent: "system", cat: "nabi" }, { agent: "ui" }]],
+      ["모르는 필드", [{ agent: "system", cat: "nabi", extra: 1 }]],
+    ];
+    for (const [name, changes] of wrong) {
+      expect(await failure(ipc.customCatsSave(changes as never)), name).toMatchObject({ kind: "invalid_input" });
+    }
+    expect((await ipc.customCatsRead()).agents).toEqual({ ui: "mulgam", designer: "danchu" });
+    expect((await ipc.customHistory()).commits.length).toBe(before + 1);
+    // 64 줄은 된다
+    expect(await ipc.customCatsSave(many.slice(0, 64))).toMatchObject({ changed: true, commit: "committed" });
+  });
+
+  it("보이는 이름: 처음 모습의 translator 는 「번역」 · 쓰기(그 파일만 커밋, 종류 labels) · 앞뒤 공백 떼기 · 지우기 · 규칙 어긋남은 refused · 틀린 에이전트 이름은 오류", async () => {
+    expect(await ipc.customLabelsRead()).toEqual({ state: "ok", agents: { translator: "번역" } });
+    await ipc.customValuesSave("agent:harness-helper", { model: "sonnet", effort: null }); // 적용 안 한 것
+    const before = (await ipc.customHistory()).commits.length;
+    const saved = await ipc.customLabelSave("summarizer", "  요약  ");
+    expect(saved).toMatchObject({ outcome: "saved", reason: null, changed: true, commit: "committed" });
+    const history = await ipc.customHistory();
+    expect(history.commits.length).toBe(before + 1);
+    expect(history.commits[0]).toMatchObject({ kind: "labels", message: "보이는 이름을 바꿈", files: ["agent-labels.json"], short: saved.commitShort });
+    expect((await ipc.customList()).unapplied.files.map((f) => f.path)).toEqual(["agents/harness-helper.values.yml"]);
+    expect((await ipc.customLabelsRead()).agents).toEqual({ translator: "번역", summarizer: "요약" });
+    // 같은 이름 · 이미 없는 줄 지우기 = 바뀐 것 없음
+    expect(await ipc.customLabelSave("summarizer", "요약")).toMatchObject({ changed: false, commit: "skipped" });
+    expect(await ipc.customLabelSave("nobody", null)).toMatchObject({ changed: false, commit: "skipped" });
+    // 빈 글 · null = 지움
+    expect(await ipc.customLabelSave("summarizer", "   ")).toMatchObject({ changed: true, commit: "committed" });
+    expect(await ipc.customLabelSave("translator", null)).toMatchObject({ changed: true, commit: "committed" });
+    expect(await ipc.customLabelsRead()).toEqual({ state: "ok", agents: {} });
+    // 규칙에 어긋난 이름은 refused + bad_label (아무것도 쓰지 않는다)
+    const count = (await ipc.customHistory()).commits.length;
+    for (const bad of ["가".repeat(21), "줄\n바꿈", "탭\t안", "제어\u001b문자", "문단\u2029나눔"]) {
+      expect(await ipc.customLabelSave("translator", bad), bad).toMatchObject({ outcome: "refused", reason: "bad_label", changed: false, commit: "skipped" });
+    }
+    expect(await ipc.customLabelSave("translator", "가".repeat(20))).toMatchObject({ changed: true });
+    expect((await ipc.customHistory()).commits.length).toBe(count + 1);
+    for (const agent of ["main", "Bad", "a/b", "", "../x"]) {
+      expect(await failure(ipc.customLabelSave(agent, "이름")), agent).toMatchObject({ kind: "invalid_input" });
+    }
+  });
+
   it("한 번에 하나: 쓰는 일이 겹치면 두 번째는 harness_busy, 읽기는 겹쳐도 된다", async () => {
     const first = ipc.customValuesSave("agent:harness-helper", { model: "sonnet", effort: null });
     const second = ipc.customAppendSave("agent:harness-tester", "- 겹침\n");
@@ -414,6 +504,9 @@ describe("내 수정 ipc (가짜 모드)", () => {
     expect(await ipc.customRestore("abcdef1")).toMatchObject({ outcome: "no_git" });
     expect(await ipc.customApply()).toMatchObject({ outcome: "applied", commit: "no_git", commitShort: null });
     expect(await ipc.customCatSave("main", "mukmul")).toMatchObject({ outcome: "saved", changed: true, commit: "no_git" });
+    expect(await ipc.customCatsSave([{ agent: "ui", cat: "mulgam" }, { agent: "designer", cat: "danchu" }])).toMatchObject({ outcome: "saved", changed: true, commit: "no_git" });
+    expect(await ipc.customLabelSave("translator", "번역가")).toMatchObject({ outcome: "saved", changed: true, commit: "no_git" });
+    expect((await ipc.customLabelsRead()).agents).toEqual({ translator: "번역가" });
   });
 
   it("install_fails: 적용 · 되돌리기가 늘 실패한다 (실패 화면을 눌러 볼 수 있게)", async () => {
@@ -446,6 +539,9 @@ describe("내 수정 ipc (출시 빌드 · Tauri 밖)", () => {
       () => ipc.customRestore("abcdef1"),
       () => ipc.customCatsRead(),
       () => ipc.customCatSave("main", null),
+      () => ipc.customCatsSave([{ agent: "main", cat: null }]),
+      () => ipc.customLabelsRead(),
+      () => ipc.customLabelSave("translator", null),
     ];
     for (const call of calls) {
       await expect(call()).rejects.toMatchObject({ kind: "internal" });

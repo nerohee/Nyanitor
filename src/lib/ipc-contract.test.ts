@@ -7,6 +7,7 @@ import customFlowRs from "../../src-tauri/src/custom/flow.rs?raw";
 import customFsxRs from "../../src-tauri/src/custom/fsx.rs?raw";
 import customHistoryRs from "../../src-tauri/src/custom/history.rs?raw";
 import customIdRs from "../../src-tauri/src/custom/id.rs?raw";
+import customLabelsRs from "../../src-tauri/src/custom/labels.rs?raw";
 import customModelRs from "../../src-tauri/src/custom/model.rs?raw";
 import customValuesRs from "../../src-tauri/src/custom/values.rs?raw";
 import customWriteRs from "../../src-tauri/src/custom/write.rs?raw";
@@ -36,7 +37,9 @@ import { isTextKey } from "../i18n/ko";
 import {
   AppError,
   CUSTOM_CAT_ID_PATTERN,
+  CUSTOM_CATS_CHANGES_MAX,
   CUSTOM_DESCRIPTION_MAX_CHARS,
+  CUSTOM_LABEL_MAX_CHARS,
   CUSTOM_EFFORTS,
   CUSTOM_MESSAGE_MAX_CHARS,
   CUSTOM_MODELS,
@@ -118,6 +121,7 @@ import {
   type WorkerRef,
   type CustomApplyOutcome,
   type CustomApplyResult,
+  type CustomCatChange,
   type CustomCats,
   type CustomCatsState,
   type CustomCatsWriteResult,
@@ -137,6 +141,7 @@ import {
   type CustomItemInfo,
   type CustomItemKind,
   type CustomItemUnreadable,
+  type CustomLabels,
   type CustomList,
   type CustomMark,
   type CustomRestoreOutcome,
@@ -472,7 +477,7 @@ const TS_CUSTOM_UNREADABLE: Record<CustomUnreadableReason, true> = {
 const TS_CUSTOM_HISTORY_STATES: Record<CustomHistoryState, true> = { ok: true, no_git: true, not_started: true, failed: true };
 const TS_CUSTOM_FILE_STATUSES: Record<CustomFileStatus, true> = { added: true, changed: true, removed: true };
 const TS_CUSTOM_WRITE_OUTCOMES: Record<CustomWriteOutcome, true> = { saved: true, refused: true };
-const TS_CUSTOM_COMMIT_KINDS: Record<CustomCommitKind, true> = { apply: true, new: true, restore: true, origin_update: true, cats: true, start: true, other: true };
+const TS_CUSTOM_COMMIT_KINDS: Record<CustomCommitKind, true> = { apply: true, new: true, restore: true, origin_update: true, cats: true, labels: true, start: true, other: true };
 const TS_CUSTOM_COMMIT_OUTCOMES: Record<CustomCommitOutcome, true> = { committed: true, no_git: true, failed: true, skipped: true };
 const TS_CUSTOM_APPLY_OUTCOMES: Record<CustomApplyOutcome, true> = { applied: true, nothing: true, failed: true };
 const TS_CUSTOM_RESTORE_OUTCOMES: Record<CustomRestoreOutcome, true> = {
@@ -500,7 +505,7 @@ const TS_CUSTOM_FIELDS = {
   HistoryInfo: { state: 1, detail: 1 } satisfies Record<keyof CustomHistoryInfo, 1>,
   UnappliedFile: { path: 1, status: 1 } satisfies Record<keyof CustomUnappliedFile, 1>,
   Unapplied: { known: 1, count: 1, files: 1 } satisfies Record<keyof CustomUnapplied, 1>,
-  CustomList: { available: 1, reason: 1, developerMode: 1, history: 1, unapplied: 1, items: 1 } satisfies Record<keyof CustomList, 1>,
+  CustomList: { available: 1, reason: 1, developerMode: 1, history: 1, unapplied: 1, items: 1, roles: 1 } satisfies Record<keyof CustomList, 1>,
   ItemDetail: { info: 1, originText: 1, appendText: 1, replaceText: 1, originGone: 1 } satisfies Record<keyof CustomItemDetail, 1>,
   WriteResult: { outcome: 1, reason: 1, detail: 1, changed: 1, notOurs: 1 } satisfies Record<keyof CustomWriteResult, 1>,
   DiffLine: { sign: 1, text: 1, old: 1, new: 1 } satisfies Record<keyof CustomDiffLine, 1>,
@@ -513,6 +518,8 @@ const TS_CUSTOM_FIELDS = {
   RestoreResult: { outcome: 1, script: 1, commit: 1, commitShort: 1, detail: 1 } satisfies Record<keyof CustomRestoreResult, 1>,
   CatsRead: { state: 1, agents: 1 } satisfies Record<keyof CustomCats, 1>,
   CatsWriteResult: { outcome: 1, reason: 1, changed: 1, commit: 1, commitShort: 1, detail: 1 } satisfies Record<keyof CustomCatsWriteResult, 1>,
+  /** 보이는 이름 읽기는 고양이 연결 읽기와 같은 Rust 모양이다 */
+  LabelsRead: { state: 1, agents: 1 } satisfies Record<keyof CustomLabels, 1>,
 };
 
 const camel = (name: string) => name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
@@ -1268,11 +1275,15 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
       RestoreResult: "RestoreResult",
       CatsRead: "CatsRead",
       CatsWriteResult: "CatsWriteResult",
+      LabelsRead: "CatsRead",
     };
     for (const [name, struct] of Object.entries(sources)) {
       const ts = TS_CUSTOM_FIELDS[name as keyof typeof TS_CUSTOM_FIELDS];
       expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(customModelRs, struct)));
     }
+    // 화면이 보내는 고양이 한 줄 (`cats.rs` 의 `CatChange`)
+    const catChange = { agent: 1, cat: 1 } satisfies Record<keyof CustomCatChange, 1>;
+    expect(sorted(Object.keys(catChange))).toEqual(sorted(rustFields(customCatsRs, "CatChange")));
   });
 
   it("고를 수 있는 값 · 상한 · 이름 모양이 Rust 와 같다", () => {
@@ -1291,17 +1302,19 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
     expect(constant(customFsxRs, "TEXT_MAX_BYTES")).toBe(CUSTOM_TEXT_MAX_BYTES);
     expect(constant(customWriteRs, "DESCRIPTION_MAX_CHARS")).toBe(CUSTOM_DESCRIPTION_MAX_CHARS);
     expect(constant(customHistoryRs, "MESSAGE_MAX_CHARS")).toBe(CUSTOM_MESSAGE_MAX_CHARS);
+    expect(constant(customLabelsRs, "LABEL_MAX_CHARS")).toBe(CUSTOM_LABEL_MAX_CHARS);
+    expect(constant(customCatsRs, "CHANGES_MAX")).toBe(CUSTOM_CATS_CHANGES_MAX);
     expect(constant(customIdRs, "NAME_MAX")).toBe(64);
     expect(constant(customIdRs, "CAT_ID_MAX")).toBe(32);
     expect(CUSTOM_NAME_PATTERN.source).toBe("^[a-z][a-z0-9-]{0,63}$");
     expect(CUSTOM_CAT_ID_PATTERN.source).toBe("^[a-z][a-z0-9-]{0,31}$");
   });
 
-  it("화면이 부르는 내 수정 명령은 열여덟 개이고 이름 · 인자가 ipc.ts 와 Rust 에서 같다 (경로 · 파일 이름을 받는 길이 없다)", async () => {
+  it("화면이 부르는 내 수정 명령은 스물한 개이고 이름 · 인자가 ipc.ts 와 Rust 에서 같다 (경로 · 파일 이름을 받는 길이 없다)", async () => {
     const commandsRs = (await import("../../src-tauri/src/custom/commands.rs?raw")).default;
     const ipcTs = (await import("./ipc.ts?raw")).default;
     const rust = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (custom_[a-z_]+)\(([^)]*)\)/g)];
-    expect(rust.length).toBe(18);
+    expect(rust.length).toBe(21);
     // Rust: 매개변수 이름은 아래 목록 안의 것뿐 (State 는 앱이 채운다)
     const allowed: Record<string, string[]> = {
       custom_list: [],
@@ -1322,6 +1335,9 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
       custom_restore: ["state", "commit"],
       custom_cats_read: [],
       custom_cat_save: ["state", "agent", "cat"],
+      custom_cats_save: ["state", "changes"],
+      custom_labels_read: [],
+      custom_label_save: ["state", "agent", "label"],
     };
     expect(sorted(rust.map((m) => m[1] as string))).toEqual(sorted(Object.keys(allowed)));
     for (const [, name, params] of rust) {
@@ -1336,7 +1352,7 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
     expect(commandsRs).not.toMatch(/PathBuf|\bPath\b|OsString/);
     // 화면: 호출마다 같은 이름의 인자만 (State 는 없다)
     const calls = [...ipcTs.matchAll(/custom[A-Za-z]+: \(([^)]*)\) => call<[^>]*>\("(custom_[a-z_]+)"(?:, \{ ([^}]*) \})?/g)];
-    expect(calls.length).toBe(18);
+    expect(calls.length).toBe(21);
     for (const [, , command, args] of calls) {
       const wanted = (allowed[command as string] ?? []).filter((name) => name !== "state").map(camel);
       const sent = (args ?? "").split(",").map((a) => a.trim()).filter((a) => a !== "");
@@ -1347,7 +1363,7 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
   it("쓰는 내 수정 명령은 모두 flow 를 거쳐 잠그고, 읽는 명령은 flow 를 부르지 않는다", async () => {
     const commandsRs = (await import("../../src-tauri/src/custom/commands.rs?raw")).default;
     const bodies = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (custom_[a-z_]+)\([^)]*\)[^{]*\{([\s\S]*?)\n\}/g)];
-    expect(bodies.length).toBe(18);
+    expect(bodies.length).toBe(21);
     const writes: Record<string, string> = {
       custom_values_save: "save_values",
       custom_append_save: "save_append",
@@ -1361,13 +1377,15 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
       custom_apply: "apply",
       custom_restore: "restore_to",
       custom_cat_save: "cats_write",
+      custom_cats_save: "cats_write_many",
+      custom_label_save: "labels_write",
     };
     for (const [, name, body] of bodies) {
       const flowFn = writes[name as string];
       if (flowFn !== undefined) {
         expect(body, `${name as string} 은 flow::${flowFn} 를 불러야 한다`).toMatch(new RegExp(`flow::${flowFn}\\b`));
         // 저장 · git · 설치를 직접 부르지 않는다 (잠금을 건너뛰게 된다)
-        expect(body, `${name as string} 이 write/apply/history/cats 를 직접 부름`).not.toMatch(/\b(write|apply|history|cats|script|git)::/);
+        expect(body, `${name as string} 이 write/apply/history/cats 를 직접 부름`).not.toMatch(/\b(write|apply|history|cats|labels|script|git)::/);
       } else {
         expect(body, `${name as string} 은 읽기만 한다`).not.toMatch(/flow::/);
       }
@@ -1385,8 +1403,9 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
     expect(customWriteRs).toContain("ItemId::parse(text)");
     expect(customWriteRs.match(/parse_id\(id_text\)\?/g)?.length).toBeGreaterThanOrEqual(7);
     expect(customCatsRs).toContain("valid_cat_id");
+    expect(customLabelsRs).toContain("valid_name");
     // 파일 쓰기는 fsx 한 곳 — 링크 단계 확인을 건너뛰는 직접 쓰기가 없다
-    for (const [name, source] of [["write.rs", customWriteRs], ["cats.rs", customCatsRs]] as const) {
+    for (const [name, source] of [["write.rs", customWriteRs], ["cats.rs", customCatsRs], ["labels.rs", customLabelsRs]] as const) {
       const production = source.slice(0, source.includes("#[cfg(test)]") ? source.indexOf("#[cfg(test)]") : undefined);
       expect(production, name).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions)/);
       expect(production, name).not.toMatch(/Command::new/);

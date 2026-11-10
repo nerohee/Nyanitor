@@ -1,17 +1,18 @@
-//! 내 수정의 Tauri 명령 — 얇게: 위치를 정하고 블로킹 풀에서 일반 함수(`items` · `history` · `cats` · `flow`)를 부를 뿐이다.
+//! 내 수정의 Tauri 명령 — 얇게: 위치를 정하고 블로킹 풀에서 일반 함수(`items` · `history` · `cats` · `labels` · `flow`)를 부를 뿐이다.
 //! 쓰는 명령은 모두 `flow` 를 거친다 (한 번에 하나 잠금은 `flow` 에 있다). 읽는 명령은 잠그지 않는다.
 //!
-//! **화면이 넘기는 값은 항목 id · 값 · 글 · 새 항목 요청(종류 · 이름 · 소개 · 모델 · 수준) · 커밋 번호 · 에이전트 이름 · 고양이 id 뿐이다.**
+//! **화면이 넘기는 값은 항목 id · 값 · 글 · 새 항목 요청(종류 · 이름 · 소개 · 모델 · 수준) · 커밋 번호 · 에이전트 이름 · 고양이 id · 보이는 이름 뿐이다.**
 //! 경로 · 파일 이름 · 실행 파일 · 인자를 받는 명령은 없다 — 모두 Rust 에서 모양을 다시 확인한다 (`ItemId::parse` · 이름 · 고양이 id · 커밋 번호 모양 · 값 목록).
 //! 무거운 일(git · 설치)은 모두 `async` + 블로킹 풀에서 돈다 — 화면 스레드를 막지 않는다.
 
 use tauri::State;
 
 use super::Env;
-use super::cats;
+use super::cats::{self, CatChange};
 use super::flow;
 use super::history;
 use super::items;
+use super::labels;
 use super::model::{
     ApplyResult, CatsRead, CatsWriteResult, ChangesList, CommitDiff, CustomList, DiscardResult,
     HistoryList, ItemRead, RestoreResult, WriteResult,
@@ -226,6 +227,37 @@ pub async fn custom_cat_save(
 ) -> Result<CatsWriteResult, AppError> {
     run(state, move |state, ctx| {
         flow::cats_write(state, ctx, &agent, cat.as_deref())
+    })
+    .await
+}
+
+/// 여러 에이전트의 고양이를 한 번에 쓰기 (고양이 맞바꿈 · 모두 기본값으로) — 파일을 한 번 쓰고 커밋 하나. 1~64 줄, 같은 에이전트가 두 번이면 오류, 하나라도 틀리면 아무것도 쓰지 않는다
+#[tauri::command]
+pub async fn custom_cats_save(
+    state: State<'_, HarnessState>,
+    changes: Vec<CatChange>,
+) -> Result<CatsWriteResult, AppError> {
+    run(state, move |state, ctx| {
+        flow::cats_write_many(state, ctx, &changes)
+    })
+    .await
+}
+
+/// 보이는 이름 읽기 — 직접 만든 에이전트의 화면 이름 (`custom/agent-labels.json`)
+#[tauri::command]
+pub async fn custom_labels_read() -> Result<CatsRead, AppError> {
+    read(|env| Ok(labels::read(env))).await
+}
+
+/// 보이는 이름 쓰기 (`null` 또는 빈 글 = 지움) — 그 파일만 바로 커밋
+#[tauri::command]
+pub async fn custom_label_save(
+    state: State<'_, HarnessState>,
+    agent: String,
+    label: Option<String>,
+) -> Result<CatsWriteResult, AppError> {
+    run(state, move |state, ctx| {
+        flow::labels_write(state, ctx, &agent, label.as_deref())
     })
     .await
 }

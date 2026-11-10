@@ -50,6 +50,17 @@ describe("항목 이름 · 고양이", () => {
     expect(itemLabel("skill", "desktop-app", roles)).toBe("desktop-app");
   });
 
+  it("하네스를 설치하기 전(설치된 목록 없음)에도 설정의 대응으로 한국어 이름 · 기본 고양이 — 적용 기록 줄이 파일 이름으로 남지 않는다", () => {
+    const before = rolesOf(null, { "harness-designer": "designer", "harness-builder-ui": "ui" });
+    expect(itemLabel("agent", "harness-designer", before)).toBe("디자이너");
+    expect(itemCat("agent", "harness-builder-ui", before, {})).toBe("danchu");
+    expect(buildSummary({ files: [{ path: "agents/harness-designer.append.md", status: "added" }], items: [], roles: before })).toMatch(/^디자이너 — /);
+    // 설치된 목록이 있으면 그 역할이 이긴다
+    const both = rolesOf(agents, { "harness-builder-ui": "system" });
+    expect(both.get("harness-builder-ui")).toBe("ui");
+    expect(both.get("harness-tester")).toBe("tester");
+  });
+
   it("고양이: 내 연결 → 기본 연결(역할) → 없음 — 스킬은 고양이가 없다, 모르는 고양이 id 는 건너뛴다", () => {
     expect(itemCat("main", "main", roles, {})).toBe("mukmul");
     expect(itemCat("agent", "harness-builder-ui", roles, {})).toBe("danchu");
@@ -72,6 +83,7 @@ describe("parseCustomPath", () => {
     expect(parseCustomPath("skills/web-full/SKILL.md")).toEqual({ kind: "skill", name: "web-full", part: "whole" });
     expect(parseCustomPath("config.local.json")).toEqual({ kind: "main", name: "main", part: "values" });
     expect(parseCustomPath("agent-cats.json")?.part).toBe("cats");
+    expect(parseCustomPath("agent-labels.json")).toEqual({ kind: "labels", name: "labels", part: "labels" });
     expect(parseCustomPath(".gitignore")).toBeNull();
     expect(parseCustomPath("agents/../x.md")).toBeNull();
   });
@@ -108,6 +120,11 @@ describe("buildSummary — 적용 요약 한 줄", () => {
     expect(build([["agents/harness-designer.md", "removed"], ["agents/harness-designer.md.origin", "removed"]])).toBe("디자이너 — 통째 바꾼 것을 원본으로");
     expect(build([["agents/gone.md", "removed"]])).toBe("gone — 파일을 지움");
     expect(build([["agents/harness-designer.md.origin", "changed"]])).toBe("디자이너 — 원본 바뀜에서 고름");
+  });
+
+  it("보이는 이름 파일은 바로 커밋돼 적용 안 한 것에 나올 일이 드물지만 나오면 「보이는 이름을 바꿈」", () => {
+    expect(build([["agent-labels.json", "changed"]])).toBe("이름 — 보이는 이름을 바꿈");
+    expect(build([["agent-labels.json", "added"], ["agent-cats.json", "added"]])).toBe("이름 외 1개");
   });
 
   it("한 항목에 여러 가지면 「 · 」로 잇는다", () => {

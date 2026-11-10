@@ -7,6 +7,7 @@ mod common;
 use std::fs;
 
 use common::*;
+use nyanitor_lib::custom::cats;
 use nyanitor_lib::custom::model::{
     ApplyOutcome, ApplyResult, CommitKind, CommitOutcome, FileStatus, HistoryState, RestoreOutcome,
     RestoreResult, WriteOutcome,
@@ -293,6 +294,16 @@ fn every_writing_call_is_refused_with_harness_busy_while_another_harness_task_ho
         flow::apply(&state, &ctx, None).err(),
         flow::restore_to(&state, &ctx, "abcdef1").err(),
         flow::cats_write(&state, &ctx, "main", Some("mukmul")).err(),
+        flow::cats_write_many(
+            &state,
+            &ctx,
+            &[cats::CatChange {
+                agent: "main".into(),
+                cat: Some("mukmul".into()),
+            }],
+        )
+        .err(),
+        flow::labels_write(&state, &ctx, "translator", Some("번역")).err(),
     ];
     for (index, error) in errors.into_iter().enumerate() {
         assert_eq!(
@@ -307,6 +318,7 @@ fn every_writing_call_is_refused_with_harness_busy_while_another_harness_task_ho
     assert!(
         !r.custom_exists("agents/harness-designer.values.yml")
             && !r.custom_exists("agent-cats.json")
+            && !r.custom_exists("agent-labels.json")
     );
     assert_eq!(unapplied_count(&r), 1, "아무것도 바뀌지 않았다");
     // 읽기는 잠기지 않는다

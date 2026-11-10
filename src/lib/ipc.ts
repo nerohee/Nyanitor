@@ -18,6 +18,7 @@ import {
   type ClaudeSessionState,
   type ClaudeStatus,
   type CustomApplyResult,
+  type CustomCatChange,
   type CustomCats,
   type CustomCatsWriteResult,
   type CustomChanges,
@@ -25,6 +26,8 @@ import {
   type CustomDiscardResult,
   type CustomHistory,
   type CustomItemRead,
+  type CustomLabels,
+  type CustomLabelWriteResult,
   type CustomList,
   type CustomNewItem,
   type CustomRestoreResult,
@@ -198,6 +201,12 @@ export const ipc = {
   customCatsRead: () => call<CustomCats>("custom_cats_read"),
   /** 한 에이전트의 고양이 쓰기 (`agent` = 에이전트 이름 또는 `main`, `cat` = 고양이 id, `null` = 지움) — 그 파일만 바로 커밋한다 */
   customCatSave: (agent: string, cat: string | null) => call<CustomCatsWriteResult>("custom_cat_save", { agent, cat }),
+  /** 여러 에이전트의 고양이를 한 번에 쓰기 (고양이 맞바꿈 · 모두 기본값으로) — 파일을 한 번 쓰고 커밋 하나. 1~64 줄, 같은 `agent` 가 두 번이면 `invalid_input`, 하나라도 모양이 틀리면 아무것도 쓰지 않는다. 바뀐 것이 없으면 `changed: false` · 커밋 없음 */
+  customCatsSave: (changes: CustomCatChange[]) => call<CustomCatsWriteResult>("custom_cats_save", { changes }),
+  /** 보이는 이름 읽기 — 직접 만든 에이전트의 화면 이름 (`custom/agent-labels.json`에 적힌 것만). 규칙에 어긋난 줄은 빼고 준다 */
+  customLabelsRead: () => call<CustomLabels>("custom_labels_read"),
+  /** 보이는 이름 쓰기 (`agent` = 에이전트 이름 — `main` · 모양이 틀린 이름은 `invalid_input`, `label` = 앞뒤 공백을 뗀 뒤 1~20 글자 · 줄바꿈 / 탭 / 제어 문자 없음, `null` 또는 빈 글 = 지움) — 그 파일만 바로 커밋한다. 이름이 규칙에 어긋나면 `refused` + `bad_label` */
+  customLabelSave: (agent: string, label: string | null) => call<CustomLabelWriteResult>("custom_label_save", { agent, label }),
 
   // 고양이 집 (P5-01). 넘기는 값이 없다 — 경로 · 파일 이름 · 실행 파일 · 인자를 넘기는 길은 없다.
   /** 설치된 에이전트 목록 — 오케스트레이터 + `<설정 폴더>/agents/*.md` 앞머리. 깨진 파일 · 설정 · 하네스 없음은 오류가 아니라 결과의 상태다 */

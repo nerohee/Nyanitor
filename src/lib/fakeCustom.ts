@@ -11,7 +11,10 @@ import { t } from "../i18n/ko";
 import { diffLines, splitLines as lines } from "./textDiff";
 import {
   AppError,
+  type AgentRole,
   CUSTOM_CAT_ID_PATTERN,
+  CUSTOM_CATS_CHANGES_MAX,
+  CUSTOM_LABEL_MAX_CHARS,
   CUSTOM_EFFORTS,
   CUSTOM_DESCRIPTION_MAX_CHARS,
   CUSTOM_MESSAGE_MAX_CHARS,
@@ -19,6 +22,7 @@ import {
   CUSTOM_NAME_PATTERN,
   CUSTOM_TEXT_MAX_BYTES,
   type CustomApplyResult,
+  type CustomCatChange,
   type CustomCats,
   type CustomCatsWriteResult,
   type CustomChanges,
@@ -34,6 +38,7 @@ import {
   type CustomItemInfo,
   type CustomItemKind,
   type CustomItemRead,
+  type CustomLabels,
   type CustomList,
   type CustomListEntry,
   type CustomMark,
@@ -63,7 +68,9 @@ export function parseFakeCustomQuery(search: string): FakeCustomMode {
 const FAKE_CLAUDE_DIR = "C:\\fake-sandbox\\.claude";
 const FAKE_HOME = "C:\\fake-sandbox\\.claude-harness";
 const AGENT_CATS = "agent-cats.json";
+const AGENT_LABELS = "agent-labels.json";
 const CONFIG = "config.local.json";
+const WORKER_ROLES = ["designer", "ui", "system", "tester", "helper", "reviewer"] as const;
 // eslint-disable-next-line no-control-regex -- 제어 문자를 찾는 것이 목적이다 (진짜 `char::is_control` 과 같다)
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 const FILES_MAX = 200;
@@ -271,6 +278,7 @@ function seedCommits(): Array<{ kind: CustomCommitKind; message: string; writes:
       writes: {
         "agents/translator.md": `${t("variant.fixture.edit.translator.file")}\n`,
         [AGENT_CATS]: `${JSON.stringify({ version: 1, agents: { translator: "dubu" } }, null, 2)}\n`,
+        [AGENT_LABELS]: `${JSON.stringify({ version: 1, agents: { translator: "번역" } }, null, 2)}\n`,
       },
     },
     { kind: "apply", message: "디자이너를 통째로 바꿈", writes: { "agents/harness-designer.md": myDesigner, "agents/harness-designer.md.origin": `${fakeHash(oldDesigner)}\n` } },
@@ -613,7 +621,27 @@ export function createFakeCustom() {
       history: { state: gitState(s), detail: null },
       unapplied: unappliedOf(s),
       items,
+      roles: available ? rolesOf(s) : {},
     };
+  }
+
+  /** 하네스 작업자 이름 → 역할 — 내 설정 → 원본 예시 순서로 처음 `agents` 가 있는 것 (Rust `main_config::roles` 와 같은 뜻, 가짜는 설치된 설정이 없다) */
+  function rolesOf(s: FakeState): Record<string, AgentRole> {
+    for (const raw of [s.custom.get(CONFIG), s.source.get("config.example.json")]) {
+      if (raw === undefined) continue;
+      try {
+        const agents = (JSON.parse(raw) as { agents?: unknown }).agents;
+        if (typeof agents !== "object" || agents === null) continue;
+        const found: Record<string, AgentRole> = {};
+        for (const [role, name] of Object.entries(agents)) {
+          if (typeof name === "string" && name.trim() !== "" && (WORKER_ROLES as readonly string[]).includes(role)) found[name.trim()] = role as AgentRole;
+        }
+        if (Object.keys(found).length > 0) return found;
+      } catch {
+        // 깨진 설정은 건너뛴다
+      }
+    }
+    return {};
   }
 
   // ───── 쓰기 ─────
@@ -891,8 +919,9 @@ export function createFakeCustom() {
     return { outcome: "restored", script, commit: "committed", commitShort: made.hash.slice(0, 7), detail: null };
   }
 
-  function readCats(s: FakeState): CustomCats {
-    const raw = s.custom.get(AGENT_CATS);
+  /** `{ agents: { 이름: 글 } }` 파일 읽기 (고양이 · 보이는 이름이 같이 쓴다) — 글인 값만 */
+  function readAgentsFile(s: FakeState, file: string): CustomCats {
+    const raw = s.custom.get(file);
     if (raw === undefined) return { state: "absent", agents: {} };
     try {
       const parsed = JSON.parse(raw) as { agents?: Record<string, unknown> };
@@ -904,33 +933,89 @@ export function createFakeCustom() {
     }
   }
 
-  function saveCat(s: FakeState, agentArg: unknown, catArg: unknown): CustomCatsWriteResult {
-    if (typeof agentArg !== "string" || (agentArg !== "main" && !validName(agentArg))) throw new AppError("invalid_input", "agent name has the wrong shape");
-    if (catArg !== null && catArg !== undefined && (typeof catArg !== "string" || !CUSTOM_CAT_ID_PATTERN.test(catArg))) throw new AppError("invalid_input", "cat id has the wrong shape");
-    const cat = typeof catArg === "string" ? catArg : null;
-    const bare = (over: Partial<CustomCatsWriteResult>): CustomCatsWriteResult => ({ outcome: "saved", reason: null, changed: false, commit: "skipped", commitShort: null, detail: null, ...over });
-    const raw = s.custom.get(AGENT_CATS);
+  const readCats = (s: FakeState): CustomCats => readAgentsFile(s, AGENT_CATS);
+
+  const bareWrite = (over: Partial<CustomCatsWriteResult>): CustomCatsWriteResult => ({ outcome: "saved", reason: null, changed: false, commit: "skipped", commitShort: null, detail: null, ...over });
+
+  /** 모두 적용해 파일을 한 번 쓰고 그 파일만 커밋 하나 (진짜 `cats::write_edits` 와 같다). 이름 · 글 모양은 부르는 쪽이 이미 확인했다 */
+  function writeAgentsFile(s: FakeState, file: string, subject: string, kind: CustomCommitKind, edits: ReadonlyArray<readonly [string, string | null]>): CustomCatsWriteResult {
+    const raw = s.custom.get(file);
     let parsed: { version?: number; agents?: Record<string, unknown> } & Record<string, unknown> = { version: 1 };
     if (raw !== undefined) {
       try {
         parsed = JSON.parse(raw) as typeof parsed;
       } catch {
-        return bare({ outcome: "refused", reason: "unreadable" });
+        return bareWrite({ outcome: "refused", reason: "unreadable" });
       }
     }
     const agents = { ...(parsed.agents ?? {}) };
-    if (cat === null) delete agents[agentArg];
-    else agents[agentArg] = cat;
+    for (const [agent, value] of edits) {
+      if (value === null) delete agents[agent];
+      else agents[agent] = value;
+    }
     const next = `${JSON.stringify({ ...parsed, agents }, null, 2)}\n`;
-    if (raw === undefined ? cat === null : normalize(raw) === next) return bare({});
+    if (raw === undefined ? edits.every(([, value]) => value === null) : normalize(raw) === next) return bareWrite({});
     ensureStarted(s);
-    s.custom.set(AGENT_CATS, next);
-    if (s.mode === "no_git") return bare({ changed: true, commit: "no_git" });
+    s.custom.set(file, next);
+    if (s.mode === "no_git") return bareWrite({ changed: true, commit: "no_git" });
     // 그 파일만 커밋한다 — 다른 적용 안 한 것은 그대로
     const tree = new Map(head(s));
-    tree.set(AGENT_CATS, next);
-    const made = commit(s, "고양이 연결 바꿈", "cats", tree);
-    return bare({ changed: true, commit: "committed", commitShort: made.hash.slice(0, 7) });
+    tree.set(file, next);
+    const made = commit(s, subject, kind, tree);
+    return bareWrite({ changed: true, commit: "committed", commitShort: made.hash.slice(0, 7) });
+  }
+
+  function checkCatLine(agentArg: unknown, catArg: unknown): readonly [string, string | null] {
+    if (typeof agentArg !== "string" || (agentArg !== "main" && !validName(agentArg))) throw new AppError("invalid_input", "agent name has the wrong shape");
+    if (catArg !== null && catArg !== undefined && (typeof catArg !== "string" || !CUSTOM_CAT_ID_PATTERN.test(catArg))) throw new AppError("invalid_input", "cat id has the wrong shape");
+    return [agentArg, typeof catArg === "string" ? catArg : null];
+  }
+
+  function saveCat(s: FakeState, agentArg: unknown, catArg: unknown): CustomCatsWriteResult {
+    return writeAgentsFile(s, AGENT_CATS, "고양이 연결 바꿈", "cats", [checkCatLine(agentArg, catArg)]);
+  }
+
+  /** 여러 줄 한 번에 — 1~64 줄 · 같은 에이전트는 한 번 · 하나라도 모양이 틀리면 아무것도 쓰지 않는다 (`cats::edits_of`) */
+  function saveCats(s: FakeState, changesArg: unknown): CustomCatsWriteResult {
+    if (!Array.isArray(changesArg) || changesArg.length === 0 || changesArg.length > CUSTOM_CATS_CHANGES_MAX) throw new AppError("invalid_input", "the number of changes is out of range");
+    const seen = new Set<string>();
+    const edits: Array<readonly [string, string | null]> = [];
+    for (const raw of changesArg as unknown[]) {
+      const line = raw as Partial<CustomCatChange> | null;
+      // `cat` 을 빠뜨린 것이 지움으로 읽히면 안 된다 · 모르는 필드도 거절한다 (진짜는 serde `deny_unknown_fields`)
+      if (typeof line !== "object" || line === null || !("cat" in line) || Object.keys(line).some((key) => key !== "agent" && key !== "cat")) throw new AppError("invalid_input", "a change has the wrong shape");
+      const edit = checkCatLine(line.agent, line.cat);
+      if (seen.has(edit[0])) throw new AppError("invalid_input", "the same agent appears twice");
+      seen.add(edit[0]);
+      edits.push(edit);
+    }
+    return writeAgentsFile(s, AGENT_CATS, "고양이 연결 바꿈", "cats", edits);
+  }
+
+  /** 보이는 이름 규칙 — 앞뒤 공백을 떼고 1~20 글자(문자 수), 줄바꿈 · 탭 · 제어 문자 없음. `label: null` = 뗀 뒤 비었다 (진짜 `labels::clean_label`) */
+  function cleanLabel(raw: string): { ok: true; label: string | null } | { ok: false } {
+    const label = raw.trim();
+    if (label === "") return { ok: true, label: null };
+    if ([...label].length > CUSTOM_LABEL_MAX_CHARS || label.search(CONTROL_CHARS) >= 0 || /[\u2028\u2029]/.test(label)) return { ok: false };
+    return { ok: true, label };
+  }
+
+  function readLabels(s: FakeState): CustomLabels {
+    const read = readAgentsFile(s, AGENT_LABELS);
+    const agents: Record<string, string> = {};
+    for (const [agent, raw] of Object.entries(read.agents)) {
+      const cleaned = cleanLabel(raw);
+      if (agent !== "main" && validName(agent) && cleaned.ok && cleaned.label !== null) agents[agent] = cleaned.label;
+    }
+    return { state: read.state, agents };
+  }
+
+  function saveLabel(s: FakeState, agentArg: unknown, labelArg: unknown): CustomCatsWriteResult {
+    if (typeof agentArg !== "string" || agentArg === "main" || !validName(agentArg)) throw new AppError("invalid_input", "agent name has the wrong shape");
+    if (labelArg !== null && labelArg !== undefined && typeof labelArg !== "string") throw new AppError("invalid_input", "label has the wrong shape");
+    const cleaned = typeof labelArg === "string" ? cleanLabel(labelArg) : ({ ok: true, label: null } as const);
+    if (!cleaned.ok) return bareWrite({ outcome: "refused", reason: "bad_label" });
+    return writeAgentsFile(s, AGENT_LABELS, "보이는 이름을 바꿈", "labels", [[agentArg, cleaned.label]]);
   }
 
   const handlers: Record<string, Handler> = {
@@ -982,6 +1067,9 @@ export function createFakeCustom() {
     custom_restore: (args) => exclusive(() => restore(current(), args.commit)),
     custom_cats_read: () => structuredClone(readCats(current())),
     custom_cat_save: (args) => exclusive(() => saveCat(current(), args.agent, args.cat)),
+    custom_cats_save: (args) => exclusive(() => saveCats(current(), args.changes)),
+    custom_labels_read: () => structuredClone(readLabels(current())),
+    custom_label_save: (args) => exclusive(() => saveLabel(current(), args.agent, args.label)),
   };
 
   return {

@@ -12,9 +12,9 @@
 //  먹물이 갑자기 멈춤                  → error    "먹물이 갑자기 멈췄어요"
 //  넣지 않는 것: 사용자 글 · 먹물 글 · 도구 줄(성공 · 실패) · 한도 가까움 알림 · 그 밖의 알림
 import type { CatId } from "../../components/cat/catalog";
-import { catForAgent } from "../../components/cat/catalog";
 import { tf } from "../../i18n/ko";
 import { withSubject } from "../../i18n/josa";
+import { orchCat, type Mine } from "../../lib/mine";
 import type { WorkerRef } from "../../lib/ipc-types";
 import { parseApproval } from "../chat/approval";
 import type { ChatData, ChatLine } from "../chat/model";
@@ -40,9 +40,10 @@ export interface SummaryInput {
   workers?: readonly WorkerEntry[];
   /** 에이전트 이름 → 역할 (`rolesOfAgents`) — 없으면 이름 모양으로 짐작 */
   roles?: WorkerRoles;
+  /** 내 연결 (안 주면 지금 들고 있는 것) — 오케스트레이터 · 작업자의 고양이 */
+  mine?: Mine;
 }
 
-const ORCH: CatId = catForAgent("main") as CatId;
 const TITLE_MAX = 40;
 const TOOL_MAX = 60;
 
@@ -58,7 +59,8 @@ interface Draft extends LogItem {
 
 /** 요약 로그 — 시간순 (오래된 것이 앞) */
 export function buildSummaryLog(input: SummaryInput): LogItem[] {
-  const { chat, workers = [], roles } = input;
+  const { chat, workers = [], roles, mine } = input;
+  const ORCH: CatId = orchCat(mine);
   const drafts: Draft[] = [];
   const add = (item: LogItem) => drafts.push({ ...item, seq: drafts.length });
 
@@ -68,11 +70,11 @@ export function buildSummaryLog(input: SummaryInput): LogItem[] {
   for (const worker of workers) if (!nameByTool.has(worker.toolUseId)) nameByTool.set(worker.toolUseId, worker.name);
   const requester = (worker: WorkerRef | null | undefined): CatId => {
     const name = (worker?.toolUseId ? nameByTool.get(worker.toolUseId) : undefined) ?? worker?.name ?? null;
-    return name === null || !worker ? ORCH : catForWorker(name, { roles });
+    return name === null || !worker ? ORCH : catForWorker(name, { roles, mine });
   };
 
   const addWorker = (key: string, name: string, description: string | null, startedAtMs: number, status: "running" | "done" | "failed" | "stopped", endedAtMs: number | null) => {
-    const cat = catForWorker(name, { roles });
+    const cat = catForWorker(name, { roles, mine });
     const cname = catName(cat);
     const desc = description?.trim();
     add({ key: `w-${key}`, atMs: startedAtMs, cat, kind: "assign", text: desc ? tf("ws.progress.log.assign", { cat: cname, description: desc }) : tf("ws.progress.log.assignBare", { cat: cname }) });

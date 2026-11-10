@@ -1,19 +1,19 @@
 // 채팅 목록의 한 줄들 — 사용자 말 · 먹물 글(마크다운) · 도구 사용 · 실패한 도구 결과 · 작업자 줄 · 턴 끝(오류 · 한도 · 중단일 때만) · 알림 줄.
 import { useState } from "react";
 import { CatFigure } from "../../components/cat/CatFigure";
-import { catForAgent, type CatId } from "../../components/cat/catalog";
+import type { CatId } from "../../components/cat/catalog";
 import { isTextKey, t, tf } from "../../i18n/ko";
+import { orchCat, useMine } from "../../lib/mine";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { MarkdownPreview } from "../MarkdownPreview";
 import { catForWorker, catName, useWorkerRoles } from "../progress/workerCat";
 import type { ChatLine } from "./model";
 
-/** 오케스트레이터(먹물) — 이름 · 얼굴 */
-export const ORCH_CAT = catForAgent("main") as CatId;
-
-export function orchName(): string {
-  const key = `cat.${ORCH_CAT}.name`;
-  return isTextKey(key) ? t(key) : "";
+/** 오케스트레이터 — 이름 · 얼굴. 내 연결의 `main` 고양이, 없으면 먹물 (이름은 고양이 이름이 바뀐 대로) */
+export function useOrchestrator(): { cat: CatId; name: string } {
+  const cat = orchCat(useMine());
+  const key = `cat.${cat}.name`;
+  return { cat, name: isTextKey(key) ? t(key) : "" };
 }
 
 type Of<K extends ChatLine["kind"]> = Extract<ChatLine, { kind: K }>;
@@ -38,13 +38,14 @@ export function UserMessage({ line }: { line: Of<"user"> }) {
 }
 
 export function OrchMessage({ line }: { line: Of<"orch"> }) {
+  const orch = useOrchestrator();
   return (
     <div className="wc-msg wc-msg--orch">
       <span className="wc-msg__avatar" aria-hidden="true">
-        <CatFigure cat={ORCH_CAT} crop="face" />
+        <CatFigure cat={orch.cat} crop="face" />
       </span>
       <div className="wc-msg__bubble">
-        <p className="wc-msg__who">{orchName()}</p>
+        <p className="wc-msg__who">{orch.name}</p>
         <MarkdownPreview text={line.text} />
         {line.truncated && <Cut />}
       </div>
@@ -96,7 +97,8 @@ const WORKER_ICON: Record<Of<"worker">["status"], IconName> = { running: "clock"
 /** 작업자를 맡긴 줄 — 고양이 얼굴 + "<이름>에게 맡김 — 무엇" + 상태(일하는 중 · 돌아옴 · 못 끝냄 · 멈춤: 아이콘과 글자로, 색만으로 가르지 않는다). 끝나면 같은 줄의 상태가 바뀐다 */
 export function WorkerLine({ line }: { line: Of<"worker"> }) {
   const roles = useWorkerRoles();
-  const cat = catForWorker(line.name, { roles });
+  const mine = useMine();
+  const cat = catForWorker(line.name, { roles, mine });
   const name = catName(cat);
   const text = line.description ? tf("ws.chat.worker.assignedWith", { cat: name, description: line.description }) : tf("ws.chat.worker.assigned", { cat: name });
   return (

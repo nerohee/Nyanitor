@@ -33,11 +33,13 @@ interface View {
   tab: "progress" | "chat" | null;
   /** 숨었던 창이 다시 열려 기다리는 카드로 가는 요청 (`n` 이 바뀔 때마다) — 다른 곳으로 가면 잊는다 */
   reopen: { n: number; projectId: number } | null;
+  /** 「내 수정」을 고양이 고르기로 열 때 고를 에이전트 (집의 정보 패널 「고양이 바꾸기」) — 다른 곳으로 가면 잊는다 */
+  pick: string | null;
 }
 
 function App() {
   const search = window.location.search;
-  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false, tab: null, reopen: null });
+  const [view, setView] = useState<View>({ place: "house", projectId: null, openNew: false, tab: null, reopen: null, pick: null });
   // 세션 이벤트는 앱이 켜질 때 한 번만 듣는다 — 고양이 집 · 작업 공간을 오가도 끊기지 않고 대화 · 기다리는 카드가 쌓인다
   useEffect(() => {
     void startSessionStore();
@@ -55,7 +57,7 @@ function App() {
         const projectId = state.session.projectId;
         setView((prev) => {
           const reopen = { n: (prev.reopen?.n ?? 0) + 1, projectId };
-          return prev.place === "workspace" ? { ...prev, reopen } : { place: "workspace", projectId, openNew: false, tab: "chat", reopen };
+          return prev.place === "workspace" ? { ...prev, reopen } : { place: "workspace", projectId, openNew: false, tab: "chat", reopen, pick: null };
         });
       })
       .then((off) => {
@@ -92,7 +94,7 @@ function App() {
   if (view.place === "edit") {
     return (
       <Suspense fallback={null}>
-        <EditScreen onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))} />
+        <EditScreen startPick={view.pick ?? undefined} onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null, pick: null }))} />
       </Suspense>
     );
   }
@@ -105,17 +107,18 @@ function App() {
           openTab={view.tab ?? undefined}
           reopen={view.reopen}
           onSelect={(projectId) => setView((prev) => ({ ...prev, projectId, openNew: false }))}
-          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))}
+          onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null, pick: null }))}
         />
       </Suspense>
     );
   }
   return (
     <Home
-      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null }))}
-      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false, tab: null, reopen: null })}
-      onOpenWork={(projectId, tab) => setView({ place: "workspace", projectId, openNew: false, tab, reopen: null })}
-      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true, tab: null, reopen: null }))}
+      onGo={(place) => setView((prev) => ({ ...prev, place, openNew: false, tab: null, reopen: null, pick: null }))}
+      onOpenProject={(projectId) => setView({ place: "workspace", projectId, openNew: false, tab: null, reopen: null, pick: null })}
+      onOpenWork={(projectId, tab) => setView({ place: "workspace", projectId, openNew: false, tab, reopen: null, pick: null })}
+      onNewProject={() => setView((prev) => ({ ...prev, place: "workspace", openNew: true, tab: null, reopen: null, pick: null }))}
+      onChangeCat={(agent) => setView((prev) => ({ ...prev, place: "edit", openNew: false, tab: null, reopen: null, pick: agent }))}
     />
   );
 }

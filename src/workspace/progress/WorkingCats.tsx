@@ -4,6 +4,7 @@
 import { CatFigure } from "../../components/cat/CatFigure";
 import type { CatId } from "../../components/cat/catalog";
 import { t, tf } from "../../i18n/ko";
+import { useMine } from "../../lib/mine";
 import { agoText, workedText } from "./elapsed";
 import type { WaitingCard } from "../chat/sessionStore";
 import { askerCat } from "./placement";
@@ -55,9 +56,10 @@ interface Props {
 }
 
 export function WorkingCats({ working, waiting = null, recent, roles, nowMs }: Props) {
-  const waitCat = waiting ? askerCat(waiting, roles) : null;
+  const mine = useMine();
+  const waitCat = waiting ? askerCat(waiting, roles, mine) : null;
   // 기다리는 고양이를 가리키는 일하는 작업자(먼저 시작한 하나)는 기다리는 줄로 바뀐다
-  const waitWorker = waitCat === null ? undefined : working.find((worker) => catForWorker(worker.name, { roles }) === waitCat);
+  const waitWorker = waitCat === null ? undefined : working.find((worker) => catForWorker(worker.name, { roles, mine }) === waitCat);
   const rest = working.filter((worker) => worker !== waitWorker);
   const waited = waiting ? waitedText(waiting.sinceMs, nowMs) : null;
   return (
@@ -80,7 +82,7 @@ export function WorkingCats({ working, waiting = null, recent, roles, nowMs }: P
             </li>
           )}
           {rest.map((worker) => {
-            const cat = catForWorker(worker.name, { roles });
+            const cat = catForWorker(worker.name, { roles, mine });
             return (
               <li key={worker.toolUseId} className="ws-wk__item" data-background={worker.background ? "true" : undefined}>
                 <Face cat={cat} />
@@ -108,7 +110,7 @@ export function WorkingCats({ working, waiting = null, recent, roles, nowMs }: P
           <h4 className="ws-pg__sub">{t("ws.progress.recentTitle")}</h4>
           <ul className="ws-wk ws-wk--recent" aria-label={t("ws.progress.recentTitle")}>
             {recent.map((worker) => {
-              const cat = catForWorker(worker.name, { roles });
+              const cat = catForWorker(worker.name, { roles, mine });
               const outcome = worker.status === "running" ? "stopped" : worker.status;
               return (
                 <li key={worker.toolUseId} className="ws-wk__item" data-outcome={outcome}>

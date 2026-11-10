@@ -1,7 +1,7 @@
 // 「내 수정」 화면의 순수 계산 — 항목 이름 · 고양이 · 적용 요약 · 기록 시각 · 거절 이유 / 설치 문제 문구. 화면 상태 없이 시험할 수 있게 따로 둔다.
-import { catForAgent, findCat } from "../components/cat/catalog";
 import { hasBatchim } from "../i18n/josa";
 import { t, tf, type TextKey } from "../i18n/ko";
+import { mineCat, mineLabel } from "../lib/mine";
 import { errorText } from "../workspace/errors";
 import type {
   AgentRole,
@@ -35,27 +35,19 @@ export function rolesOf(list: AgentsList | null, configured: Readonly<Record<str
 
 /**
  * 항목 이름 — 보이는 이름(직접 만든 에이전트가 정한 것, D-52) → 역할 이름(오케스트레이터 · 하네스 작업자, 다른 화면들이 쓰는 한국어 이름) → 파일의 `name` 그대로.
- * 보이는 이름은 에이전트만 받는다 (스킬 · 오케스트레이터는 보이는 이름이 없다).
+ * 보이는 이름은 에이전트만 받는다 (스킬 · 오케스트레이터는 보이는 이름이 없다). 찾는 순서는 앱 전체가 같다 (`lib/mine.ts`).
  */
 export function itemLabel(kind: CustomItemKind, name: string, roles: RoleMap, labels: Readonly<Record<string, string>> = {}): string {
   if (kind === "main") return t("edit.item.main");
-  if (kind === "agent") {
-    const mine = labels[name];
-    if (mine !== undefined && mine !== "") return mine;
-    const role = roles.get(name);
-    if (role) return t(`home.info.role.${role}`);
-  }
+  if (kind === "agent") return mineLabel(name, roles.get(name) ?? null, { cats: {}, labels });
   return name;
 }
 
-/** 항목의 고양이 — 내 연결 → 기본 연결(역할) → 없음(기본 아이콘). 스킬은 고양이가 없다 */
+/** 항목의 고양이 — 내 연결 → 기본 연결(역할) → 없음(기본 아이콘). 스킬은 고양이가 없다. 찾는 순서는 앱 전체가 같다 (`lib/mine.ts`) */
 export function itemCat(kind: CustomItemKind, name: string, roles: RoleMap, userCats: Readonly<Record<string, string>>): string | null {
   if (kind === "skill") return null;
-  const mine = userCats[kind === "main" ? "main" : name];
-  if (mine !== undefined && findCat(mine)) return mine;
-  if (kind === "main") return catForAgent("main");
-  const role = roles.get(name);
-  return role ? catForAgent(role) : null;
+  const key = kind === "main" ? "main" : name;
+  return mineCat(key, kind === "main" ? "main" : (roles.get(name) ?? null), { cats: userCats, labels: {} });
 }
 
 // ───────────────────────────── 적용 요약 ─────────────────────────────

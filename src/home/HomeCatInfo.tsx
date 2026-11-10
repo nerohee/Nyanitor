@@ -1,12 +1,13 @@
-// 고양이 정보 패널 (실제 화면) — 이름 · 에이전트 · 역할 · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일.
-// 읽기 전용: 고치기 · 고양이 바꾸기 단추는 없다 (내 수정 · 고양이 고르기는 P9). 시제품 `variants/shared/CatInfo.tsx` 를 바탕으로 새로 썼다.
+// 고양이 정보 패널 (실제 화면) — 이름 · 에이전트 · 보이는 이름(없으면 역할) · 지금 하는 일 · 모델 · 수준 · 성격 · 맡는 일.
+// 고치는 곳은 「내 수정」 — 아래 「고양이 바꾸기」 가 그 에이전트를 고른 채 고양이 고르기를 연다 (P9-05). 시제품 `variants/shared/CatInfo.tsx` 를 바탕으로 새로 썼다.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { PANEL_ID } from "../components/house/useCatPanel";
 import { activityTextKey, type Activity } from "../components/house/spots";
 import { isTextKey, t, tf, type TextKey } from "../i18n/ko";
-import type { AgentEntry, AgentInfo, AgentUnreadable } from "../lib/ipc-types";
+import type { AgentInfo, AgentUnreadable } from "../lib/ipc-types";
+import { mineLabel, useMine } from "../lib/mine";
 import { Icon } from "../variants/shared/icons";
-import type { HomeCat } from "./useAgents";
+import { agentKeyOf, type HomeCat } from "./useAgents";
 
 /** 이 글자 수를 넘으면 맡는 일을 접어 둔다 (CSS 가 3줄에서 자른다) */
 export const DUTIES_FOLD_LENGTH = 90;
@@ -22,6 +23,8 @@ interface HomeCatInfoProps {
   activity: Activity;
   /** 지금 맡은 일 (있으면 "쉬는 중" 대신 일하는 중 · 기다리는 중과 일 줄 · 단추) */
   work?: HomeCatWork;
+  /** 「고양이 바꾸기」 — 그 에이전트의 열쇠(`main` / 에이전트 이름). 안 주면 단추가 없다. 읽을 수 없는 에이전트 파일이면 단추도 없다 */
+  onChangeCat?: (agent: string) => void;
   onClose: () => void;
   className?: string;
 }
@@ -39,10 +42,6 @@ function effortText(effort: string | null): string {
   if (isTextKey(key)) return t(key);
   const more = `home.info.effort.${effort}`;
   return isTextKey(more) ? t(more) : effort;
-}
-
-function roleText(role: AgentEntry["role"]): string | null {
-  return role === null ? null : t(`home.info.role.${role}`);
 }
 
 function reasonText(reason: AgentUnreadable["reason"]): string {
@@ -171,7 +170,8 @@ function useStatusFits(activity: Activity, state: string) {
   return { ref, short };
 }
 
-export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCatInfoProps) {
+export function HomeCatInfo({ home, activity, work, onChangeCat, onClose, className }: HomeCatInfoProps) {
+  const mine = useMine();
   const heading = useRef<HTMLHeadingElement>(null);
   const { cat, entry } = home;
   const stateText = work === undefined ? t("cat.info.resting") : work.kind === "job" ? t("cat.info.working") : t("home.info.waiting");
@@ -185,7 +185,8 @@ export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCa
     heading.current?.focus();
   }, [cat]);
 
-  const role = entry ? roleText(entry.role) : t("home.info.role.main");
+  // 보이는 이름 → 역할 이름 → 에이전트 이름 (엔트리를 모르는 먹물만 있는 집은 메인 대화)
+  const role = entry ? mineLabel(agentKeyOf(entry), entry.role, mine) : t("home.info.role.main");
   const isMain = entry === null || entry.role === "main";
   // 읽을 수 없는 파일의 이름은 아래 안내 줄에 있다
   const agentName = isMain ? t("home.info.agentMain") : entry?.state === "ok" ? entry.name : null;
@@ -200,7 +201,7 @@ export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCa
           </h2>
           <p className="hm-info__agent">
             {role}
-            {agentName && (
+            {agentName && agentName !== role && (
               <>
                 <span aria-hidden="true"> · </span>
                 <code>{agentName}</code>
@@ -247,6 +248,12 @@ export function HomeCatInfo({ home, activity, work, onClose, className }: HomeCa
           <h3 className="hm-info__label">{t("cat.info.duties")}</h3>
           <p className="hm-info__duties">{t(`cat.${cat}.duties`)}</p>
         </>
+      )}
+
+      {onChangeCat && entry?.state === "ok" && (
+        <button type="button" className="hm-link hm-info__change" onClick={() => onChangeCat(agentKeyOf(entry))}>
+          {t("home.info.changeCat")}
+        </button>
       )}
     </section>
   );

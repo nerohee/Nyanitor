@@ -712,6 +712,12 @@ body:has(.home) {
   padding-top: var(--hm-3);
   border-top: 1.5px dashed var(--color-border-strong);
 }
+/* 자기 줄에 — 바로 앞 「더 보기」(줄 안 단추)와 붙어 「더 보기고양이 바꾸기」로 보이던 것 (P9-05 실행 확인) */
+.hm-info__change {
+  display: block;
+  width: fit-content;
+  margin-top: var(--hm-3);
+}
 .hm-info__meta {
   display: flex;
   flex-wrap: wrap;

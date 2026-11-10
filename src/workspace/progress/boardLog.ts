@@ -3,19 +3,20 @@
 //  · 작업이 `검수 통과`(`passed`)로 → `pass` "P7-01 작업이 검수를 통과했어요" (그 작업의 담당 고양이, 모르면 먹물)
 import type { CatId } from "../../components/cat/catalog";
 import { tf } from "../../i18n/ko";
+import { orchCat, type Mine } from "../../lib/mine";
 import type { ProgressRead } from "../../lib/ipc-types";
 import { ownerCat } from "./board";
-import { ORCHESTRATOR } from "./placement";
 import type { LogItem } from "./summary";
 
-export function boardChanges(prev: ProgressRead | null, next: ProgressRead, atMs: number): LogItem[] {
+export function boardChanges(prev: ProgressRead | null, next: ProgressRead, atMs: number, mine?: Mine): LogItem[] {
   if (!prev) return [];
+  const orchestrator = orchCat(mine);
   const items: LogItem[] = [];
   if (prev.plan.state === "ok" && next.plan.state === "ok") {
     const before = new Map(prev.plan.phases.map((phase) => [phase.id, phase.status]));
     for (const phase of next.plan.phases) {
       if (before.get(phase.id) === "now" && phase.status === "done") {
-        items.push({ key: `b-phase-${phase.id}-${atMs}`, atMs, cat: ORCHESTRATOR, kind: "phase", text: tf("ws.progress.log.phase", { phase: phase.id }) });
+        items.push({ key: `b-phase-${phase.id}-${atMs}`, atMs, cat: orchestrator, kind: "phase", text: tf("ws.progress.log.phase", { phase: phase.id }) });
       }
     }
   }
@@ -25,7 +26,7 @@ export function boardChanges(prev: ProgressRead | null, next: ProgressRead, atMs
       const id = task.id ?? task.label;
       const was = before.get(id);
       if (was !== undefined && was !== "passed" && task.status === "passed") {
-        const cat: CatId = ownerCat(task.owner) ?? ORCHESTRATOR;
+        const cat: CatId = ownerCat(task.owner, mine) ?? orchestrator;
         items.push({ key: `b-pass-${id}-${atMs}`, atMs, cat, kind: "pass", text: tf("ws.progress.log.pass", { task: task.id ?? task.label }) });
       }
     }

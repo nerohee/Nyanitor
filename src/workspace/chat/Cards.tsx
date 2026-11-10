@@ -7,6 +7,7 @@ import type { CatId } from "../../components/cat/catalog";
 import { t, tf, type TextKey } from "../../i18n/ko";
 import { withSubject } from "../../i18n/josa";
 import type { AnswerValue, ClaudeResponse, QuestionInfo, QuestionRequestInfo, WorkerRef } from "../../lib/ipc-types";
+import { useMine } from "../../lib/mine";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { catForWorker, catName, useWorkerRoles } from "../progress/workerCat";
 import { approvalChoiceOf, approvalLabel, parseApproval, type Approval } from "./approval";
@@ -65,9 +66,10 @@ const STATE_LABEL: Record<CardState["status"], TextKey> = {
 function useRequestWorker(worker: WorkerRef | null | undefined): { cat: CatId; name: string } | null {
   const listed = useSessionStore(selectWorkerName(worker?.toolUseId ?? null));
   const roles = useWorkerRoles(worker != null);
+  const mine = useMine();
   const raw = listed ?? worker?.name ?? null;
   if (!worker || raw === null) return null;
-  const cat = catForWorker(raw, { roles });
+  const cat = catForWorker(raw, { roles, mine });
   return { cat, name: catName(cat) };
 }
 

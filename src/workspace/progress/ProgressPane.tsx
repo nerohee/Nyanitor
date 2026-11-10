@@ -4,6 +4,7 @@
 import { useMemo } from "react";
 import type { TimeOfDay } from "../../components/house/time";
 import { t } from "../../i18n/ko";
+import { useMine } from "../../lib/mine";
 import { emptyChat } from "../chat/model";
 import { selectRawLines, selectWaitingAsker, selectWorkers, useSessionStore } from "../chat/sessionStore";
 import { PhaseBoard } from "./PhaseBoard";
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
+  const mine = useMine();
   const { state, boardLog, reload } = useProgress(projectId, visible);
   const workers = useSessionStore(selectWorkers(projectId));
   const chat = useSessionStore((store) => store.chats[projectId]?.data ?? EMPTY_CHAT);
@@ -39,8 +41,8 @@ export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
 
   const working = useMemo(() => workingWorkers(workers), [workers]);
   const recent = useMemo(() => recentWorkers(workers), [workers]);
-  const scene = useMemo(() => windowScene(working, waiting, roles), [working, waiting, roles]);
-  const log = useMemo(() => mergeLogs(buildSummaryLog({ chat, workers, roles }), boardLog), [chat, workers, roles, boardLog]);
+  const scene = useMemo(() => windowScene(working, waiting, roles, mine), [working, waiting, roles, mine]);
+  const log = useMemo(() => mergeLogs(buildSummaryLog({ chat, workers, roles, mine }), boardLog), [chat, workers, roles, mine, boardLog]);
 
   return (
     <div className="ws-pg" data-testid="progress-pane">

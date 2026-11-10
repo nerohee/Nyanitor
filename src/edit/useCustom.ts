@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "../home/useAgents";
 import { ipc } from "../lib/ipc";
 import type { AppErrorKind, CustomChanges, CustomList } from "../lib/ipc-types";
+import { setMine } from "../lib/mine";
 import { errorKind } from "../workspace/errors";
 import { rolesOf, type RoleMap } from "./format";
 
@@ -87,6 +88,13 @@ export function useCustom(): EditData {
     setCats(catsRead.status === "fulfilled" && catsRead.value.state === "ok" ? catsRead.value.agents : {});
     // 보이는 이름도 못 읽으면 에이전트 이름으로 그린다
     setLabels(labelsRead.status === "fulfilled" && labelsRead.value.state === "ok" ? labelsRead.value.agents : {});
+    // 집 · 채팅 · 진행 보기가 같은 연결 · 이름으로 그리도록 읽은 것을 알린다 (둘 다 못 읽었으면 들고 있던 것 그대로)
+    if (catsRead.status === "fulfilled" || labelsRead.status === "fulfilled") {
+      setMine({
+        cats: catsRead.status === "fulfilled" && catsRead.value.state === "ok" ? catsRead.value.agents : {},
+        labels: labelsRead.status === "fulfilled" && labelsRead.value.state === "ok" ? labelsRead.value.agents : {},
+      });
+    }
   }, []);
 
   const refresh = useCallback(async () => {

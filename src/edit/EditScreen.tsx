@@ -57,6 +57,8 @@ interface Props {
   onGo: (place: NavPlace) => void;
   /** 시험에서 PC 시각을 바꿔 넣는다 */
   clock?: () => Date;
+  /** 처음 보기를 고양이 고르기로 — 고를 에이전트의 열쇠(`main` / 에이전트 이름). 고양이 집의 「고양이 바꾸기」 가 넘긴다 (처음 한 번만 본다) */
+  startPick?: string;
   /** 머리 줄 오른쪽 자리 (새로 만들기 — P9-03) */
   headActions?: (api: EditSlotApi) => ReactNode;
   /** 적용 바 왼쪽 자리 (고른 에이전트의 고양이 바꾸기 — P9-03). 에이전트 · 스킬 탭에서만, 고른 항목이 있으면 그 정보와 함께 */
@@ -67,7 +69,7 @@ function okItems(entries: readonly CustomListEntry[]): CustomItemInfo[] {
   return entries.flatMap((entry) => (entry.state === "ok" ? [entry] : []));
 }
 
-export default function EditScreen({ onGo, clock, headActions, itemActions }: Props) {
+export default function EditScreen({ onGo, clock, startPick, headActions, itemActions }: Props) {
   const now = useClock(clock);
   const time = timeOfDay(now);
   const data: EditData = useCustom();
@@ -76,7 +78,7 @@ export default function EditScreen({ onGo, clock, headActions, itemActions }: Pr
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   const [problem, setProblem] = useState<AppErrorKind | null>(null);
   const tabs = useRef(new Map<Tab, HTMLButtonElement>());
-  const [view, setView] = useState<View>({ kind: "tabs" });
+  const [view, setView] = useState<View>(() => (startPick ? { kind: "pick", agent: startPick, fromNew: false } : { kind: "tabs" }));
   const [draft, setDraft] = useState<NewDraft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<NewFormError | null>(null);
   const [creating, setCreating] = useState(false);

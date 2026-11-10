@@ -1,5 +1,7 @@
 // 단계 보드의 순수 규칙 — 담당 낱말 → 고양이, 단계 · 작업의 화면 상태, 지시서 이름 (화면 없음).
-import { catForAgent, type CatId } from "../../components/cat/catalog";
+import { catForAgent, findCat, type CatId } from "../../components/cat/catalog";
+import { getMine, orchCat, type Mine } from "../../lib/mine";
+import { roleOfWorker, type WorkerRoles } from "./workerCat";
 import type { HandoffRead, HandoffTask, PlanPhase, ProgressRead } from "../../lib/ipc-types";
 
 /** 담당 칸의 낱말 → 고양이 (`agent-cats.json` 의 역할 + `직접` = 먹물). 모르는 말은 null (글로 보인다) */
@@ -14,9 +16,19 @@ const OWNER_ROLES: Readonly<Record<string, string>> = {
   reviewer: "reviewer",
 };
 
-export function ownerCat(word: string): CatId | null {
+/**
+ * 오케스트레이터(`main` · `직접`)는 내 연결(`mine`, 안 주면 지금 들고 있는 것)을 따른다.
+ * 다른 낱말(역할)은 그 역할을 맡은 에이전트의 내 연결 → 역할의 기본 연결 — 담당 칸은 역할 낱말이라, 내 연결의 에이전트 이름 중
+ * 그 역할인 것을 찾는다 (`roleOfWorker` — 목록이 있으면 목록, 없으면 `harness-builder-ui` 같은 이름 모양). 집 · 채팅에서 바꾼 고양이와 같게 (P9-05 검수).
+ */
+export function ownerCat(word: string, mine: Mine = getMine(), roles?: WorkerRoles): CatId | null {
   const role = OWNER_ROLES[word.trim()];
-  return role ? (catForAgent(role) as CatId) : null;
+  if (role === "main") return orchCat(mine);
+  if (!role) return null;
+  for (const [name, cat] of Object.entries(mine.cats)) {
+    if (name !== "main" && findCat(cat) && roleOfWorker(name, roles) === role) return cat as CatId;
+  }
+  return catForAgent(role) as CatId;
 }
 
 export type PhaseView = "done" | "now" | "waiting" | "todo" | "unknown";

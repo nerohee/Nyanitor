@@ -190,3 +190,19 @@ describe("겹치지 않음 · 시간순", () => {
     expect(buildSummaryLog({ chat: emptyChat() })).toEqual([]);
   });
 });
+
+describe("내 연결 (P9-05)", () => {
+  const mine = { cats: { main: "nabi", "harness-builder-ui": "gureum" }, labels: {} };
+
+  it("오케스트레이터 줄(시작 · 멈춤 · 갑자기 멈춤)은 바뀐 고양이와 그 이름으로", () => {
+    const items = buildSummaryLog({ chat: chatOf([{ event: started(), atMs: 1 }, { event: turnEnded("limit"), atMs: 2 }]), mine });
+    expect(items.map((entry) => entry.cat)).toEqual(["nabi", "nabi"]);
+    expect(items[0]?.text).toBe("나비가 일을 시작했어요");
+  });
+
+  it("작업자 줄은 내 연결의 고양이 · 그 이름으로", () => {
+    const items = buildSummaryLog({ chat: chatOf([{ event: wStart("a", "harness-builder-ui", "목록 화면", 1000) }]), mine });
+    expect(items[0]).toMatchObject({ cat: "gureum", kind: "assign" });
+    expect(items[0]?.text).toContain("구름");
+  });
+});

@@ -7,11 +7,13 @@ import { TAB_ORDER } from "../components/house/schedule";
 import { fakeHouse } from "../lib/fakeHouse";
 import { fakeProjects } from "../lib/fakeProjects";
 import { ipc } from "../lib/ipc";
+import { NO_MINE, resetMine, setMine } from "../lib/mine";
 import { AppError, type ClaudeEvent, type UsageSummary, type AgentsList, type UsageResult, type UsageUnavailableReason } from "../lib/ipc-types";
 import { spotHitBox } from "../components/house/blocked";
 import { SPOTS } from "../components/house/spots";
 import { newChat, resetSessionStore, useSessionStore } from "../workspace/chat/sessionStore";
 import type { WorkerEntry } from "../workspace/progress/workers";
+import { agentKeyOf } from "./useAgents";
 import Home from "./Home";
 
 const NAV = { onGo: () => undefined, onOpenProject: () => undefined, onNewProject: () => undefined, onOpenWork: () => undefined };
@@ -28,11 +30,15 @@ const OK_USAGE: UsageResult = {
 beforeEach(() => {
   fakeHouse.reset();
   fakeProjects.reset();
+  // 내 연결 · 보이는 이름은 없는 것으로 시작 (가짜 「내 수정」의 처음 모습이 새어 들어오지 않게) — 있는 경우는 아래 「내 고양이」 시험에서
+  resetMine();
+  setMine(NO_MINE);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  resetMine();
   fakeHouse.reset();
   fakeProjects.reset();
   window.history.replaceState({}, "", "/");
@@ -865,5 +871,169 @@ describe("고양이 집 — 일하는 고양이 (P7-05)", () => {
     await loaded();
     fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
     expect(screen.queryByRole("button", { name: "진행 보기" })).not.toBeInTheDocument();
+  });
+});
+
+describe("고양이 집 — 내 고양이 · 보이는 이름 (P9-05)", () => {
+  afterEach(() => resetSessionStore());
+  beforeEach(() => {
+    document.documentElement.dataset.motion = "reduced";
+  });
+
+  const translator: AgentsList["agents"][number] = { state: "ok", role: null, file: "translator.md", name: "translator", description: "번역.", model: "haiku", effort: "low", color: null, readOnly: false };
+  const withTranslator = async (): Promise<AgentsList> => {
+    const list = await ipc.agentsList();
+    return { ...list, agents: [...list.agents, translator] };
+  };
+  const worker = (name: string): WorkerEntry => ({
+    toolUseId: `t-${name}`,
+    agentId: null,
+    name,
+    description: "목록 화면",
+    background: false,
+    depth: 1,
+    startedAtMs: 1,
+    activity: null,
+    status: "running",
+    endedAtMs: null,
+  });
+  const spotOf = (cat: string) => document.querySelector(`.hs-cat[data-cat="${cat}"]`)?.getAttribute("data-spot");
+  /** 화면 구현(ui) ↔ 정리(helper) 맞바꿈 — 집에는 같은 고양이가 두 마리 있을 수 없다 (D-41) */
+  const SWAP = { "harness-builder-ui": "dubu", "harness-helper": "danchu" };
+
+  it("내 연결로 바꾼 ui 작업자 — 집에 바뀐 고양이로 나오고 그 패널에 화면 구현이 붙는다", async () => {
+    setMine({ cats: SWAP, labels: {} });
+    render(<Home {...NAV} />);
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /^두부,/ }));
+    const panel = screen.getByRole("region", { name: "두부" });
+    expect(within(panel).getByText("harness-builder-ui", { selector: "code" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("화면 구현");
+    expect(panel).toHaveTextContent("화면 구현자.");
+  });
+
+  it("집 이름표의 역할 글도 맡은 에이전트대로 — 맞바꾼 두부는 「화면 구현」, 단추는 「정리」, 보이는 이름이 있으면 그것 (P9-05 검수)", async () => {
+    setMine({ cats: SWAP, labels: {} });
+    render(<Home {...NAV} />);
+    await loaded();
+    const tagRole = (cat: string) => document.querySelector(`.hs-cat[data-cat="${cat}"] .hs-tag__role`)?.textContent;
+    await vi.waitFor(() => expect(tagRole("dubu")).toBe("화면 구현"));
+    expect(tagRole("danchu")).toBe("정리");
+    expect(tagRole("mukmul")).toBe("오케스트레이터");
+    act(() => setMine({ cats: SWAP, labels: { "harness-builder-ui": "버튼 장인" } }));
+    await vi.waitFor(() => expect(tagRole("dubu")).toBe("버튼 장인"));
+  });
+
+  it("일하는 ui 작업자는 바뀐 고양이가 캣휠에 선다", async () => {
+    setMine({ cats: SWAP, labels: {} });
+    render(<Home {...NAV} />);
+    await loaded();
+    act(() => useSessionStore.setState({ session: { projectId: 1, busy: false, sessionId: null } }));
+    act(() => useSessionStore.setState((state) => ({ chats: { ...state.chats, 1: { ...(state.chats[1] ?? newChat()), workers: [worker("harness-builder-ui")] } } })));
+    await vi.waitFor(() => expect(spotOf("dubu")).toBe("wheel"));
+    expect(spotOf("danchu")).not.toBe("wheel");
+  });
+
+  it("main 을 바꾸면 오케스트레이터 고양이가 바뀐다 (맨 앞)", async () => {
+    setMine({ cats: { main: "nabi", "harness-builder-system": "mukmul" }, labels: {} });
+    render(<Home {...NAV} />);
+    await loaded();
+    expect(catButtons().map(catName)).toContain("나비");
+    fireEvent.click(screen.getByRole("button", { name: /^나비,/ }));
+    const panel = screen.getByRole("region", { name: "나비" });
+    expect(within(panel).getByText("오케스트레이터", { selector: "code" })).toBeInTheDocument();
+  });
+
+  it("직접 만든 에이전트(역할 없음) — 내 연결이 있으면 집에 나오고, 패널에 보이는 이름이 붙는다", async () => {
+    vi.spyOn(ipc, "agentsList").mockResolvedValue(await withTranslator());
+    // 구름은 감사관이 쓰고 있어 맞바꾼다
+    setMine({ cats: { translator: "gureum", "harness-reviewer": "dubu", "harness-helper": "mukmul", main: "danchu", "harness-builder-ui": "mulgam" }, labels: { translator: "번역" } });
+    render(<Home {...NAV} />);
+    await vi.waitFor(() => expect(catButtons().map(catName)).toContain("구름"));
+    fireEvent.click(screen.getByRole("button", { name: /^구름,/ }));
+    const panel = screen.getByRole("region", { name: "구름" });
+    expect(panel).toHaveTextContent("번역");
+    expect(within(panel).getByText("translator", { selector: "code" })).toBeInTheDocument();
+  });
+
+  it("직접 만든 에이전트(역할 없음) — 내 연결이 없으면 집에 나오지 않는다", async () => {
+    vi.spyOn(ipc, "agentsList").mockResolvedValue(await withTranslator());
+    setMine({ cats: {}, labels: { translator: "번역" } });
+    render(<Home {...NAV} />);
+    await loaded();
+    expect(catButtons()).toHaveLength(7);
+    expect(screen.queryByText("번역")).not.toBeInTheDocument();
+  });
+
+  it("같은 고양이를 가리키는 에이전트가 둘이면 앞의 것만 (오케스트레이터가 맨 앞)", async () => {
+    setMine({ cats: { "harness-builder-ui": "mukmul" }, labels: {} });
+    render(<Home {...NAV} />);
+    await screen.findByRole("meter", { name: "5시간 츄르" });
+    await vi.waitFor(() => expect(catButtons()).toHaveLength(6));
+    fireEvent.click(screen.getByRole("button", { name: /^먹물,/ }));
+    const panel = screen.getByRole("region", { name: "먹물" });
+    expect(within(panel).getByText("오케스트레이터", { selector: "code" })).toBeInTheDocument();
+  });
+
+  it("「고양이 바꾸기」 — 그 에이전트의 열쇠(오케스트레이터는 main, 나머지는 에이전트 이름)로 고양이 고르기를 연다", async () => {
+    const onChangeCat = vi.fn();
+    render(<Home {...NAV} onChangeCat={onChangeCat} />);
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /^단추,/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "단추" })).getByRole("button", { name: "고양이 바꾸기" }));
+    expect(onChangeCat).toHaveBeenLastCalledWith("harness-builder-ui");
+    fireEvent.click(screen.getByRole("button", { name: /^먹물,/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "먹물" })).getByRole("button", { name: "고양이 바꾸기" }));
+    expect(onChangeCat).toHaveBeenLastCalledWith("main");
+  });
+
+  it("에이전트 목록을 못 읽어 먹물만 있는 집 — 고양이 바꾸기 단추가 없다", async () => {
+    vi.spyOn(ipc, "agentsList").mockRejectedValue(new AppError("internal", "x"));
+    render(<Home {...NAV} onChangeCat={() => undefined} />);
+    await vi.waitFor(() => expect(catButtons().map(catName)).toEqual(["먹물"]));
+    fireEvent.click(catButtons()[0]!);
+    expect(screen.queryByRole("button", { name: "고양이 바꾸기" })).not.toBeInTheDocument();
+  });
+
+  it("읽을 수 없는 에이전트 파일 — 고양이 바꾸기 단추가 없다", async () => {
+    const list: AgentsList = {
+      state: "ok",
+      config: "local",
+      missingRoles: [],
+      agents: [
+        { state: "ok", role: "main", file: null, name: "main", description: null, model: "opus", effort: "high", color: null, readOnly: false },
+        { state: "unreadable", role: "tester", file: "harness-tester.md", reason: "no_frontmatter" },
+      ],
+    };
+    vi.spyOn(ipc, "agentsList").mockResolvedValue(list);
+    render(<Home {...NAV} onChangeCat={() => undefined} />);
+    await vi.waitFor(() => expect(catButtons().map(catName).sort()).toEqual(["깨비", "먹물"]));
+    fireEvent.click(screen.getByRole("button", { name: /^깨비,/ }));
+    expect(screen.queryByRole("button", { name: "고양이 바꾸기" })).not.toBeInTheDocument();
+  });
+
+  it("에이전트의 열쇠 — 오케스트레이터는 main, 읽을 수 없는 파일은 파일 이름에서 .md 뺀 것", () => {
+    expect(agentKeyOf({ state: "ok", role: "main", file: null, name: "x", description: null, model: null, effort: null, color: null, readOnly: false })).toBe("main");
+    expect(agentKeyOf({ state: "unreadable", role: "tester", file: "harness-tester.md", reason: "no_frontmatter" })).toBe("harness-tester");
+    expect(agentKeyOf(translator)).toBe("translator");
+  });
+
+  it("내 수정에서 바꿔 알리면 집이 바로 바뀐다 (다시 읽기)", async () => {
+    render(<Home {...NAV} />);
+    await loaded();
+    expect(catButtons().map(catName)).toContain("단추");
+    act(() => setMine({ cats: SWAP, labels: {} }));
+    await vi.waitFor(() => expect(catButtons().map(catName)).toContain("두부"));
+    expect(catButtons()).toHaveLength(7);
+  });
+
+  it("읽기에 실패하면 기본 연결로 그린다 (오류 띠 없음)", async () => {
+    resetMine();
+    vi.spyOn(ipc, "customCatsRead").mockRejectedValue(new AppError("internal", "x"));
+    vi.spyOn(ipc, "customLabelsRead").mockRejectedValue(new AppError("internal", "x"));
+    render(<Home {...NAV} />);
+    await loaded();
+    expect(catButtons().map(catName)).toContain("단추");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

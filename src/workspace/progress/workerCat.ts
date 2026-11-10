@@ -2,10 +2,11 @@
 // 역할 찾는 순서: ① 에이전트 목록(`ipc.agentsList`)의 이름 → 역할 ② `harness-<역할>` · `harness-builder-<역할>` 모양으로 짐작 ③ 모르면 정리 담당(`helper`)의 고양이.
 // (`general-purpose` · `Explore` 처럼 하네스 밖 작업자는 ③ — 먹물로 두면 "먹물에게 맡김" 이 되어 헷갈린다.)
 import { useEffect, useState } from "react";
-import { catForAgent, type CatId } from "../../components/cat/catalog";
+import { catForAgent, findCat, type CatId } from "../../components/cat/catalog";
 import { isTextKey, t } from "../../i18n/ko";
 import { ipc } from "../../lib/ipc";
 import type { AgentRole, AgentsList } from "../../lib/ipc-types";
+import { getMine, type Mine } from "../../lib/mine";
 
 /** 목록에 없고 짐작도 못 한 작업자의 역할 — 정리 담당(두부) */
 export const UNKNOWN_WORKER_ROLE: AgentRole = "helper";
@@ -34,9 +35,14 @@ export function roleOfWorker(name: string, roles?: WorkerRoles): AgentRole | nul
   return GUESS_ROLES.find((role) => role === guess) ?? null;
 }
 
-/** 작업자 이름 → 고양이. 사용자가 고친 연결(`user`)이 있으면 그것이 먼저 (D-31) */
-export function catForWorker(name: string, options: { roles?: WorkerRoles; user?: Readonly<Record<string, string>> } = {}): CatId {
+/**
+ * 작업자 이름 → 고양이. 찾는 순서: 내 연결(에이전트 이름, `lib/mine.ts` — 안 주면 지금 들고 있는 것) → 기본 연결(역할, 사용자가 고친 역할 연결 `user` 가 먼저 — D-31) → 모르는 작업자는 정리 담당.
+ * 내 연결이 없으면 예전과 똑같다.
+ */
+export function catForWorker(name: string, options: { roles?: WorkerRoles; user?: Readonly<Record<string, string>>; mine?: Mine } = {}): CatId {
   const role = roleOfWorker(name, options.roles) ?? UNKNOWN_WORKER_ROLE;
+  const chosen = (options.mine ?? getMine()).cats[name];
+  if (chosen !== undefined && findCat(chosen)) return chosen as CatId;
   return catForAgent(role, { user: options.user }) as CatId;
 }
 

@@ -20,6 +20,7 @@ import { RequirementsEditor, type EditorGuard } from "./RequirementsEditor";
 import { DocsPane } from "./docs/DocsPane";
 import { MiniWindow } from "./progress/RoomWindow";
 import { ProgressPane } from "./progress/ProgressPane";
+import { useMine } from "../lib/mine";
 import { windowScene } from "./progress/placement";
 import { useWorkerRoles } from "./progress/workerCat";
 import { workingWorkers } from "./progress/workers";
@@ -133,8 +134,9 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
   /** 작은 창문 — 지금 일하는 고양이 (먼저 시작한 순) */
   const workers = useSessionStore(selectWorkers(selectedId));
   const roles = useWorkerRoles(selectedId !== null);
+  const mine = useMine();
   const working = useMemo(() => workingWorkers(workers), [workers]);
-  const mini = useMemo(() => windowScene(working, waiting, roles), [working, waiting, roles]);
+  const mini = useMemo(() => windowScene(working, waiting, roles, mine), [working, waiting, roles, mine]);
 
   // 세션 저장소는 앱이 켜질 때 한 번 시작한다 (`App.tsx`) — 여기서 한 번 더 불러도 같은 것 (작업 공간만 따로 열어 본 시험)
   useEffect(() => {

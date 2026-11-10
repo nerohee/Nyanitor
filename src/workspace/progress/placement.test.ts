@@ -1,8 +1,11 @@
 // 둥근 창문의 고양이 자리 규칙 — 작업자(리뷰어는 캣타워, 나머지는 캣휠) · 먹물(기다리면 댓돌) · 자리가 모자랄 때(먼저 시작한 작업자가 차지).
 import { describe, expect, it } from "vitest";
 import { catForAgent, type CatId } from "../../components/cat/catalog";
-import { intentOfWorker, ORCHESTRATOR, windowIntents, windowScene } from "./placement";
+import { intentOfWorker, windowIntents, windowScene } from "./placement";
 import type { WorkerEntry } from "./workers";
+
+/** 내 연결이 없을 때의 오케스트레이터 */
+const ORCHESTRATOR = catForAgent("main") as CatId;
 
 const worker = (name: string, startedAtMs: number): WorkerEntry => ({
   toolUseId: `t-${name}-${startedAtMs}`,
@@ -135,5 +138,29 @@ describe("자리가 모자랄 때", () => {
     expect(spotOf(scene.placements, cat("reviewer"))).toBe("tower");
     expect(spotOf(scene.placements, cat("ui"))).toBe("wheel");
     expect(scene.focus).toBe(cat("reviewer"));
+  });
+});
+
+describe("내 연결 (P9-05) — 오케스트레이터 · 작업자 고양이", () => {
+  const MINE = { cats: { main: "nabi", "harness-builder-ui": "gureum" }, labels: {} };
+
+  it("main 을 바꾸면 기다리는 카드를 보낸 오케스트레이터는 바뀐 고양이가 댓돌에 서고, 먹물은 서지 않는다", () => {
+    const scene = windowScene([], { worker: null }, undefined, MINE);
+    expect(spotOf(scene.placements, "nabi")).toBe("stone");
+    expect(spotOf(scene.placements, ORCHESTRATOR)).not.toBe("stone");
+    expect(scene.focus).toBe("nabi");
+    expect(windowScene([], null, undefined, MINE).focus).toBe("nabi");
+  });
+
+  it("내 연결로 바꾼 ui 작업자는 바뀐 고양이가 캣휠에 선다", () => {
+    const scene = windowScene([worker("harness-builder-ui", 1)], null, undefined, MINE);
+    expect(spotOf(scene.placements, "gureum")).toBe("wheel");
+    expect(scene.working).toEqual(["gureum"]);
+    expect(scene.all).toEqual(["gureum"]);
+    expect(spotOf(scene.placements, cat("ui"))).not.toBe("wheel");
+  });
+
+  it("내 연결이 없으면(mine 을 안 주면) 예전과 똑같다", () => {
+    expect(windowIntents([worker("harness-builder-ui", 1)], null).intents[cat("ui")]).toBe("making");
   });
 });

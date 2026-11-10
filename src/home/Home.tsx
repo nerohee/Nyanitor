@@ -2,7 +2,7 @@
 // 집이 화면 전체 무대, 카드는 그림의 빈 곳: 왼쪽 위 = 준비 상태 + 사용량, 아래 판 = 최근 프로젝트 + 새 프로젝트 단추 (P6-04).
 // 왼쪽에 메뉴(고양이 집 · 작업 공간) — 프로젝트를 누르면 작업 공간에서 열린다.
 // 앱이 돌린 세션의 작업자가 일하는 동안 그 고양이는 캣휠(점검은 캣타워)에, 기다리는 카드를 보낸 고양이(먹물, 또는 권한을 물은 작업자)는 댓돌에 있다 (P7-05, `useHomeWork`). 나머지는 쉰다.
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { HouseScene } from "../components/house/HouseScene";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
 import { timeOfDay } from "../components/house/time";
@@ -13,7 +13,8 @@ import { useProjects } from "../workspace/useProjects";
 import { HomeCatInfo } from "./HomeCatInfo";
 import { HomeProjects } from "./HomeProjects";
 import { ReadyLine, UsageBlock } from "./StatusCard";
-import { useAgents, type AgentsState } from "./useAgents";
+import { agentKeyOf, useAgents, type AgentsState } from "./useAgents";
+import { mineLabel, useMine } from "../lib/mine";
 import { useClock } from "./useClock";
 import { useAppChurros } from "./useAppChurros";
 import { useHomeWork, workedText } from "./useHomeWork";
@@ -49,17 +50,25 @@ interface HomeProps {
   onNewProject: () => void;
   /** 정보 패널의 "진행 보기" · "채팅에서 보기" — 그 프로젝트의 작업 공간을 그 탭으로 연다 */
   onOpenWork: (projectId: number, tab: "progress" | "chat") => void;
+  /** 정보 패널의 「고양이 바꾸기」 — 「내 수정」의 고양이 고르기를 그 에이전트(`main` / 에이전트 이름)를 고른 채 연다 */
+  onChangeCat?: (agent: string) => void;
   /** 시험에서 PC 시각을 바꿔 넣는다 */
   clock?: () => Date;
 }
 
-export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, clock }: HomeProps) {
+export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, onChangeCat, clock }: HomeProps) {
   const now = useClock(clock);
   const time = timeOfDay(now);
   const panel = useCatPanel();
   const motion = useSceneMotion();
   const { state: agents, cats } = useAgents();
   const present = cats.map((c) => c.cat);
+  // 이름표의 역할 글 — 그 고양이를 맡은 에이전트의 이름 (보이는 이름 → 역할 이름). 고양이를 맞바꾸면 맡은 일도 바뀌어 보인다 (P9-05 검수)
+  const mine = useMine();
+  const roleLabels = useMemo(
+    () => Object.fromEntries(cats.map((c) => [c.cat, c.entry === null || c.entry.role === "main" ? t("cat.mukmul.role") : mineLabel(agentKeyOf(c.entry), c.entry.role, mine)])),
+    [cats, mine],
+  );
   // 일하는 고양이 · 기다리는 먹물은 세션 저장소에서 (진행 탭 둥근 창문과 같은 규칙). 에이전트가 없는 고양이는 일을 맡아도 집에 나오지 않는다
   const work = useHomeWork();
   // 위 카드 · 아래 판 카드에 덮인 자리는 고양이가 피한다 (창이 좁을수록 많이 덮는다)
@@ -95,6 +104,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, cl
               ? { kind: "waiting", projectName, count: waiting.count, description: waiting.description, onOpen: () => onOpenWork(waiting.projectId, "chat") }
               : undefined
         }
+        onChangeCat={onChangeCat}
         onClose={panel.close}
       />
     );
@@ -111,6 +121,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, cl
             label={t("home.cats")}
             time={time}
             placements={placements}
+            roleLabels={roleLabels}
             interaction={{ panel, renderPanel, bubbleLayer, avoid: () => (sceneRef.current ? cardElements(sceneRef.current) : []) }}
             debug={spotsDebug()}
           />

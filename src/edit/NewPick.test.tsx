@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeCustom, type FakeCustomMode } from "../lib/fakeCustom";
 import { fakeHouse } from "../lib/fakeHouse";
 import { ipc } from "../lib/ipc";
+import { getMine, resetMine } from "../lib/mine";
 import { AppError } from "../lib/ipc-types";
 import EditScreen from "./EditScreen";
 import { splitFront } from "./newDraft";
@@ -599,5 +600,50 @@ describe("보이는 이름", () => {
     fireEvent.click(primary(/다음: 고양이 고르기/));
     await pickView();
     expect(within(screen.getByRole("tab", { name: /translator/ })).getByText("아직 안 고름")).toBeInTheDocument();
+  });
+});
+
+describe("내 연결을 앱 전체에 알리기 · 처음 보기 (P9-05)", () => {
+  afterEach(() => resetMine());
+
+  it("처음 보기를 받으면 고양이 고르기를 그 에이전트를 고른 채 연다 (오케스트레이터는 main)", async () => {
+    fakeCustom.reset("full");
+    render(<EditScreen onGo={vi.fn()} clock={() => NOW} startPick="harness-helper" />);
+    await pickView();
+    expect(screen.getByRole("tab", { name: /정리/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "정리의 고양이" })).toBeInTheDocument();
+    cleanup();
+    render(<EditScreen onGo={vi.fn()} clock={() => NOW} startPick="main" />);
+    await pickView();
+    expect(screen.getByRole("tab", { name: /오케스트레이터/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("처음 보기가 없으면 탭 보기 (지금과 같다)", async () => {
+    await mount();
+    expect(screen.queryByRole("heading", { level: 1, name: "에이전트 고양이 고르기" })).not.toBeInTheDocument();
+  });
+
+  it("고양이를 바꾸면 · 되돌리면 · 기본값으로 하면 공용 모듈이 바로 바뀐다 (집 · 채팅 · 진행 보기가 다시 그린다)", async () => {
+    await mount("full", noCat);
+    await waitFor(() => expect(getMine().cats).toEqual({}));
+    await pick("화면 구현");
+    fireEvent.click(within(applyBar()).getByRole("button", { name: "고양이 바꾸기" }));
+    await pickView();
+    fireEvent.click(catCard("두부"));
+    await screen.findByText("화면 구현, 정리의 고양이를 서로 바꿨어요.");
+    await waitFor(() => expect(getMine().cats).toEqual({ "harness-builder-ui": "dubu", "harness-helper": "danchu" }));
+    fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+    await screen.findByText("되돌렸어요.");
+    await waitFor(() => expect(getMine().cats).toEqual({}));
+  });
+
+  it("보이는 이름을 저장하면 공용 모듈의 보이는 이름이 바뀐다", async () => {
+    await mount();
+    await waitFor(() => expect(getMine().labels).toEqual({ translator: "번역" }));
+    await pick("번역");
+    const field = screen.getByLabelText("보이는 이름 (비워도 돼요)") as HTMLInputElement;
+    fireEvent.change(field, { target: { value: "통역" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(getMine().labels).toEqual({ translator: "통역" }));
   });
 });

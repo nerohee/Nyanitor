@@ -3,6 +3,7 @@
 // 어느 프로젝트를 보나: 집은 프로젝트를 고르지 않는다 — 지금 세션의 프로젝트(`session.projectId`). 세션이 없으면 모두 쉰다 (세션이 끝나면 저장소가 작업자도 끝낸다).
 import { useMemo } from "react";
 import type { CatId } from "../components/cat/catalog";
+import { useMine, type Mine } from "../lib/mine";
 import { REST_ALL, type CatIntent, type Intents } from "../components/house/schedule";
 import { selectPending, selectWaitingAsker, selectWorkers, useSessionStore } from "../workspace/chat/sessionStore";
 import { askerCat, windowIntents, type WaitingAsker } from "../workspace/progress/placement";
@@ -41,24 +42,24 @@ export interface HomeWork {
 const NO_WORK: HomeWork = { intents: REST_ALL, jobs: {}, waiting: null };
 
 /** 순수 함수 — `projectId` 가 null 이면(세션 없음) 모두 쉰다. `workers` 는 그 프로젝트의 작업자 전부, `pending` 은 기다리는 카드 수, `asker` 는 맨 앞 기다리는 카드를 보낸 이 (카드가 있는데 모르면 먹물) */
-export function homeWork(projectId: number | null, workers: readonly WorkerEntry[], pending: number, asker: WaitingAsker | null, roles?: WorkerRoles): HomeWork {
+export function homeWork(projectId: number | null, workers: readonly WorkerEntry[], pending: number, asker: WaitingAsker | null, roles?: WorkerRoles, mine?: Mine): HomeWork {
   if (projectId === null) return NO_WORK;
   const working = workingWorkers(workers);
   const waitingAsker = pending > 0 ? (asker ?? { worker: null }) : null;
-  const { intents, working: placed } = windowIntents(working, waitingAsker, roles);
+  const { intents, working: placed } = windowIntents(working, waitingAsker, roles, mine);
   const jobs: Partial<Record<CatId, HomeJob>> = {};
   for (const cat of placed) {
     // 한 고양이를 가리키는 작업자가 여럿이면 먼저 시작한 쪽 (windowIntents 와 같은 규칙)
-    const worker = working.find((item) => catForWorker(item.name, { roles }) === cat);
+    const worker = working.find((item) => catForWorker(item.name, { roles, mine }) === cat);
     const intent = intents[cat];
     if (!worker || (intent !== "making" && intent !== "watching")) continue;
     jobs[cat] = { cat, projectId, worker: worker.name, description: worker.description?.trim() || null, startedAtMs: worker.startedAtMs, intent };
   }
   let waiting: HomeWaiting | null = null;
   if (waitingAsker) {
-    const cat = askerCat(waitingAsker, roles);
+    const cat = askerCat(waitingAsker, roles, mine);
     if (intents[cat] === "wait") {
-      const sender = waitingAsker.worker === null ? undefined : working.find((item) => catForWorker(item.name, { roles }) === cat);
+      const sender = waitingAsker.worker === null ? undefined : working.find((item) => catForWorker(item.name, { roles, mine }) === cat);
       waiting = { cat, projectId, count: pending, description: sender?.description?.trim() || null };
     }
   }
@@ -74,5 +75,6 @@ export function useHomeWork(): HomeWork {
   const pending = useSessionStore(selectPending(projectId));
   const asker = useSessionStore(selectWaitingAsker(projectId));
   const roles = useWorkerRoles(projectId !== null);
-  return useMemo(() => homeWork(projectId, workers, pending, asker, roles), [projectId, workers, pending, asker, roles]);
+  const mine = useMine();
+  return useMemo(() => homeWork(projectId, workers, pending, asker, roles, mine), [projectId, workers, pending, asker, roles, mine]);
 }

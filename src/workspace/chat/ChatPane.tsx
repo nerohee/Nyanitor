@@ -10,7 +10,7 @@ import { Icon } from "../../variants/shared/icons";
 import { ChatLog } from "./ChatLog";
 import { Composer, type ComposerHandle } from "./Composer";
 import { chatErrorText } from "./errors";
-import { ORCH_CAT, orchName } from "./Lines";
+import { useOrchestrator } from "./Lines";
 import { pendingCount } from "./model";
 import { interrupt, loadChat, loadOlder, newChat, refreshResumable, respond, sendMessage, startChat, stopSession, useSessionStore } from "./sessionStore";
 import { useClaudeReady, useSkillList } from "./useChatEnv";
@@ -71,6 +71,7 @@ function modelText(model: string | null, effort: string | null): string {
 }
 
 export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCardHandled }: Props) {
+  const orch = useOrchestrator();
   const restored = useSessionStore((state) => state.restored);
   const session = useSessionStore((state) => state.session);
   const chat = useSessionStore((state) => state.chats[project.id]) ?? newChat();
@@ -283,9 +284,9 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
     <div className="wc" ref={root} data-testid="chat-pane">
       <div className="wc-head" data-state={status}>
         <span className="wc-head__avatar" aria-hidden="true">
-          <CatFigure cat={ORCH_CAT} crop="face" />
+          <CatFigure cat={orch.cat} crop="face" />
         </span>
-        <b>{orchName()}</b>
+        <b>{orch.name}</b>
         <span className="wc-head__pill" role="status">
           <span className="wc-dot" aria-hidden="true" />
           {t(`ws.chat.status.${status}`)}

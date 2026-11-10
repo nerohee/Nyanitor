@@ -3,9 +3,11 @@ import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { fakeCustom } from "./lib/fakeCustom";
 import { fakeProjects } from "./lib/fakeProjects";
 import { fakeClaude } from "./lib/fakeClaude";
 import { ipc } from "./lib/ipc";
+import { resetMine } from "./lib/mine";
 import type { ClaudeEvent } from "./lib/ipc-types";
 import { newChat, resetSessionStore, useSessionStore } from "./workspace/chat/sessionStore";
 import type { WorkerEntry } from "./workspace/progress/workers";
@@ -451,5 +453,57 @@ describe("숨었던 창이 다시 열리면 기다리는 카드로 (P8-02, D-25)
     render(<App />);
     await screen.findByTestId("variant-frame");
     expect(listen).not.toHaveBeenCalled();
+  });
+});
+
+describe("집 → 고양이 바꾸기 → 내 수정 (P9-05)", () => {
+  beforeEach(() => {
+    fakeCustom.reset();
+    resetMine();
+  });
+  afterEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    fakeCustom.reset();
+    resetMine();
+  });
+
+  const nav = () => within(screen.getByRole("navigation", { name: "탐색" }));
+
+  it("정보 패널의 「고양이 바꾸기」가 그 에이전트를 고른 채 고양이 고르기를 열고, 거기서 바꾸고 집으로 오면 바로 바뀌어 있다", async () => {
+    render(<App />);
+    await screen.findByTestId("home");
+    const scene = screen.getByRole("region", { name: "고양이들" });
+    await waitFor(() => expect(within(scene).getAllByRole("button")).toHaveLength(7));
+    fireEvent.click(within(scene).getByRole("button", { name: /^단추,/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "단추" })).getByRole("button", { name: "고양이 바꾸기" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "에이전트 고양이 고르기" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /화면 구현/ })).toHaveAttribute("aria-selected", "true");
+    // 두부(정리가 쓰는 고양이)로 맞바꾸고
+    fireEvent.click(screen.getByRole("radio", { name: /^두부/ }));
+    await screen.findByText("화면 구현, 정리의 고양이를 서로 바꿨어요.");
+    // 집으로 — 다시 읽지 않아도 바뀌어 있다 (같은 고양이 두 마리 없이 7마리)
+    fireEvent.click(nav().getByRole("button", { name: "집" }));
+    await screen.findByTestId("home");
+    const home = screen.getByRole("region", { name: "고양이들" });
+    await waitFor(() => expect(within(home).getByRole("button", { name: /^두부,/ })).toBeInTheDocument());
+    expect(within(home).getAllByRole("button")).toHaveLength(7);
+    fireEvent.click(within(home).getByRole("button", { name: /^두부,/ }));
+    expect(within(screen.getByRole("region", { name: "두부" })).getByText("harness-builder-ui", { selector: "code" })).toBeInTheDocument();
+  });
+
+  it("왼쪽 메뉴로 다시 내 수정에 가면 탭 보기 (고르던 것은 잊는다)", async () => {
+    render(<App />);
+    await screen.findByTestId("home");
+    const scene = screen.getByRole("region", { name: "고양이들" });
+    await waitFor(() => expect(within(scene).getAllByRole("button")).toHaveLength(7));
+    fireEvent.click(within(scene).getByRole("button", { name: /^먹물,/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "먹물" })).getByRole("button", { name: "고양이 바꾸기" }));
+    expect(await screen.findByRole("tab", { name: /오케스트레이터/ })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(nav().getByRole("button", { name: "집" }));
+    await screen.findByTestId("home");
+    fireEvent.click(nav().getByRole("button", { name: "내 수정" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "내 수정" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "에이전트 고양이 고르기" })).not.toBeInTheDocument();
   });
 });

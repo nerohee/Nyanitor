@@ -55,3 +55,16 @@ describe("로그 섞기", () => {
     expect(mergeLogs(chat, [item("x", 20), item("y", 40)]).map((entry) => entry.key)).toEqual(["a", "b", "x", "c", "y"]);
   });
 });
+
+describe("내 연결 (P9-05)", () => {
+  const mine = { cats: { main: "nabi" }, labels: {} };
+
+  it("단계가 끝난 줄과 담당을 모르는 · 직접 담당 줄은 바뀐 오케스트레이터 고양이", () => {
+    const phased = boardChanges(read([phase("P7", "now")], []), read([phase("P7", "done")], []), 5, mine);
+    expect(phased[0]?.cat).toBe("nabi");
+    const direct = boardChanges(read([phase("P7", "now")], [task("P7-01", "back", "직접")]), read([phase("P7", "now")], [task("P7-01", "passed", "직접")]), 7, mine);
+    expect(direct[0]?.cat).toBe("nabi");
+    const unknown = boardChanges(read([phase("P7", "now")], [task("P7-01", "back", "누군가")]), read([phase("P7", "now")], [task("P7-01", "passed", "누군가")]), 7, mine);
+    expect(unknown[0]?.cat).toBe("nabi");
+  });
+});

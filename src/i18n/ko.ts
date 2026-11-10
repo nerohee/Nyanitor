@@ -1438,6 +1438,7 @@ const ko = {
   "home.info.cardCount": "{n}개",
   "home.info.openProgress": "진행 보기",
   "home.info.openChat": "채팅에서 보기",
+  "home.info.changeCat": "고양이 바꾸기",
   "home.info.agentMain": "오케스트레이터",
   "home.info.role.main": "메인 대화",
   "home.info.role.designer": "디자이너",

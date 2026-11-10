@@ -1,5 +1,6 @@
 // 작업자 이름 → 고양이 — 에이전트 목록에서 · 이름 모양으로 짐작 · 모르면 정리 담당(두부) · 사용자가 고친 연결이 먼저.
 import { describe, expect, it } from "vitest";
+import { resetMine, setMine } from "../../lib/mine";
 import { FALLBACK_CAT } from "../../components/cat/catalog";
 import type { AgentEntry, AgentRole, AgentsList } from "../../lib/ipc-types";
 import { catForWorker, catName, rolesOfAgents, roleOfWorker, UNKNOWN_WORKER_ROLE } from "./workerCat";
@@ -67,5 +68,29 @@ describe("이름 → 고양이", () => {
   it("고양이 이름", () => {
     expect(catName("danchu")).toBe("단추");
     expect(catName("mukmul")).toBe("먹물");
+  });
+});
+
+describe("내 연결 (P9-05)", () => {
+  it("내 연결(에이전트 이름)이 기본 연결(역할)보다 먼저", () => {
+    expect(catForWorker("harness-builder-ui", { mine: { cats: { "harness-builder-ui": "gureum" }, labels: {} } })).toBe("gureum");
+    // 직접 만든 에이전트 — 역할을 몰라 정리 담당으로 가던 것이 내 연결로
+    expect(catForWorker("translator", { mine: { cats: { translator: "nabi" }, labels: {} } })).toBe("nabi");
+    expect(catForWorker("translator")).toBe("dubu");
+  });
+
+  it("키는 에이전트 이름이다 — 역할 이름으로 적은 것은 보지 않고, 카탈로그에 없는 고양이는 건너뛴다", () => {
+    expect(catForWorker("harness-builder-ui", { mine: { cats: { ui: "gureum" }, labels: {} } })).toBe("danchu");
+    expect(catForWorker("harness-builder-ui", { mine: { cats: { "harness-builder-ui": "nope" }, labels: {} } })).toBe("danchu");
+  });
+
+  it("mine 을 안 주면 지금 들고 있는 것을 쓴다 (없으면 예전과 같다)", () => {
+    setMine({ cats: { "harness-tester": "mulgam" }, labels: {} });
+    try {
+      expect(catForWorker("harness-tester")).toBe("mulgam");
+    } finally {
+      resetMine();
+    }
+    expect(catForWorker("harness-tester")).toBe("kkaebi");
   });
 });

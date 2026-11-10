@@ -5,6 +5,7 @@ import { CatFigure } from "../../components/cat/CatFigure";
 import type { CatId } from "../../components/cat/catalog";
 import { t, tf, type TextKey } from "../../i18n/ko";
 import type { AppErrorKind, HandoffRead, HandoffTask, PlanPhase, ProgressReason, ProgressRead } from "../../lib/ipc-types";
+import { useMine } from "../../lib/mine";
 import { Icon, type IconName } from "../../variants/shared/icons";
 import { errorText } from "../errors";
 import { boardCounts, ownerCat, phaseView, taskName, tasksOfPhase, waitingItems, type PhaseView } from "./board";
@@ -28,7 +29,8 @@ function CatFace({ cat, className }: { cat: CatId; className: string }) {
 
 /** 담당 칸 — `→` 차례 · `·` 함께. 고양이는 얼굴, 모르는 말은 글 */
 function Owners({ groups }: { groups: string[][] }) {
-  const label = groups.map((group) => group.map((word) => { const cat = ownerCat(word); return cat ? catName(cat) : word; }).join(" · ")).join(" → ");
+  const mine = useMine();
+  const label = groups.map((group) => group.map((word) => { const cat = ownerCat(word, mine); return cat ? catName(cat) : word; }).join(" · ")).join(" → ");
   if (groups.length === 0) return null;
   return (
     <span className="ws-pb__owners" role="img" aria-label={`${t("ws.progress.board.owners")}: ${label}`} title={label}>
@@ -36,7 +38,7 @@ function Owners({ groups }: { groups: string[][] }) {
         <span key={index} className="ws-pb__group" aria-hidden="true">
           {index > 0 && <Icon name="arrow" size={12} />}
           {group.map((word, i) => {
-            const cat = ownerCat(word);
+            const cat = ownerCat(word, mine);
             return cat ? <CatFace key={`${word}-${i}`} cat={cat} className="ws-pb__face" /> : <span key={`${word}-${i}`} className="ws-pb__word">{word}</span>;
           })}
         </span>
@@ -83,7 +85,8 @@ function PhaseRow({ phase, handoff }: { phase: PlanPhase; handoff: HandoffRead }
 }
 
 function TaskRow({ task }: { task: HandoffTask }) {
-  const cat = ownerCat(task.owner);
+  const mine = useMine();
+  const cat = ownerCat(task.owner, mine);
   const name = taskName(task);
   const progress = task.progress && task.progress.total > 0 ? task.progress : null;
   const status = task.status === "unknown" ? task.statusText.trim() || t("ws.progress.task.unknown") : t(`ws.progress.task.${task.status}` as TextKey);

@@ -98,6 +98,8 @@ interface HouseSceneProps {
   crop?: Crop;
   /** 이름표 (기본: 누를 수 있을 때만) */
   tags?: boolean;
+  /** 이름표의 역할 글 — 고양이 id → 글. 없으면 그 고양이의 기본 역할 (`cat.<id>.role`). 내 고양이 연결로 맞바꾸면 고양이가 맡은 일이 달라진다 (P9-05) */
+  roleLabels?: Readonly<Record<string, string>>;
   /** 자리 표시 십자 — 좌표를 맞출 때만 */
   debug?: boolean;
   /** 있으면 이 이름의 영역(region)으로 알린다 (집 화면). 없으면 장식 */
@@ -185,6 +187,7 @@ interface SceneCatProps {
   placement: CatPlacement;
   interaction?: SceneInteraction;
   tag: boolean;
+  roleLabel?: string;
   debug: boolean;
 }
 
@@ -207,7 +210,7 @@ function placeBubble(bubble: HTMLElement, layer: HTMLElement, button: HTMLElemen
   bubble.style.top = `${chosen.top - area.top}px`;
 }
 
-function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
+function SceneCat({ placement, interaction, tag, roleLabel, debug }: SceneCatProps) {
   const { cat: catId, spot: spotId, pose, facing, walking, walkMs, fade, instant } = placement;
   const spot = SPOTS[spotId];
   const entry = findCat(catId) ?? (findCat(FALLBACK_CAT) as CatEntry);
@@ -221,7 +224,7 @@ function SceneCat({ placement, interaction, tag, debug }: SceneCatProps) {
   const z = walking ? depth(spot.feet.y) : spotDepth(spot);
   const motion = spot.motion?.[basePose] ?? motionForPose(basePose);
   const name = t(`cat.${catId}.name`);
-  const role = t(`cat.${catId}.role`);
+  const role = roleLabel ?? t(`cat.${catId}.role`);
   const doing = t(`cat.activity.${activityTextKey(walking ? "walk" : spotId)}`);
   const open = interaction?.panel.openCat === catId;
 
@@ -357,6 +360,7 @@ export function HouseScene({
   interaction,
   crop,
   tags,
+  roleLabels,
   debug = false,
   label,
   className,
@@ -399,7 +403,7 @@ export function HouseScene({
         <PropImage prop={CHIME} />
 
         {placements.map((placement) => (
-          <SceneCat key={placement.cat} placement={placement} interaction={interaction} tag={showTags} debug={debug} />
+          <SceneCat key={placement.cat} placement={placement} interaction={interaction} tag={showTags} roleLabel={roleLabels?.[placement.cat]} debug={debug} />
         ))}
 
         {/* 덧씌우기 2 — 모두 옅게 · 불빛 층. 이름표 · 카드는 덧씌우지 않는다 */}

@@ -73,3 +73,24 @@ describe("기다리는 것 · 단계 수", () => {
     expect(boardCounts({ ...ok, plan: { state: "absent" } })).toBeNull();
   });
 });
+
+describe("내 연결 (P9-05)", () => {
+  it("담당 `main` · `직접` 은 내 연결의 main 고양이, 다른 낱말은 역할의 기본 연결", () => {
+    const mine = { cats: { main: "nabi" }, labels: {} };
+    expect(ownerCat("직접", mine)).toBe("nabi");
+    expect(ownerCat("main", mine)).toBe("nabi");
+    expect(ownerCat("ui", mine)).toBe(catForAgent("ui"));
+    expect(ownerCat("직접")).toBe(catForAgent("main"));
+  });
+
+  it("역할 낱말은 그 역할을 맡은 에이전트의 내 연결 — 목록이 있으면 목록, 없으면 이름 모양으로 (집 · 채팅과 같은 고양이)", () => {
+    const mine = { cats: { "harness-builder-ui": "dubu", "my-ui": "kkaebi", translator: "nabi" }, labels: {} };
+    // 목록 없음 — 이름 모양(`harness-builder-ui`)으로 역할을 짐작
+    expect(ownerCat("ui", mine)).toBe("dubu");
+    expect(ownerCat("system", mine)).toBe(catForAgent("system"));
+    // 목록이 있으면 목록의 역할 (설정이 ui 를 my-ui 에 맡겼다)
+    expect(ownerCat("ui", { cats: { "my-ui": "kkaebi" }, labels: {} }, new Map([["my-ui", "ui"]]))).toBe("kkaebi");
+    // 카탈로그에 없는 고양이는 건너뛴다
+    expect(ownerCat("ui", { cats: { "harness-builder-ui": "없는고양이" }, labels: {} })).toBe(catForAgent("ui"));
+  });
+});

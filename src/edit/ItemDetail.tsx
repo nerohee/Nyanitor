@@ -4,11 +4,12 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { t, tf } from "../i18n/ko";
 import { ipc } from "../lib/ipc";
 import type { AppErrorKind, CustomItemDetail, CustomItemInfo, CustomItemRead, CustomTextPart, CustomWriteResult } from "../lib/ipc-types";
-import { CUSTOM_EFFORTS, CUSTOM_MODELS } from "../lib/ipc-types";
+import { CUSTOM_EFFORTS, CUSTOM_LABEL_MAX_CHARS, CUSTOM_MODELS } from "../lib/ipc-types";
 import { Icon } from "../variants/shared/icons";
 import { MarkdownEditor } from "../workspace/MarkdownEditor";
 import { errorKind } from "../workspace/errors";
 import { errorLine, itemCat, itemLabel, refuseText, unreadableText, valueLabel } from "./format";
+import { labelProblem } from "./newDraft";
 import { Banner, ConfirmDialog, ItemFace, Marks, NotOursBanner, SaveBadge } from "./parts";
 import { useAutoSave } from "./useAutoSave";
 import type { EditData } from "./useCustom";
@@ -192,6 +193,123 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
   );
 }
 
+// ── 보이는 이름 (직접 만든 에이전트만, D-52) ──
+
+type LabelState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; cleared: boolean } | { kind: "failed"; text: string };
+
+/** 앱에서만 보이는 이름 한 칸 — Enter · 칸을 떠나면 저장 (바로 기록에 남는다), 비우면 지운다 (에이전트 이름이 보인다). 규칙 어긋남은 칸 아래에 */
+function LabelSection({ entry, data, report }: { entry: CustomItemInfo; data: EditData; report: Props["report"] }) {
+  const ids = useId();
+  const stored = data.labels[entry.name] ?? "";
+  const [value, setValue] = useState(stored);
+  const [state, setState] = useState<LabelState>({ kind: "idle" });
+  /** 파일에 적힌 것으로 아는 값 (앞뒤 공백 뗀 것) — 칸을 고쳤는지는 이것과 견준다 */
+  const [written, setWritten] = useState(stored);
+  const writtenRef = useRef(stored);
+  const latest = useRef(stored);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const bad = labelProblem(value);
+  const dirty = value.trim() !== written;
+  const { markUnsaved, registerFlush, refresh } = data;
+  const savable = dirty && !bad;
+  useEffect(() => {
+    markUnsaved(`${ids}-label`, savable);
+    return () => markUnsaved(`${ids}-label`, false);
+  }, [markUnsaved, ids, savable]);
+
+  const commit = (): Promise<void> => {
+    queue.current = queue.current.then(async () => {
+      const next = latest.current.trim();
+      if (next === writtenRef.current || labelProblem(next)) return;
+      if (alive.current) setState({ kind: "saving" });
+      try {
+        const result = await ipc.customLabelSave(entry.name, next === "" ? null : next);
+        if (result.outcome === "refused") {
+          if (alive.current) setState({ kind: "failed", text: refuseText(result.reason) });
+          return;
+        }
+        writtenRef.current = next;
+        if (alive.current) setWritten(next);
+        if (alive.current) setState({ kind: "saved", cleared: next === "" });
+        await refresh();
+      } catch (raw) {
+        const kind = errorKind(raw);
+        if (alive.current) setState({ kind: "failed", text: errorLine(kind) });
+        report(kind);
+      }
+    });
+    return queue.current;
+  };
+  // 적용 · 버리기 · 다른 화면으로 가기 전에 쓰던 이름을 먼저 저장한다
+  const commitRef = useRef(commit);
+  useEffect(() => {
+    commitRef.current = commit;
+  });
+  useEffect(() => registerFlush(() => commitRef.current()), [registerFlush]);
+
+  return (
+    <section className="ed-sec" aria-labelledby={`${ids}-title`}>
+      <h3 id={`${ids}-title`} className="ed-sec__title">
+        {t("edit.label.title")}
+        <span className="ed-sec__state" role="status">
+          {state.kind === "saving" && t("edit.label.saving")}
+          {state.kind === "saved" && (
+            <>
+              <Icon name="check" size={14} />
+              {t(state.cleared ? "edit.label.cleared" : "edit.label.saved")}
+            </>
+          )}
+        </span>
+      </h3>
+      <p className="ed-sec__lead" id={`${ids}-lead`}>
+        {tf("edit.label.lead", { name: entry.name })}
+      </p>
+      <input
+        className="ed-input ed-label__in"
+        maxLength={CUSTOM_LABEL_MAX_CHARS}
+        aria-label={t("edit.label.field")}
+        aria-describedby={`${ids}-lead`}
+        aria-invalid={bad ? true : undefined}
+        placeholder={entry.name}
+        autoComplete="off"
+        value={value}
+        onChange={(event) => {
+          latest.current = event.target.value;
+          setValue(event.target.value);
+          if (state.kind !== "idle") setState({ kind: "idle" });
+        }}
+        onBlur={() => void commit()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void commit();
+          }
+        }}
+      />
+      {bad && (
+        <p className="ed-refused" role="alert">
+          <Icon name="alert" size={14} />
+          {t("edit.new.labelBad")}
+        </p>
+      )}
+      {state.kind === "failed" && (
+        <p className="ed-refused" role="alert">
+          <Icon name="alert" size={14} />
+          {tf("ws.editor.saveFailed", { reason: state.text })}
+        </p>
+      )}
+    </section>
+  );
+}
+
 // ── 글 칸 (덧붙임 · 파일 전체) ──
 
 function TextSection({
@@ -271,6 +389,16 @@ function TextSection({
 
 // ── 상세 ──
 
+/** 지운 에이전트의 보이는 이름 · 고양이 줄을 지운다 — 못 지워도 지운 것은 그대로 (띠로만 알린다) */
+async function dropAgentLines(name: string, data: EditData, report: Props["report"]): Promise<void> {
+  try {
+    if (data.labels[name] !== undefined) await ipc.customLabelSave(name, null);
+    if (data.cats[name] !== undefined) await ipc.customCatsSave([{ agent: name, cat: null }]);
+  } catch (raw) {
+    report(errorKind(raw));
+  }
+}
+
 type Confirm = null | { kind: "start" | "stop" | "delete"; busy: boolean; problem: string | null };
 
 function ItemBody({ entry, detail, data, report, onGoOrigin, changes }: Props & { detail: CustomItemDetail }) {
@@ -278,7 +406,7 @@ function ItemBody({ entry, detail, data, report, onGoOrigin, changes }: Props & 
   const mine = entry.marks.includes("mine");
   const replaced = entry.marks.includes("replace");
   const main = entry.kind === "main";
-  const label = itemLabel(entry.kind, entry.name, data.roles);
+  const label = itemLabel(entry.kind, entry.name, data.roles, data.labels);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const alive = useRef(true);
   useEffect(() => {
@@ -304,6 +432,8 @@ function ItemBody({ entry, detail, data, report, onGoOrigin, changes }: Props & 
         if (alive.current) setConfirm({ kind, busy: false, problem: refuseText(result.reason) });
         return;
       }
+      // 같은 이름으로 다시 만들었을 때 옛 보이는 이름 · 고양이가 되살아나지 않게 그 줄도 지운다 (있을 때만)
+      if (kind === "delete" && entry.kind === "agent") await dropAgentLines(entry.name, data, report);
       await data.refreshAll();
       if (alive.current) setConfirm(null);
     } catch (raw) {
@@ -346,6 +476,7 @@ function ItemBody({ entry, detail, data, report, onGoOrigin, changes }: Props & 
             <p>{detail.originGone ? t("edit.originGoneBody") : t("edit.originChangedBody")}</p>
           </Banner>
         )}
+        {mine && entry.kind === "agent" && <LabelSection entry={entry} data={data} report={report} />}
         {mine && (
           <Banner tone="info" title={t("edit.mineTitle")}>
             <p>{t("edit.mineBody")}</p>
@@ -456,7 +587,7 @@ export function ItemDetailPanel({ entry, data, report, onGoOrigin, changes }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
-  const label = itemLabel(entry.kind, entry.name, data.roles);
+  const label = itemLabel(entry.kind, entry.name, data.roles, data.labels);
   const cat = itemCat(entry.kind, entry.name, data.roles, data.cats);
 
   return (

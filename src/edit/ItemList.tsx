@@ -13,6 +13,8 @@ interface Props {
   onPick: (id: string) => void;
   roles: RoleMap;
   cats: Readonly<Record<string, string>>;
+  /** 직접 만든 에이전트의 보이는 이름 */
+  labels?: Readonly<Record<string, string>>;
 }
 
 const GROUPS: ReadonlyArray<{ kind: CustomItemKind; title: "edit.group.main" | "edit.group.agents" | "edit.group.skills" }> = [
@@ -24,7 +26,7 @@ const GROUPS: ReadonlyArray<{ kind: CustomItemKind; title: "edit.group.main" | "
 /** 하네스 작업자는 집 · 시안과 같은 역할 순서(디자이너 · 화면 구현 · 시스템 구현 · 시험 · 정리 · 점검)로 먼저, 그 밖은 파일 이름 순으로 (이미 그 순서로 온다) */
 const ROLE_ORDER: readonly string[] = ["designer", "ui", "system", "tester", "helper", "reviewer"];
 
-function ordered(group: CustomListEntry[], roles: RoleMap): CustomListEntry[] {
+export function ordered(group: CustomListEntry[], roles: RoleMap): CustomListEntry[] {
   const rank = (entry: CustomListEntry) => {
     const at = entry.kind === "agent" ? ROLE_ORDER.indexOf(roles.get(entry.name) ?? "") : -1;
     return at < 0 ? ROLE_ORDER.length : at;
@@ -32,11 +34,11 @@ function ordered(group: CustomListEntry[], roles: RoleMap): CustomListEntry[] {
   return group.map((entry, index) => ({ entry, index })).sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index).map(({ entry }) => entry);
 }
 
-export function ItemList({ entries, current, onPick, roles, cats }: Props) {
+export function ItemList({ entries, current, onPick, roles, cats, labels }: Props) {
   const [query, setQuery] = useState("");
   const list = useRef<HTMLDivElement>(null);
   const needle = query.trim().toLowerCase();
-  const label = (entry: CustomListEntry) => itemLabel(entry.kind, entry.name, roles);
+  const label = (entry: CustomListEntry) => itemLabel(entry.kind, entry.name, roles, labels);
   const matches = (entry: CustomListEntry) => needle === "" || label(entry).toLowerCase().includes(needle) || entry.file.toLowerCase().includes(needle) || entry.name.toLowerCase().includes(needle);
   const groups = GROUPS.map((group) => ({ ...group, all: ordered(entries.filter((entry) => entry.kind === group.kind), roles) })).map((group) => ({ ...group, shown: group.all.filter(matches) }));
   const visible = groups.flatMap((group) => group.shown);

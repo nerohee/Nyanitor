@@ -50,6 +50,17 @@ describe("항목 이름 · 고양이", () => {
     expect(itemLabel("skill", "desktop-app", roles)).toBe("desktop-app");
   });
 
+  it("보이는 이름이 있으면 그것이 먼저 — 보이는 이름 → 역할 이름 → 파일 name. 스킬 · 오케스트레이터는 받지 않는다", () => {
+    const labels = { translator: "번역", "harness-builder-ui": "내 화면 담당", "desktop-app": "스킬 이름", main: "먹물" };
+    expect(itemLabel("agent", "translator", roles, labels)).toBe("번역");
+    expect(itemLabel("agent", "harness-builder-ui", roles, labels)).toBe("내 화면 담당");
+    expect(itemLabel("agent", "harness-tester", roles, labels)).toBe("시험");
+    expect(itemLabel("agent", "other", roles, labels)).toBe("other");
+    expect(itemLabel("skill", "desktop-app", roles, labels)).toBe("desktop-app");
+    expect(itemLabel("main", "main", roles, labels)).toBe("오케스트레이터");
+    expect(itemLabel("agent", "translator", roles, { translator: "" })).toBe("translator");
+  });
+
   it("하네스를 설치하기 전(설치된 목록 없음)에도 설정의 대응으로 한국어 이름 · 기본 고양이 — 적용 기록 줄이 파일 이름으로 남지 않는다", () => {
     const before = rolesOf(null, { "harness-designer": "designer", "harness-builder-ui": "ui" });
     expect(itemLabel("agent", "harness-designer", before)).toBe("디자이너");
@@ -116,6 +127,7 @@ describe("buildSummary — 적용 요약 한 줄", () => {
     // 통째 시작은 파일 + .origin — 한 말로 합친다
     expect(build([["agents/harness-designer.md", "added"], ["agents/harness-designer.md.origin", "added"]])).toBe("디자이너 — 파일을 통째로 바꿈");
     expect(build([["agents/translator.md", "added"]])).toBe("translator — 새로 만듦");
+    expect(buildSummary({ files: [{ path: "agents/translator.md", status: "added" }], items, roles, labels: { translator: "번역" } })).toBe("번역 — 새로 만듦");
     expect(build([["agents/translator.md", "changed"]])).toBe("translator — 파일을 고침");
     expect(build([["agents/harness-designer.md", "removed"], ["agents/harness-designer.md.origin", "removed"]])).toBe("디자이너 — 통째 바꾼 것을 원본으로");
     expect(build([["agents/gone.md", "removed"]])).toBe("gone — 파일을 지움");

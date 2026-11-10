@@ -33,10 +33,15 @@ export function rolesOf(list: AgentsList | null, configured: Readonly<Record<str
   return roles;
 }
 
-/** 항목 이름 — 오케스트레이터 · 하네스 작업자는 다른 화면들이 쓰는 한국어 이름, 그 밖은 파일의 `name` 그대로 */
-export function itemLabel(kind: CustomItemKind, name: string, roles: RoleMap): string {
+/**
+ * 항목 이름 — 보이는 이름(직접 만든 에이전트가 정한 것, D-52) → 역할 이름(오케스트레이터 · 하네스 작업자, 다른 화면들이 쓰는 한국어 이름) → 파일의 `name` 그대로.
+ * 보이는 이름은 에이전트만 받는다 (스킬 · 오케스트레이터는 보이는 이름이 없다).
+ */
+export function itemLabel(kind: CustomItemKind, name: string, roles: RoleMap, labels: Readonly<Record<string, string>> = {}): string {
   if (kind === "main") return t("edit.item.main");
   if (kind === "agent") {
+    const mine = labels[name];
+    if (mine !== undefined && mine !== "") return mine;
     const role = roles.get(name);
     if (role) return t(`home.info.role.${role}`);
   }
@@ -131,13 +136,15 @@ interface SummaryInput {
   diffs?: readonly CustomFileDiff[] | null;
   items: readonly CustomListEntry[];
   roles: RoleMap;
+  /** 보이는 이름 (없으면 역할 이름 · 파일 이름) */
+  labels?: Readonly<Record<string, string>>;
 }
 
 /**
  * 적용 메시지(기록에 남는 한 줄) — 바뀐 항목이 하나면 `<이름> — <무엇>`, 여럿이면 `<첫 이름> 외 n개`.
  * 무엇은 적용 안 한 파일 모양으로: 값(`수준을 높음으로`) · 덧붙임 · 통째 · 새 파일 · 지움. 적용 안 한 것이 없으면 null (Rust 가 기본 메시지를 쓴다).
  */
-export function buildSummary({ files, diffs, items, roles }: SummaryInput): string | null {
+export function buildSummary({ files, diffs, items, roles, labels }: SummaryInput): string | null {
   const groups = new Map<string, { label: string; whats: string[] }>();
   const byPath = new Map((diffs ?? []).map((diff) => [diff.path, diff]));
   for (const file of files) {
@@ -170,7 +177,7 @@ export function buildSummary({ files, diffs, items, roles }: SummaryInput): stri
         what = t("edit.what.cats");
     }
     const key = parsed.kind === "cats" || parsed.kind === "labels" ? parsed.kind : id;
-    const label = parsed.kind === "cats" ? t("edit.what.catsName") : parsed.kind === "labels" ? t("edit.what.labelsName") : itemLabel(parsed.kind, parsed.name, roles);
+    const label = parsed.kind === "cats" ? t("edit.what.catsName") : parsed.kind === "labels" ? t("edit.what.labelsName") : itemLabel(parsed.kind, parsed.name, roles, labels);
     const group = groups.get(key) ?? { label, whats: [] };
     if (!group.whats.includes(what)) group.whats.push(what);
     groups.set(key, group);
@@ -220,6 +227,7 @@ const REFUSE_KEYS: Readonly<Record<string, TextKey>> = {
   already_replaced: "edit.refuse.already_replaced",
   not_supported: "edit.refuse.not_supported",
   no_origin: "edit.refuse.no_origin",
+  bad_label: "edit.refuse.bad_label",
 };
 
 /** 저장이 거절된 이유 → 쉬운 말. 모르는 이유는 코드 그대로 */

@@ -1,6 +1,8 @@
 // 실제 「내 수정」 화면 — 시안 P2-15 (③ 스티커 수첩, D-43). 뒤로 물러난 마당 위 종이(`ws-paper`) 한 장에 위 탭 셋 [에이전트 · 스킬] [기록] [원본 바뀜 (n)],
 // 목록 | 고치기(모델 · 수준 · 덧붙일 지시 · 통째로 바꾸기), 기록 · 이때로 되돌리기, 원본 바뀜 고르기, 아래 적용 바. 데이터는 `useCustom`, 명령은 `ipc.custom*` 뿐이다.
-// 새로 만들기 · 고양이 바꾸기는 P9-03 이 `headActions`(머리 줄 오른쪽) · `itemActions`(적용 바 왼쪽) 자리에 붙인다.
+// 보기는 셋 — 탭 보기(지금) · 새로 만들기(`NewItem`) · 고양이 고르기(`CatPick`). 라우터 없이 이 화면 안에서 바꾼다 (왼쪽 메뉴는 「내 수정」 그대로).
+// 새로 만들기 단추는 머리 줄 오른쪽(`headActions`), 고양이 바꾸기는 적용 바 왼쪽(`itemActions`) 자리에 넣는다 — 밖에서 더 붙일 수도 있다.
+// 새 에이전트 초안(칸 값 + 고른 고양이)은 이 화면이 들고 있어, 새로 만들기 ↔ 고양이 고르기를 오가도 쓰던 글이 남는다 (취소하면 버린다).
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
 import { HouseScene } from "../components/house/HouseScene";
@@ -13,14 +15,26 @@ import "../workspace/workspace.css";
 import { ApplyBar, ChangesPanel } from "./ApplyBar";
 import { HistoryTab } from "./HistoryTab";
 import { ItemDetailPanel } from "./ItemDetail";
+import { CatPick } from "./CatPick";
 import { ItemList } from "./ItemList";
+import { NewItem, type NewFormError } from "./NewItem";
 import { OriginTab } from "./OriginTab";
-import { errorLine, unreadableText } from "./format";
-import { Banner } from "./parts";
+import { errorLine, refuseText, unreadableText } from "./format";
+import { EMPTY_DRAFT, copyCandidates, createItem, type CreateStep, type NewDraft } from "./newDraft";
+import { Banner, NotOursBanner } from "./parts";
 import { useCustom, type EditData } from "./useCustom";
 import "./edit.css";
 
 type Tab = "items" | "history" | "origin";
+
+/** 보기 — 탭 보기 · 새로 만들기 · 고양이 고르기 (`agent` = 처음 고를 에이전트 키 `main` / 이름, `fromNew` = 새 에이전트로 들어왔다 — 초안이 고르는 대상) */
+type View = { kind: "tabs" } | { kind: "new" } | { kind: "pick"; agent: string | null; fromNew: boolean };
+
+const STEP_TEXT: Record<CreateStep, "edit.new.partial.copy" | "edit.new.partial.label" | "edit.new.partial.cat"> = {
+  copy: "edit.new.partial.copy",
+  label: "edit.new.partial.label",
+  cat: "edit.new.partial.cat",
+};
 
 const TABS: ReadonlyArray<{ id: Tab; icon: IconName; label: "edit.tab.items" | "edit.tab.history" | "edit.tab.origin"; lead: "edit.lead" | "edit.histLead" | "edit.originLead" }> = [
   { id: "items", icon: "custom", label: "edit.tab.items", lead: "edit.lead" },
@@ -62,6 +76,12 @@ export default function EditScreen({ onGo, clock, headActions, itemActions }: Pr
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   const [problem, setProblem] = useState<AppErrorKind | null>(null);
   const tabs = useRef(new Map<Tab, HTMLButtonElement>());
+  const [view, setView] = useState<View>({ kind: "tabs" });
+  const [draft, setDraft] = useState<NewDraft>(EMPTY_DRAFT);
+  const [formError, setFormError] = useState<NewFormError | null>(null);
+  const [creating, setCreating] = useState(false);
+  /** 방금 만든 것 중 다 저장하지 못했거나(`failed`) 알릴 것이 있는 것 — 탭 보기에 띠로 */
+  const [made, setMade] = useState<{ name: string; failed: CreateStep[]; notOurs: boolean } | null>(null);
 
   const report = (kind: AppErrorKind) => setProblem(kind);
   const shownProblem = problem ?? data.refreshError;
@@ -81,6 +101,48 @@ export default function EditScreen({ onGo, clock, headActions, itemActions }: Pr
   const showBar = tab === "items" || pending || barTab === tab;
 
   // 다른 곳으로 — 쓰던 글을 먼저 저장한다 (적용 안 한 것은 남으므로 묻지 않는다)
+  const patchDraft = (patch: Partial<NewDraft>) => {
+    setDraft((prev) => ({ ...prev, ...patch }));
+    if ("name" in patch || "kind" in patch) setFormError(null);
+  };
+  const closeNew = () => {
+    setDraft(EMPTY_DRAFT);
+    setFormError(null);
+    setView({ kind: "tabs" });
+  };
+
+  /** 초안으로 항목 만들기 — 거절 · 오류면 새로 만들기로 (칸 그대로), 만들어졌으면 목록을 다시 읽고 새 항목을 골라 탭 보기로 */
+  const create = async () => {
+    if (creating) return;
+    setCreating(true);
+    setFormError(null);
+    try {
+      // 쓰던 글을 먼저 저장해 둔다 (하네스는 한 번에 하나만 쓴다)
+      await data.flushAll();
+      const candidates = copyCandidates(entries, draft.kind);
+      const copyFrom = draft.start === "copy" ? (candidates.find((item) => item.id === draft.from)?.id ?? candidates[0]?.id ?? null) : null;
+      const result = await createItem(draft, copyFrom, draft.kind === "agent" && data.labels[draft.name] !== undefined);
+      if (result.status === "refused") {
+        const nameReason = result.reason === "name_in_source" || result.reason === "name_taken";
+        setFormError({ field: nameReason ? "name" : "general", text: refuseText(result.reason) });
+        setView({ kind: "new" });
+        return;
+      }
+      if (result.status === "error") {
+        setFormError({ field: "general", text: errorLine(result.kind) });
+        setView({ kind: "new" });
+        return;
+      }
+      await data.refresh();
+      setSelectedId(result.id);
+      setTab("items");
+      setMade(result.failed.length > 0 || result.notOurs ? { name: draft.name, failed: result.failed, notOurs: result.notOurs } : null);
+      closeNew();
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const go = (place: NavPlace) => {
     void data.flushAll().then(() => onGo(place));
   };
@@ -123,98 +185,181 @@ export default function EditScreen({ onGo, clock, headActions, itemActions }: Pr
     return null;
   })();
 
+  const problemNode = shownProblem ? (
+    <div className="ed-problem">
+      <Banner
+        tone={shownProblem === "harness_busy" ? "warn" : "danger"}
+        live
+        title={errorLine(shownProblem)}
+        actions={
+          <>
+            {shownProblem === "harness_busy" && (
+              <button
+                type="button"
+                className="ws-btn ws-btn--small"
+                onClick={() => {
+                  setProblem(null);
+                  data.clearRefreshError();
+                  void data.refresh();
+                }}
+              >
+                {t("edit.retry")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="ws-btn ws-btn--small ws-btn--ghost"
+              onClick={() => {
+                setProblem(null);
+                data.clearRefreshError();
+              }}
+            >
+              {t("variant.ui.dismiss")}
+            </button>
+          </>
+        }
+      />
+    </div>
+  ) : null;
+  const madeNode = made ? (
+    <div className="ed-problem">
+      {made.failed.length > 0 && (
+        <Banner
+          tone="warn"
+          live
+          title={tf("edit.new.partialTitle", { name: made.name })}
+          actions={
+            <button type="button" className="ws-btn ws-btn--small ws-btn--ghost" onClick={() => setMade(null)}>
+              {t("variant.ui.dismiss")}
+            </button>
+          }
+        >
+          {made.failed.map((step) => (
+            <p key={step}>{t(STEP_TEXT[step])}</p>
+          ))}
+        </Banner>
+      )}
+      {made.notOurs && <NotOursBanner />}
+    </div>
+  ) : null;
+
+  const newButton = available ? (
+    <button
+      type="button"
+      className="ws-btn"
+      onClick={() => {
+        setMade(null);
+        setView({ kind: "new" });
+      }}
+    >
+      <Icon name="plus" size={16} />
+      {t("edit.newGo")}
+    </button>
+  ) : null;
+  const pickKey = selectedInfo && selectedInfo.kind !== "skill" ? (selectedInfo.kind === "main" ? "main" : selectedInfo.name) : null;
+  const pickButton =
+    pickKey !== null ? (
+      <button type="button" className="ws-btn" onClick={() => setView({ kind: "pick", agent: pickKey, fromNew: false })}>
+        <Icon name="paw" size={16} />
+        {t("edit.pick.go")}
+      </button>
+    ) : null;
+
   return (
     <div className="ws ed" data-testid="edit" data-skin="3" data-time={time}>
       <AppNav current="edit" onGo={go} />
       <main className="ws-stage">
         <HouseScene className="ws-backdrop" time={time} placements={[]} />
         <div className="ed-wrap">
-          <div className="ed-tabs" role="tablist" aria-label={t("edit.tabs")} onKeyDown={onTabKey}>
-            {TABS.map((item) => {
-              const selected = item.id === tab;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  id={`ed-tab-${item.id}`}
-                  aria-selected={selected}
-                  aria-controls={`ed-panel-${item.id}`}
-                  tabIndex={selected ? 0 : -1}
-                  className="ed-tab"
-                  data-tab={item.id}
-                  ref={(el) => {
-                    if (el) tabs.current.set(item.id, el);
-                    else tabs.current.delete(item.id);
-                  }}
-                  onClick={() => setTab(item.id)}
-                >
-                  <Icon name={item.icon} size={16} />
-                  {t(item.label)}
-                  {item.id === "origin" && originItems.length > 0 && (
-                    <span className="ed-tab__badge">
-                      <span aria-hidden="true">{originItems.length}</span>
-                      <span className="ws-sr">{tf("edit.tab.originCount", { n: originItems.length })}</span>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {view.kind === "tabs" && (
+            <div className="ed-tabs" role="tablist" aria-label={t("edit.tabs")} onKeyDown={onTabKey}>
+              {TABS.map((item) => {
+                const selected = item.id === tab;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={`ed-tab-${item.id}`}
+                    aria-selected={selected}
+                    aria-controls={`ed-panel-${item.id}`}
+                    tabIndex={selected ? 0 : -1}
+                    className="ed-tab"
+                    data-tab={item.id}
+                    ref={(el) => {
+                      if (el) tabs.current.set(item.id, el);
+                      else tabs.current.delete(item.id);
+                    }}
+                    onClick={() => setTab(item.id)}
+                  >
+                    <Icon name={item.icon} size={16} />
+                    {t(item.label)}
+                    {item.id === "origin" && originItems.length > 0 && (
+                      <span className="ed-tab__badge">
+                        <span aria-hidden="true">{originItems.length}</span>
+                        <span className="ws-sr">{tf("edit.tab.originCount", { n: originItems.length })}</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="ws-paper ed-tray">
-            <header className="ed-tray__head">
-              <div className="ed-tray__titles">
-                <h1 className="ed-tray__title">{t("edit.title")}</h1>
-                <p className="ed-tray__lead">{t(current.lead)}</p>
-              </div>
-              {headActions?.(slot)}
-            </header>
-            {shownProblem && (
-              <div className="ed-problem">
-                <Banner
-                  tone={shownProblem === "harness_busy" ? "warn" : "danger"}
-                  live
-                  title={errorLine(shownProblem)}
-                  actions={
-                    <>
-                      {shownProblem === "harness_busy" && (
-                        <button
-                          type="button"
-                          className="ws-btn ws-btn--small"
-                          onClick={() => {
-                            setProblem(null);
-                            data.clearRefreshError();
-                            void data.refresh();
-                          }}
-                        >
-                          {t("edit.retry")}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="ws-btn ws-btn--small ws-btn--ghost"
-                        onClick={() => {
-                          setProblem(null);
-                          data.clearRefreshError();
-                        }}
-                      >
-                        {t("variant.ui.dismiss")}
-                      </button>
-                    </>
-                  }
-                />
-              </div>
+            {view.kind === "tabs" && (
+              <header className="ed-tray__head">
+                <div className="ed-tray__titles">
+                  <h1 className="ed-tray__title">{t("edit.title")}</h1>
+                  <p className="ed-tray__lead">{t(current.lead)}</p>
+                </div>
+                {newButton}
+                {headActions?.(slot)}
+              </header>
             )}
+            {view.kind === "tabs" && problemNode}
+            {view.kind === "tabs" && madeNode}
             {body ?? (
               <>
-                <section role="tabpanel" id="ed-panel-items" aria-labelledby="ed-tab-items" className="ed-tabpanel" hidden={tab !== "items"}>
+                {view.kind === "new" && (
+                  <NewItem
+                    draft={draft}
+                    onChange={patchDraft}
+                    entries={entries}
+                    roles={data.roles}
+                    labels={data.labels}
+                    error={formError}
+                    busy={creating}
+                    banner={problemNode}
+                    onCancel={closeNew}
+                    onSubmit={() => (draft.kind === "agent" ? setView({ kind: "pick", agent: null, fromNew: true }) : void create())}
+                  />
+                )}
+                {view.kind === "pick" && (
+                  <CatPick
+                    data={data}
+                    entries={entries}
+                    agent={view.agent}
+                    draft={view.fromNew ? { name: draft.name, label: draft.label, cat: draft.cat } : null}
+                    onDraftCat={(cat) => patchDraft({ cat })}
+                    onBack={() => setView({ kind: "new" })}
+                    onDone={() => void create()}
+                    creating={creating}
+                    onExit={(key) => {
+                      setSelectedId(key === "main" ? "main" : `agent:${key}`);
+                      setView({ kind: "tabs" });
+                    }}
+                    report={report}
+                    banner={problemNode}
+                  />
+                )}
+                <section role="tabpanel" id="ed-panel-items" aria-labelledby="ed-tab-items" className="ed-tabpanel" hidden={tab !== "items" || view.kind !== "tabs"}>
                   {entries.length === 0 ? (
                     <p className="ed-state" role="status">
                       {t("edit.empty")}
                     </p>
                   ) : (
                     <div className="ed-split">
-                      <ItemList entries={entries} current={entry?.id ?? null} onPick={setSelectedId} roles={data.roles} cats={data.cats} />
+                      <ItemList entries={entries} current={entry?.id ?? null} onPick={setSelectedId} roles={data.roles} cats={data.cats} labels={data.labels} />
                       {selectedInfo ? (
                         <ItemDetailPanel
                           key={`${selectedInfo.id}:${data.rev}`}
@@ -244,14 +389,25 @@ export default function EditScreen({ onGo, clock, headActions, itemActions }: Pr
                     </div>
                   )}
                 </section>
-                <section role="tabpanel" id="ed-panel-history" aria-labelledby="ed-tab-history" className="ed-tabpanel" hidden={tab !== "history"}>
+                <section role="tabpanel" id="ed-panel-history" aria-labelledby="ed-tab-history" className="ed-tabpanel" hidden={tab !== "history" || view.kind !== "tabs"}>
                   <HistoryTab data={data} report={report} now={now} />
                 </section>
-                <section role="tabpanel" id="ed-panel-origin" aria-labelledby="ed-tab-origin" className="ed-tabpanel" hidden={tab !== "origin"}>
+                <section role="tabpanel" id="ed-panel-origin" aria-labelledby="ed-tab-origin" className="ed-tabpanel" hidden={tab !== "origin" || view.kind !== "tabs"}>
                   <OriginTab items={originItems} data={data} report={report} focus={focus} />
                 </section>
-                {showBar && (
-                  <ApplyBar data={data} report={report} extra={tab === "items" ? itemActions?.(selectedInfo, slot) : undefined} />
+                {showBar && view.kind === "tabs" && (
+                  <ApplyBar
+                    data={data}
+                    report={report}
+                    extra={
+                      tab === "items" ? (
+                        <>
+                          {pickButton}
+                          {itemActions?.(selectedInfo, slot)}
+                        </>
+                      ) : undefined
+                    }
+                  />
                 )}
               </>
             )}

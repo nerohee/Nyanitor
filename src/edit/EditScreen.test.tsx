@@ -123,7 +123,7 @@ describe("틀 · 목록", () => {
     const names = within(list)
       .getAllByText(/./, { selector: ".ed-item__name" })
       .map((el) => el.textContent);
-    expect(names.slice(0, 8)).toEqual(["오케스트레이터", "디자이너", "화면 구현", "시스템 구현", "시험", "정리", "점검", "translator"]);
+    expect(names.slice(0, 8)).toEqual(["오케스트레이터", "디자이너", "화면 구현", "시스템 구현", "시험", "정리", "점검", "번역"]);
     expect(names).toContain("desktop-app");
     const designer = within(list).getByText("디자이너", { selector: ".ed-item__name" }).closest("button")!;
     expect(within(designer).getByText("통째로")).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("틀 · 목록", () => {
     const ui = within(list).getByText("화면 구현", { selector: ".ed-item__name" }).closest("button")!;
     expect(within(ui).getByText("값 바꿈")).toBeInTheDocument();
     expect(within(ui).getByText("덧붙임")).toBeInTheDocument();
-    expect(within(list).getByText("translator", { selector: ".ed-item__name" }).closest("button")!).toHaveTextContent("내가 만듦");
+    expect(within(list).getByText("번역", { selector: ".ed-item__name" }).closest("button")!).toHaveTextContent("내가 만듦");
   });
 
   it("찾기 칸은 이름 · 파일로 거른다 — 없으면 안내", async () => {
@@ -316,7 +316,7 @@ describe("상세 — 통째로 바꾸기 · 내가 만든 것", () => {
 
   it("내가 만든 것 — 안내 · 파일 전체 · 덧붙임 칸 없음 · 지우기(확인)로 목록에서 사라진다", async () => {
     await mount();
-    await pick("translator");
+    await pick("번역");
     expect(screen.getByText("내가 만든 파일이에요")).toBeInTheDocument();
     expect(valueOf(screen.getByRole("textbox", { name: "파일 전체" }))).toContain("name: translator");
     expect(screen.queryByRole("heading", { name: /덧붙일 지시/ })).not.toBeInTheDocument();
@@ -326,7 +326,7 @@ describe("상세 — 통째로 바꾸기 · 내가 만든 것", () => {
     fireEvent.click(within(box).getByRole("button", { name: "지우기" }));
     await waitFor(() => {
       const list = screen.getByRole("navigation", { name: "에이전트 · 스킬 목록" });
-      expect(within(list).queryByText("translator", { selector: ".ed-item__name" })).not.toBeInTheDocument();
+      expect(within(list).queryByText("번역", { selector: ".ed-item__name" })).not.toBeInTheDocument();
     }, WAIT);
     await waitFor(() => expect(within(applyBar()).getByText(/^적용 안 한 것 \d개$/)).toBeInTheDocument(), WAIT);
   });

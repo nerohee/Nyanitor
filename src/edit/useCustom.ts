@@ -21,6 +21,8 @@ export interface EditData {
   changes: CustomChanges | null;
   /** 내 고양이 연결 (`customCatsRead` 에 적힌 것만) */
   cats: Readonly<Record<string, string>>;
+  /** 직접 만든 에이전트의 보이는 이름 (`customLabelsRead` 에 적힌 것만 — 에이전트 이름 → 보이는 이름) */
+  labels: Readonly<Record<string, string>>;
   roles: RoleMap;
   /** 쓰는 중이라 아직 저장되지 않은 글이 있다 (적용 단추를 켠다 — 누르면 먼저 저장하고 적용한다) */
   unsaved: boolean;
@@ -44,6 +46,7 @@ export function useCustom(): EditData {
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [changes, setChanges] = useState<CustomChanges | null>(null);
   const [cats, setCats] = useState<Readonly<Record<string, string>>>({});
+  const [labels, setLabels] = useState<Readonly<Record<string, string>>>({});
   const [rev, setRev] = useState(0);
   const [refreshError, setRefreshError] = useState<AppErrorKind | null>(null);
   const [unsavedKeys, setUnsavedKeys] = useState<ReadonlySet<string>>(new Set());
@@ -63,11 +66,11 @@ export function useCustom(): EditData {
   /** 읽는다 — 결과는 `commit` 이 화면에 넣는다 */
   const read = useCallback(async () => {
     const mine = ++seq.current;
-    const [listed, diff, catsRead] = await Promise.allSettled([ipc.customList(), ipc.customChanges(), ipc.customCatsRead()]);
-    return { mine, listed, diff, catsRead };
+    const [listed, diff, catsRead, labelsRead] = await Promise.allSettled([ipc.customList(), ipc.customChanges(), ipc.customCatsRead(), ipc.customLabelsRead()]);
+    return { mine, listed, diff, catsRead, labelsRead };
   }, []);
 
-  const commit = useCallback(({ mine, listed, diff, catsRead }: Awaited<ReturnType<typeof read>>) => {
+  const commit = useCallback(({ mine, listed, diff, catsRead, labelsRead }: Awaited<ReturnType<typeof read>>) => {
     if (!alive.current || mine !== seq.current) return;
     if (listed.status === "fulfilled") {
       hasList.current = true;
@@ -82,6 +85,8 @@ export function useCustom(): EditData {
     setChanges(diff.status === "fulfilled" ? diff.value : null);
     // 고양이 연결을 못 읽어도 화면은 기본 연결로 그린다
     setCats(catsRead.status === "fulfilled" && catsRead.value.state === "ok" ? catsRead.value.agents : {});
+    // 보이는 이름도 못 읽으면 에이전트 이름으로 그린다
+    setLabels(labelsRead.status === "fulfilled" && labelsRead.value.state === "ok" ? labelsRead.value.agents : {});
   }, []);
 
   const refresh = useCallback(async () => {
@@ -125,5 +130,5 @@ export function useCustom(): EditData {
 
   const clearRefreshError = useCallback(() => setRefreshError(null), []);
 
-  return { list, changes, cats, roles, unsaved: unsavedKeys.size > 0, markUnsaved, refreshError, clearRefreshError, rev, refresh, refreshAll, flushAll, registerFlush };
+  return { list, changes, cats, labels, roles, unsaved: unsavedKeys.size > 0, markUnsaved, refreshError, clearRefreshError, rev, refresh, refreshAll, flushAll, registerFlush };
 }

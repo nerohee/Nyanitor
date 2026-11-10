@@ -66,7 +66,7 @@ export function OriginTab({ items, data, report, focus }: Props) {
                 }}>
                 <ItemFace cat={itemCat(item.kind, item.name, data.roles, data.cats)} kind={item.kind} />
                 <span className="ed-item__text">
-                  <span className="ed-item__name">{itemLabel(item.kind, item.name, data.roles)}</span>
+                  <span className="ed-item__name">{itemLabel(item.kind, item.name, data.roles, data.labels)}</span>
                   <span className="ed-item__file">{item.file}</span>
                 </span>
                 <span className="ed-item__marks">
@@ -89,7 +89,7 @@ function ChoicePanel({ item, data, report, chosen, onChosen }: { item: CustomIte
   const [confirming, setConfirming] = useState<null | { busy: boolean; problem: string | null }>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const label = itemLabel(item.kind, item.name, data.roles);
+  const label = itemLabel(item.kind, item.name, data.roles, data.labels);
 
   useEffect(() => {
     let alive = true;

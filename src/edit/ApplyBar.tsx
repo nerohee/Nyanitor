@@ -124,7 +124,7 @@ export function ApplyBar({ data, report, extra }: Props) {
       // 쓰던 글을 먼저 저장하고, 방금 모습으로 요약을 만든다 — 적용 중에는 또 고칠 수 없게 단추를 잠근다
       await data.flushAll();
       const [fresh, diff] = await Promise.all([ipc.customList(), ipc.customChanges().catch(() => null)]);
-      const summary = fresh.unapplied.known ? buildSummary({ files: fresh.unapplied.files, diffs: diff?.files ?? null, items: fresh.items, roles: data.roles }) : null;
+      const summary = fresh.unapplied.known ? buildSummary({ files: fresh.unapplied.files, diffs: diff?.files ?? null, items: fresh.items, roles: data.roles, labels: data.labels }) : null;
       const applied = await ipc.customApply(summary);
       setResult(resultOf(applied));
       await data.refreshAll();

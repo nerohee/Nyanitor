@@ -1240,6 +1240,8 @@ export interface CustomItemDetail {
   replaceText: CustomTextPart;
   /** 원본에서 파일이 사라졌다 (`.origin` 만 남음) */
   originGone: boolean;
+  /** 원본과 내 글이 둘 다 있는데 원본과 견줘 본 기록(`.origin`)이 없다 — 내가 만든 이름이 원본 업데이트로 새로 생겼다 (원본 바뀜 탭이 문구를 바꾼다) */
+  originUnrecorded: boolean;
 }
 
 export type CustomItemRead = ({ state: "ok" } & CustomItemDetail) | ({ state: "unreadable" } & CustomItemUnreadable) | { state: "not_found" };

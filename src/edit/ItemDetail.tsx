@@ -389,15 +389,6 @@ function TextSection({
 
 // ── 상세 ──
 
-/** 지운 에이전트의 보이는 이름 · 고양이 줄을 지운다 — 못 지워도 지운 것은 그대로 (띠로만 알린다) */
-async function dropAgentLines(name: string, data: EditData, report: Props["report"]): Promise<void> {
-  try {
-    if (data.labels[name] !== undefined) await ipc.customLabelSave(name, null);
-    if (data.cats[name] !== undefined) await ipc.customCatsSave([{ agent: name, cat: null }]);
-  } catch (raw) {
-    report(errorKind(raw));
-  }
-}
 
 type Confirm = null | { kind: "start" | "stop" | "delete"; busy: boolean; problem: string | null };
 
@@ -432,8 +423,8 @@ function ItemBody({ entry, detail, data, report, onGoOrigin, changes }: Props & 
         if (alive.current) setConfirm({ kind, busy: false, problem: refuseText(result.reason) });
         return;
       }
-      // 같은 이름으로 다시 만들었을 때 옛 보이는 이름 · 고양이가 되살아나지 않게 그 줄도 지운다 (있을 때만)
-      if (kind === "delete" && entry.kind === "agent") await dropAgentLines(entry.name, data, report);
+      // 보이는 이름 · 고양이 줄은 지우지 않는다 — 지움은 아직 적용 안 한 것이라 「버리기」 하면 에이전트와 함께 돌아와야 한다 (P9-06 버그 3).
+      // 같은 이름으로 다시 만들면 고양이는 「완료」 때 새로 쓰고, 보이는 이름은 비워 두면 옛 줄을 지운다 (`createItem` 의 staleLabel)
       await data.refreshAll();
       if (alive.current) setConfirm(null);
     } catch (raw) {

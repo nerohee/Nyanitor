@@ -506,7 +506,7 @@ const TS_CUSTOM_FIELDS = {
   UnappliedFile: { path: 1, status: 1 } satisfies Record<keyof CustomUnappliedFile, 1>,
   Unapplied: { known: 1, count: 1, files: 1 } satisfies Record<keyof CustomUnapplied, 1>,
   CustomList: { available: 1, reason: 1, developerMode: 1, history: 1, unapplied: 1, items: 1, roles: 1 } satisfies Record<keyof CustomList, 1>,
-  ItemDetail: { info: 1, originText: 1, appendText: 1, replaceText: 1, originGone: 1 } satisfies Record<keyof CustomItemDetail, 1>,
+  ItemDetail: { info: 1, originText: 1, appendText: 1, replaceText: 1, originGone: 1, originUnrecorded: 1 } satisfies Record<keyof CustomItemDetail, 1>,
   WriteResult: { outcome: 1, reason: 1, detail: 1, changed: 1, notOurs: 1 } satisfies Record<keyof CustomWriteResult, 1>,
   DiffLine: { sign: 1, text: 1, old: 1, new: 1 } satisfies Record<keyof CustomDiffLine, 1>,
   FileDiff: { path: 1, status: 1, binary: 1, lines: 1, truncated: 1, added: 1, removed: 1 } satisfies Record<keyof CustomFileDiff, 1>,

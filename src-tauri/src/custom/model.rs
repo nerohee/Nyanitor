@@ -199,6 +199,8 @@ pub struct ItemDetail {
     pub replace_text: TextPart,
     /// 원본에서 파일이 사라졌다 (`.origin` 만 남음)
     pub origin_gone: bool,
+    /// 원본과 내 글이 둘 다 있는데 원본과 견줘 본 기록(`.origin`)이 없다 — 내가 만든 이름이 원본 업데이트로 새로 생겼거나 손으로 둔 파일 (P9-06 버그 1)
+    pub origin_unrecorded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

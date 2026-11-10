@@ -139,6 +139,8 @@ function ChoicePanel({ item, data, report, chosen, onChosen }: { item: CustomIte
   };
 
   const gone = detail?.originGone === true;
+  // 내가 만든 이름이 원본 업데이트로 새로 생김 — 바뀐 것이 아니라 겹친 것이라 머리 글을 바꾼다 (P9-06 버그 1)
+  const collided = detail?.originUnrecorded === true;
 
   return (
     <section className="ed-panel" aria-labelledby="ed-cf-title">
@@ -148,9 +150,9 @@ function ChoicePanel({ item, data, report, chosen, onChosen }: { item: CustomIte
         </span>
         <div className="ed-panel__titles">
           <h2 id="ed-cf-title" className="ed-panel__title">
-            {tf("edit.origin.title", { name: label })}
+            {tf(collided ? "edit.origin.titleNew" : "edit.origin.title", { name: label })}
           </h2>
-          <p className="ed-panel__sub">{t("edit.origin.lead")}</p>
+          <p className="ed-panel__sub">{t(collided ? "edit.origin.leadNew" : "edit.origin.lead")}</p>
         </div>
       </header>
       <div className="ed-panel__scroll">

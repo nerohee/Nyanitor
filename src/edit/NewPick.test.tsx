@@ -577,17 +577,15 @@ describe("보이는 이름", () => {
     expect(await screen.findByText(/보이는 이름은 1~20 글자로, 줄바꿈 없이 써 주세요/)).toBeInTheDocument();
   });
 
-  it("직접 만든 에이전트를 지우면 그 이름의 보이는 이름 · 고양이 줄도 지운다 — 같은 이름으로 다시 만들어도 되살아나지 않는다", async () => {
+  it("직접 만든 에이전트를 지워도 보이는 이름 · 고양이 줄은 남긴다 (버리면 함께 돌아오게, P9-06 버그 3) — 같은 이름으로 다시 만들면 비어서 시작한다", async () => {
     await mount("full", () => ipc.customCatsSave([{ agent: "translator", cat: "nabi" }]));
     await pick("번역");
     fireEvent.click(screen.getByRole("button", { name: "지우기" }));
     const box = await screen.findByRole("dialog");
     fireEvent.click(within(box).getByRole("button", { name: "지우기" }));
-    await waitFor(async () => {
-      expect(await labelsNow()).toEqual({});
-      expect(await catsNow()).toEqual({});
-    }, WAIT);
     await waitFor(() => expect(listNames()).not.toContain("번역"), WAIT);
+    expect(await labelsNow()).toEqual({ translator: "번역" });
+    expect(await catsNow()).toEqual({ translator: "nabi" });
     // 같은 이름으로 다시 — 이름도 고양이도 비어서 시작한다
     await openNew();
     fill("에이전트 이름 (영문)", "translator");

@@ -331,7 +331,8 @@ pub fn save_text(env: &Env, id_text: &str, text: &str) -> Result<WriteResult, Ap
     if let Some(refused) = text_problem(&id, &normalized) {
         return Ok(refused);
     }
-    if parts.mine.text() == Some(normalized.as_str()) {
+    // 메모장이 CRLF · BOM 으로 둔 파일도 같은 글이면 다시 쓰지 않는다 (P9-06 버그 2)
+    if parts.mine.text().map(fsx::normalize_text).as_deref() == Some(normalized.as_str()) {
         return Ok(WriteResult::saved(false));
     }
     history::ensure_started(env)?;

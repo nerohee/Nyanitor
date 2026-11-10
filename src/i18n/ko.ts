@@ -1997,6 +1997,8 @@ const ko = {
   "edit.origin.noneBody": "통째로 바꾼 파일의 원본이 업데이트로 달라지면 여기에 나와요.",
   "edit.origin.title": "{name} — 원본이 바뀌었어요",
   "edit.origin.lead": "내가 통째로 바꾼 파일이라 저절로 합치지 않았어요.",
+  "edit.origin.titleNew": "{name} — 원본에 같은 이름이 새로 생겼어요",
+  "edit.origin.leadNew": "내가 만든 파일과 이름이 같아요. 지금은 내 것을 쓰고 있어요 — 「원본으로 바꾸기」를 고르면 내 글은 사라져요.",
   "edit.origin.safe": "고르기 전까지는 내 것을 그대로 써요",
   "edit.origin.safeBody": "업데이트는 받았지만 이 파일만은 손대지 않았어요. 아래에서 비교해 보고 골라요.",
   "edit.origin.compare": "내 것과 원본 다른 점",

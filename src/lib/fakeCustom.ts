@@ -531,7 +531,7 @@ export function createFakeCustom() {
       marks,
       originChanged: null,
     };
-    return { state: "ok", info, detail: { info, originText: { state: "absent" }, appendText: { state: "absent" }, replaceText: { state: "absent" }, originGone: false } };
+    return { state: "ok", info, detail: { info, originText: { state: "absent" }, appendText: { state: "absent" }, replaceText: { state: "absent" }, originGone: false, originUnrecorded: false } };
   }
 
   function resolve(s: FakeState, item: Parsed): Resolved {
@@ -566,7 +566,9 @@ export function createFakeCustom() {
     if (append !== undefined && append.trim() !== "") marks.push("append");
     if (source !== undefined && mine !== undefined) marks.push("replace");
     if (source === undefined && mine !== undefined) marks.push("mine");
-    const originChanged = recorded !== null && mine !== undefined ? recorded !== (source === undefined ? null : fakeHash(source)) : null;
+    // `.origin` 없이 원본과 내 글이 둘 다 있으면(내가 만든 이름이 원본에 새로 생김) 견줘 본 적이 없으니 true — Rust `items::resolve` 와 같게 (P9-06 버그 1)
+    const originUnrecorded = recorded === null && mine !== undefined && source !== undefined;
+    const originChanged = recorded !== null && mine !== undefined ? recorded !== (source === undefined ? null : fakeHash(source)) : originUnrecorded ? true : null;
     const info: CustomItemInfo = {
       id: item.kind === "agent" ? `agent:${item.name}` : `skill:${item.name}`,
       kind: item.kind,
@@ -585,7 +587,7 @@ export function createFakeCustom() {
     return {
       state: "ok",
       info,
-      detail: { info, originText: text(source), appendText: text(append), replaceText: text(mine), originGone: recorded !== null && mine !== undefined && source === undefined },
+      detail: { info, originText: text(source), appendText: text(append), replaceText: text(mine), originGone: recorded !== null && mine !== undefined && source === undefined, originUnrecorded },
     };
   }
 
@@ -877,7 +879,7 @@ export function createFakeCustom() {
     const script = install(s);
     if (script.exitCode !== 0 || script.report?.ok !== true) return { outcome: "failed", script, commit: "skipped", commitShort: null, files, detail: null };
     if (s.mode === "no_git") return { outcome: "applied", script, commit: "no_git", commitShort: null, files, detail: null };
-    const addsItem = changedPaths(head(s), s.custom).some((path) => /^(agents\/[^/]+\.md|skills\/[^/]+\/SKILL\.md)$/.test(path) && head(s).get(path) === undefined && !s.source.has(path));
+    const addsItem = changedPaths(head(s), s.custom).some((path) => /^(agents\/[a-z][a-z0-9-]*\.md|skills\/[a-z][a-z0-9-]*\/SKILL\.md)$/.test(path) && head(s).get(path) === undefined && !s.source.has(path));
     const message = (typeof summaryArg === "string" ? cleanMessage(summaryArg) : null) ?? `적용 — 파일 ${files}개`;
     const made = commit(s, message, addsItem ? "new" : "apply", s.custom);
     return { outcome: "applied", script, commit: "committed", commitShort: made.hash.slice(0, 7), files, detail: null };

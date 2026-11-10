@@ -65,7 +65,10 @@ impl Piece {
     fn part(&self) -> TextPart {
         match self {
             Piece::Absent => TextPart::Absent,
-            Piece::Text(text) => TextPart::Text { text: text.clone() },
+            // 화면에는 LF 로 (메모장이 CRLF · BOM 으로 저장한 글도 — 저장은 늘 LF 라 같은 글이 "바뀜" 으로 보이지 않게, P9-06 버그 2)
+            Piece::Text(text) => TextPart::Text {
+                text: fsx::normalize_text(text),
+            },
             Piece::TooLarge => TextPart::TooLarge,
             Piece::Failed(reason) => TextPart::Unreadable { reason: *reason },
         }
@@ -117,6 +120,7 @@ pub struct Resolved {
     pub info: ItemInfo,
     pub parts: Parts,
     pub origin_gone: bool,
+    pub origin_unrecorded: bool,
 }
 
 pub enum Loaded {
@@ -221,12 +225,16 @@ pub fn resolve(env: &Env, id: &ItemId) -> Loaded {
         (false, true) => marks.push(Mark::Mine),
         _ => {}
     }
-    // 통째 바꾼(`.origin` 이 있는) 것만 — 해시가 다르거나 원본에서 사라졌으면 `true`
-    let origin_changed = match (&recorded, mine_text.is_some()) {
-        (Some(recorded), true) => Some(parts.source_hash.as_ref() != Some(recorded)),
+    // 통째 바꾼 것 — `.origin` 이 있으면 해시가 다르거나 원본에서 사라졌을 때 `true`.
+    // `.origin` 없이 원본과 내 글이 둘 다 있으면(내가 만든 이름이 원본 업데이트로 새로 생김 · 손으로 둔 파일) 원본과 견줘 본 적이 없으므로 `true` —
+    // 원본 바뀜 탭에서 내 것 유지(`.origin` 을 씀) / 원본으로를 고르게 한다 (P9-06 버그 1). 원본이 없는 내가 만든 것은 `None`.
+    let origin_changed = match (&recorded, mine_text.is_some(), source_text.is_some()) {
+        (Some(recorded), true, _) => Some(parts.source_hash.as_ref() != Some(recorded)),
+        (None, true, true) => Some(true),
         _ => None,
     };
     let origin_gone = recorded.is_some() && mine_text.is_some() && source_text.is_none();
+    let origin_unrecorded = recorded.is_none() && mine_text.is_some() && source_text.is_some();
 
     let my = my_values.unwrap_or_default();
     let model = short(&origin_fields, "model");
@@ -258,6 +266,7 @@ pub fn resolve(env: &Env, id: &ItemId) -> Loaded {
         info,
         parts,
         origin_gone,
+        origin_unrecorded,
     }))
 }
 
@@ -441,6 +450,7 @@ pub fn read_item(env: &Env, id_text: &str) -> Result<ItemRead, AppError> {
             append_text: TextPart::Absent,
             replace_text: TextPart::Absent,
             origin_gone: false,
+            origin_unrecorded: false,
         })));
     }
     Ok(match resolve(env, &id) {
@@ -481,6 +491,7 @@ pub fn read_item(env: &Env, id_text: &str) -> Result<ItemRead, AppError> {
                 append_text: parts.append.part(),
                 replace_text: parts.mine.part(),
                 origin_gone: false,
+                origin_unrecorded: false,
             }))
         }
         Loaded::Unreadable(reason) => ItemRead::Unreadable(unreadable_item(&id, reason)),
@@ -489,6 +500,7 @@ pub fn read_item(env: &Env, id_text: &str) -> Result<ItemRead, AppError> {
             append_text: resolved.parts.append.part(),
             replace_text: resolved.parts.mine.part(),
             origin_gone: resolved.origin_gone,
+            origin_unrecorded: resolved.origin_unrecorded,
             info: resolved.info,
         })),
     })

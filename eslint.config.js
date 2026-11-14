@@ -39,6 +39,11 @@ export default tseslint.config(
     rules: { "no-restricted-imports": "off" },
   },
   {
+    // E2E (e2e/) — Node 에서 도는 WebdriverIO 시험 · 실행 스크립트
+    files: ["e2e/**/*.ts"],
+    languageOptions: { globals: { ...globals.node, ...globals.mocha } },
+  },
+  {
     files: ["*.config.{js,ts}"],
     languageOptions: { globals: globals.node },
   },

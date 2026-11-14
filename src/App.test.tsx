@@ -59,6 +59,20 @@ describe("화면 전환 (주소가 아니라 앱 상태)", () => {
     expect(listen).toHaveBeenCalledTimes(1);
   });
 
+  it("화면을 바꾸면 새 화면의 제목으로 포커스가 옮겨진다 · 처음 켤 때는 건드리지 않는다 (D-55)", async () => {
+    render(<App />);
+    await screen.findByTestId("home");
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(screen.getByRole("button", { name: "작업 공간" }));
+    await screen.findByTestId("workspace");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1, name: "작업 공간" })));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "내 수정" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1, name: "내 수정" })), { timeout: 4000 });
+    fireEvent.click(within(screen.getByRole("navigation", { name: "탐색" })).getByRole("button", { name: "집" }));
+    await screen.findByTestId("home");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 })));
+  });
+
   it("왼쪽 메뉴로 고양이 집 ↔ 작업 공간 ↔ 내 수정 — 지금 있는 곳이 표시된다", async () => {
     render(<App />);
     await screen.findByTestId("home");

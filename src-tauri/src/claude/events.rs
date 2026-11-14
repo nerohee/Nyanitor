@@ -321,7 +321,8 @@ pub struct StartRequest {
     /// 이 프로젝트의 마지막 세션을 `--resume` 으로 잇는다
     #[serde(default)]
     pub resume: bool,
-    /// `ANTHROPIC_API_KEY` 를 CLI 에 넘긴다 (기본 안 넘김 — D-19)
+    /// `ANTHROPIC_API_KEY` 를 CLI 에 넘긴다 (기본 안 넘김 — D-19). **출시 빌드는 이 값을 무시하고 언제나 안 넘긴다** (`launch::effective_use_api_key`) —
+    /// 개발 빌드에서만 개발용 화면(`SessionLab`)이 쓴다.
     #[serde(default)]
     pub use_api_key: bool,
 }

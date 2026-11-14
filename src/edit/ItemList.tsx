@@ -73,11 +73,12 @@ export function ItemList({ entries, current, onPick, roles, cats, labels }: Prop
         )}
         {groups.map((group) =>
           group.shown.length === 0 ? null : (
-            <section key={group.kind} aria-label={t(group.title)}>
-              <h3 className="ed-list__title">
+            // 묶음은 이름 붙은 영역(landmark)이 아니라 그냥 묶음 — 상세 칸 이름과 겹치지 않게. 제목은 h1 바로 아래 h2 (상세 제목과 같은 층)
+            <div key={group.kind} role="group" aria-labelledby={`ed-list-${group.kind}`}>
+              <h2 id={`ed-list-${group.kind}`} className="ed-list__title">
                 {t(group.title)}
                 <span className="ed-count">{group.all.length}</span>
-              </h3>
+              </h2>
               <ul className="ed-list__items">
                 {group.shown.map((entry) => {
                   const ok = entry.state === "ok";
@@ -113,7 +114,7 @@ export function ItemList({ entries, current, onPick, roles, cats, labels }: Prop
                   );
                 })}
               </ul>
-            </section>
+            </div>
           ),
         )}
       </div>

@@ -19,6 +19,7 @@ use crate::agents::config::{self, ConfigState, HarnessConfig};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::harness::locate;
+use crate::projects::trust::TrustBaseline;
 use crate::projects::{self, Env};
 
 /// `--effort` 가 받는 수준 이름 (`claude --help` 2.1.296: low, medium, high, xhigh, max)
@@ -57,10 +58,14 @@ pub struct StartPlan {
     /// 확인을 마친 폴더 (등록된 프로젝트의, 지금 있고, 고를 수 없는 폴더가 아님)
     pub project_dir: PathBuf,
     pub resume: bool,
+    /// 화면이 보낸 값이 아니라 `effective_use_api_key` 로 정한 값 (출시 빌드는 언제나 false)
     pub use_api_key: bool,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub warnings: Vec<PlanWarning>,
+    /// 폴더 신뢰 확인(`projects::trust::ensure_trusted`)을 통과한 계획의 기준 (D-54) — 시작 때 폴더 설정의 지문 · 프로젝트 밖에서 읽은 폴더들.
+    /// 세션이 끝까지 들고 가서, 끝날 때 `permissions.allow` 말고는 같을 때만 새 해시를 적는다. `plan_start` 만 만든다 (`None` = 확인을 거치지 않은 시작 — 끝에 아무것도 적지 않는다).
+    pub trust: Option<TrustBaseline>,
 }
 
 /// 읽은 설정에서 모델 · 수준을 고른다. 설정이 있어도 값이 없는 칸은 "정하지 않음" 이라 조용히 CLI 기본이다.
@@ -128,7 +133,16 @@ pub fn planner_here() -> PlannerChoice {
     }
 }
 
+/// 화면이 보낸 `useApiKey` 를 따를지 정한다 — **출시 빌드(`dev_build` 가 false)는 화면이 무엇을 보내든 언제나 false** (구독 쪽, D-44 · D-45).
+/// 화면이 뚫려도 API 키 과금으로 바뀌지 않게 받는 쪽(Rust)에서 막는다. 개발 빌드에서만 개발용 화면(`src/lab/SessionLab.tsx`)이 true 를 쓸 수 있다.
+/// 어느 쪽이든 환경 변수 `ANTHROPIC_API_KEY` 는 false 일 때 CLI 에 넘기지 않는다 (`exec::ClaudeCommand::keep_api_key`).
+pub fn effective_use_api_key(requested: bool, dev_build: bool) -> bool {
+    requested && dev_build
+}
+
 /// 프로젝트 번호 → 시작 계획. 등록 안 된 번호 · 폴더 없어짐 · 고를 수 없는 폴더는 여기서 거절한다 (프로세스를 띄우기 전).
+/// 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 사용자가 아직 확인하지 않았으면 `trust_required` 로 거절한다 (D-54) — 화면이 어떻게 말했든
+/// 시작 직전에 여기서 다시 판단한다. 이어 하기(`resume`)도 같은 길이다.
 pub fn plan_start(
     db: &AppDb,
     env: &Env,
@@ -136,14 +150,17 @@ pub fn plan_start(
     request: &StartRequest,
 ) -> Result<StartPlan, AppError> {
     let project_dir = projects::session_dir(db, env, request.project_id)?;
+    let trust =
+        projects::trust::ensure_trusted(db, &env.forbidden, request.project_id, &project_dir)?;
     Ok(StartPlan {
         project_id: request.project_id,
         project_dir,
         resume: request.resume,
-        use_api_key: request.use_api_key,
+        use_api_key: effective_use_api_key(request.use_api_key, cfg!(debug_assertions)),
         model: planner.model,
         effort: planner.effort,
         warnings: planner.warnings,
+        trust: Some(trust),
     })
 }
 
@@ -198,6 +215,16 @@ mod tests {
 
     fn codes(choice: &PlannerChoice) -> Vec<&'static str> {
         choice.warnings.iter().map(|w| w.code).collect()
+    }
+
+    #[test]
+    fn a_release_build_ignores_the_screens_api_key_request() {
+        // 출시 빌드: 화면이 true 를 보내도 구독 쪽 (false)
+        assert!(!effective_use_api_key(true, false));
+        assert!(!effective_use_api_key(false, false));
+        // 개발 빌드: 화면이 정한 대로 (개발용 화면이 쓴다)
+        assert!(effective_use_api_key(true, true));
+        assert!(!effective_use_api_key(false, true));
     }
 
     #[test]

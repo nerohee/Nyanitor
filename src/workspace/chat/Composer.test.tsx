@@ -113,6 +113,22 @@ describe("스킬 고르기", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("화살표로 옮긴 줄은 목록 안에서 보이게 스크롤한다", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const { input } = setup();
+      fireEvent.keyDown(input, { key: "/" });
+      const list = await screen.findByRole("listbox");
+      scroll.mockClear();
+      fireEvent.keyDown(list, { key: "ArrowDown" });
+      expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scroll.mock.contexts[scroll.mock.contexts.length - 1]).toBe(screen.getAllByRole("option")[1]);
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("글이 있을 때 / 는 그냥 글자다 · 이미 앞에 스킬이 있으면 바꾼다", async () => {
     const { input } = setup();
     fireEvent.change(input, { target: { value: "경로는 a/b" } });

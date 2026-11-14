@@ -1,6 +1,7 @@
 // 사용량 한도 읽기 — 처음 한 번, "다시 읽기", 화면이 다시 보일 때 5분 지났으면 다시. 못 받아도 앱은 그대로 (D-24).
 // 잠깐 못 받으면(시간 초과 · 실패 · 빈 응답) 마지막 숫자를 남기고 "갱신 실패" 만 붙인다 (2026-10-29 고객, 댓글 제안).
 import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribeWindowShown } from "../components/useWindowShown";
 import { ipc } from "../lib/ipc";
 import type { UsageResult } from "../lib/ipc-types";
 
@@ -53,13 +54,12 @@ export function useUsage(): UsageState & { refresh: () => void } {
   useEffect(() => {
     alive.current = true;
     load();
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastRead.current >= USAGE_STALE_MS) load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    const unsubscribe = subscribeWindowShown((shown) => {
+      if (shown && Date.now() - lastRead.current >= USAGE_STALE_MS) load();
+    });
     return () => {
       alive.current = false;
-      document.removeEventListener("visibilitychange", onVisible);
+      unsubscribe();
     };
   }, [load]);
 

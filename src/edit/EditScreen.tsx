@@ -284,7 +284,8 @@ export default function EditScreen({ onGo, clock, startPick, headActions, itemAc
                     role="tab"
                     id={`ed-tab-${item.id}`}
                     aria-selected={selected}
-                    aria-controls={`ed-panel-${item.id}`}
+                    // 읽는 중 · 실패 · 하네스 없음일 때는 탭 패널 대신 안내(`body`)를 그린다 — 없는 패널을 가리키지 않게 (P10-12 E2E axe)
+                    aria-controls={body ? undefined : `ed-panel-${item.id}`}
                     tabIndex={selected ? 0 : -1}
                     className="ed-tab"
                     data-tab={item.id}
@@ -311,7 +312,7 @@ export default function EditScreen({ onGo, clock, startPick, headActions, itemAc
             {view.kind === "tabs" && (
               <header className="ed-tray__head">
                 <div className="ed-tray__titles">
-                  <h1 className="ed-tray__title">{t("edit.title")}</h1>
+                  <h1 className="ed-tray__title" tabIndex={-1}>{t("edit.title")}</h1>
                   <p className="ed-tray__lead">{t(current.lead)}</p>
                 </div>
                 {newButton}

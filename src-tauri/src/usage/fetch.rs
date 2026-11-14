@@ -133,9 +133,14 @@ impl Drop for Running {
 
 /// 세션을 띄워 `/usage` 를 보내고 `usage_report` 값을 받는다.
 fn fetch_report(cmd: &ClaudeCommand, config: &FetchConfig) -> Result<Value, UnavailableReason> {
+    // 앱 전용 빈 폴더에서 — 공용 임시 폴더의 `.claude/settings.json` 을 읽지 않게 (`claude::workdir`)
+    let work_dir = cmd.work_dir().map_err(|err| {
+        log::warn!("usage: could not prepare the CLI work folder: {err}");
+        UnavailableReason::Failed
+    })?;
     let mut command = cmd.command(build_args());
     command
-        .current_dir(std::env::temp_dir())
+        .current_dir(work_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

@@ -29,6 +29,12 @@ pub const NOTICE_LIMIT: &str = "사용량 한도에 닿았어요 — 창을 열�
 // 종료 전 경고 (트레이 "종료" 때 일하는 중이면)
 pub const QUIT_TITLE: &str = "Nyanitor 끝내기";
 pub const QUIT_MESSAGE: &str = "먹물이 아직 일하고 있어요. 끝내면 지금 하던 일이 멈춰요.";
+// 하네스 작업 중일 때 (P10-08, D-54) — 일하는 중 경고보다 무겁다: 끊기면 파일이 반쯤 바뀐 채 남을 수 있다
+pub const QUIT_MESSAGE_INSTALL: &str = "설치하는 중이에요 — 지금 끝내면 Claude 설정이 반쯤 바뀐 채로 남을 수 있어요. 다음에 앱을 열어 설치를 다시 하거나 이전 설정으로 되돌려 주세요.";
+pub const QUIT_MESSAGE_FETCH: &str = "하네스를 받는 중이에요 — 지금 끝내면 받던 것이 반쯤 남을 수 있어요. 다음에 앱을 열어 다시 받아 주세요.";
+// 지난번 하네스 일 도중 앱이 꺼졌을 때 (앱 시작 알림 — P10-09, D-54): 설치 · 되돌리기 · 내 수정 적용은 설치, 받기 · 업데이트 확인은 받기
+pub const HARNESS_INTERRUPTED_INSTALL: &str = "지난번 하네스 설치가 끝나기 전에 앱이 꺼졌어요. 하네스 화면에서 상태를 확인하고 필요하면 되돌리세요.";
+pub const HARNESS_INTERRUPTED_FETCH: &str = "지난번 하네스를 받던 중에 앱이 꺼졌어요. 하네스 화면에서 상태를 확인하고 필요하면 다시 받아 주세요.";
 pub const QUIT_CONFIRM: &str = "끝내기";
 pub const QUIT_CANCEL: &str = "취소";
 

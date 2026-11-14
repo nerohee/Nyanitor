@@ -189,8 +189,9 @@
 .hs-cat__btn--static {
   pointer-events: none;
 }
-/* 장면 위 포커스 — 어느 시간대 위에서도 보이게 짙은 선 + 크림 테 두 겹 */
-.hs-cat__btn:focus-visible {
+/* 장면 위 포커스 — 어느 시간대 위에서도 보이게 짙은 선 + 크림 테 두 겹.
+   고양이 집 화면의 `.home :focus-visible` 보다 우선하게 `.hs-cat` 를 앞에 붙였다 (D-55) */
+.hs-cat .hs-cat__btn:focus-visible {
   outline: 2px solid var(--house-tag-text);
   outline-offset: 2px;
   box-shadow: 0 0 0 5px var(--house-tag-bg);

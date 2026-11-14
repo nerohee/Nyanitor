@@ -29,8 +29,10 @@ import projectsFolderRs from "../../src-tauri/src/projects/folder.rs?raw";
 import projectsRs from "../../src-tauri/src/projects/mod.rs?raw";
 import projectsProgressRs from "../../src-tauri/src/projects/progress.rs?raw";
 import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs?raw";
+import projectsTrustRs from "../../src-tauri/src/projects/trust.rs?raw";
 import skillsRs from "../../src-tauri/src/skills/mod.rs?raw";
 import trayRs from "../../src-tauri/src/tray.rs?raw";
+import windowRs from "../../src-tauri/src/window.rs?raw";
 import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
@@ -170,6 +172,15 @@ import {
   type ProgressRead,
   type ProgressReason,
   type ProgressSection,
+  type TrustCheck,
+  type TrustFile,
+  type TrustHookEntry,
+  type TrustKeyEntry,
+  type TrustList,
+  type TrustMcpEntry,
+  type TrustScope,
+  type TrustSummary,
+  type TrustUnreadableReason,
   type UnreadableReason,
   type UpdateState,
   type UsageResult,
@@ -199,6 +210,8 @@ const TS_ERROR_KINDS: Record<AppErrorKind, true> = {
   file_write_failed: true,
   project_folder_missing: true,
   project_folder_forbidden: true,
+  trust_required: true,
+  trust_changed: true,
 };
 
 const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
@@ -367,6 +380,35 @@ const TS_PROJECT_FIELDS = {
   VersionInfo: { version: 1 } satisfies Record<Exclude<keyof Extract<RequirementsVersion, { state: "ok" }>, "state">, 1>,
   ConflictInfo: { version: 1 } satisfies Record<Exclude<keyof Extract<RequirementsWrite, { state: "conflict" }>, "state">, 1>,
 };
+
+// 프로젝트 폴더 신뢰 (P10-03, D-54) — 화면 쪽에서 필드가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_TRUST_FIELDS = {
+  TrustList: { items: 1, more: 1 } satisfies Record<keyof TrustList<string>, 1>,
+  HookEntry: { event: 1, matcher: 1, kind: 1, text: 1 } satisfies Record<keyof TrustHookEntry, 1>,
+  KeyEntry: { key: 1, value: 1 } satisfies Record<keyof TrustKeyEntry, 1>,
+  McpEntry: { name: 1, target: 1 } satisfies Record<keyof TrustMcpEntry, 1>,
+  TrustFile: {
+    scope: 1,
+    folder: 1,
+    path: 1,
+    unreadable: 1,
+    hooks: 1,
+    commands: 1,
+    allow: 1,
+    permissionModes: 1,
+    additionalDirectories: 1,
+    mcpServers: 1,
+    plugins: 1,
+    marketplaces: 1,
+    switches: 1,
+    envNames: 1,
+    oddKeys: 1,
+  } satisfies Record<keyof TrustFile, 1>,
+  TrustSummary: { files: 1 } satisfies Record<keyof TrustSummary, 1>,
+  TrustCheck: { required: 1, hash: 1, summary: 1 } satisfies Record<keyof TrustCheck, 1>,
+};
+const TS_TRUST_SCOPES: Record<TrustScope, true> = { project: true, repo_root: true, main_checkout: true };
+const TS_TRUST_UNREADABLE: Record<TrustUnreadableReason, true> = { link: true, too_large: true, read_failed: true, not_a_file: true, invalid_json: true, not_object: true };
 
 // 프로젝트 문서 읽기 (P7-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
 const TS_PROGRESS_REASONS: Record<ProgressReason, true> = {
@@ -763,6 +805,35 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     }
   });
 
+  it("폴더 신뢰 결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다 (P10-03)", () => {
+    expect(Object.keys(TS_TRUST_FIELDS).sort()).toEqual(["HookEntry", "KeyEntry", "McpEntry", "TrustCheck", "TrustFile", "TrustList", "TrustSummary"]);
+    for (const [name, ts] of Object.entries(TS_TRUST_FIELDS)) {
+      // `TrustList<T>` 는 제네릭이라 구조체 이름 뒤에 `<T>` 가 붙는다
+      const source = name === "TrustList" ? projectsTrustRs.replace("pub struct TrustList<T> {", "pub struct TrustList {") : projectsTrustRs;
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(source, name)));
+    }
+    // 읽을 수 없는 이유: Rust 가 `unreadable` 에 넣는 글자와 같다
+    const reasons = new Set<string>();
+    for (const m of projectsTrustRs.matchAll(/unreadable\(\s*"([a-z_]+)"/g)) reasons.add(m[1] as string);
+    for (const m of projectsTrustRs.matchAll(/file\.unreadable = Some\("([a-z_]+)"\.into\(\)\)/g)) reasons.add(m[1] as string);
+    expect(sorted(Object.keys(TS_TRUST_UNREADABLE))).toEqual(sorted(reasons));
+    // 파일이 어느 폴더의 것인가: Rust enum 과 같다
+    expect(sorted(Object.keys(TS_TRUST_SCOPES))).toEqual(sorted(rustVariants(projectsTrustRs, "TrustScope").map(snake)));
+  });
+
+  it("폴더 신뢰: 요약에는 env 값 · 파일 전체 글을 담는 칸이 없다 — env 는 이름만 (D-54)", () => {
+    const body = (name: string) => {
+      const start = projectsTrustRs.indexOf(`pub struct ${name} {`);
+      return projectsTrustRs.slice(start, projectsTrustRs.indexOf("\n}", start));
+    };
+    expect(body("TrustFile")).toContain("pub env_names: TrustList<String>,");
+    expect(body("TrustFile")).not.toMatch(/env_values|raw|content|text:/);
+    // 한도: 글 200자 · 목록 50개 · 파일 1MiB (화면 문구 · 시험이 이 값에 기대므로 바뀌면 여기서 알린다)
+    expect(projectsTrustRs).toContain("pub const TEXT_MAX_CHARS: usize = 200;");
+    expect(projectsTrustRs).toContain("pub const LIST_MAX: usize = 50;");
+    expect(projectsTrustRs).toContain("pub const FILE_MAX_BYTES: u64 = 1 << 20;");
+  });
+
   it("프로젝트 명령은 화면에서 경로 글자를 받지 않는다 — 프로젝트 번호 · 이름 · 스킬 · 글 · 버전만 (D-47)", async () => {
     const commandsRs = (await import("../../src-tauri/src/projects/commands.rs?raw")).default;
     const signatures = [...commandsRs.matchAll(/#\[tauri::command\]\s+pub async fn ([a-z_]+)\(([^)]*)\)/g)];
@@ -781,10 +852,13 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       project_progress_version: ["db", "state", "id"],
       project_docs_list: ["db", "state", "id"],
       project_doc_read: ["db", "state", "id", "path"],
+      // 폴더 신뢰 (P10-03) — 프로젝트 번호와 (확인 화면이 본) 해시만. 경로 · 설정 글은 받지 않는다
+      project_trust_check: ["db", "state", "id"],
+      project_trust_grant: ["db", "state", "id", "hash"],
     };
     expect(signatures.map((m) => m[1]).sort()).toEqual(Object.keys(expected).sort());
     // 화면이 보내는 값(앱이 채우는 app · db · state · sessions 를 뺀 것)의 이름 · 모양
-    const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>", path: "String" };
+    const fromScreen: Record<string, string> = { id: "i64", request: "AddRequest", patch: "ProjectPatch", text: "String", base_version: "Option<String>", path: "String", hash: "String" };
     for (const [, name, params] of signatures) {
       const list = (params as string)
         .replace(/State<[^>]*>/g, "State") // `State<'_, AppDb>` 안의 쉼표는 매개변수 구분이 아니다
@@ -1067,6 +1141,16 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(trayRs).toMatch(/struct WindowShown \{\s*reason: &'static str,\s*\}/);
   });
 
+  it("창 보임 바뀜 이벤트 이름 · 모양은 window.rs 와 같다 (D-55)", async () => {
+    const { WINDOW_VISIBILITY_EVENT } = await import("./ipc");
+    expect(windowRs).toContain(`pub const WINDOW_VISIBILITY_EVENT: &str = "${WINDOW_VISIBILITY_EVENT}";`);
+    expect(windowRs).toMatch(/struct WindowVisibility \{\s*visible: bool,\s*\}/);
+    // 창을 숨기거나 최소화한 쪽(tray.rs)이 웹뷰를 숨기는 `window::` 함수를 부른다 — 창만 숨기고 웹뷰는 두는 옛 모양으로 돌아가지 않게
+    expect(trayRs).toContain("window::set_webview_visible(window.app_handle(), false)");
+    expect(trayRs).toContain("window::set_webview_visible(app, true)");
+    expect(trayRs).toMatch(/WindowEvent::Resized\(_\) => window::sync_with_window\(window\)/);
+  });
+
   it("화면은 알림을 띄우지 못한다 — capabilities 에 notification 권한이 없고 알림 패키지도 없다 (D-50)", async () => {
     const capability = (await import("../../src-tauri/capabilities/default.json?raw")).default;
     expect(capability).not.toMatch(/notification/i);
@@ -1193,11 +1277,25 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       // git · 스크립트를 직접 부르지 않는다 (잠금 · 기억을 건너뛰게 된다)
       expect(body, `${name} 이 git/script 를 직접 부름`).not.toMatch(/\b(git|script)::/);
     }
-    // flow 의 함수는 모두 맨 앞에서 잠금(begin)을 잡는다
+    // flow 의 함수는 모두 맨 앞에서 잠금(begin · 일의 종류를 밝히는 begin_task)을 잡는다
     const fns = [...flowRs.matchAll(/pub fn ([a-z_]+)\([^)]*\)[^{]*\{\n([\s\S]*?)\n\}/g)];
     expect(fns.map((m) => m[1]).sort()).toEqual(Object.values(expected).sort());
     for (const [, name, body] of fns) {
-      expect((body as string).trimStart(), `flow::${name} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.begin\(\)\?;/);
+      expect((body as string).trimStart(), `flow::${name} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.(begin\(\)|begin_task\(HarnessTask::(Light|Fetch|Install)\))\?;/);
+    }
+    // 앱을 끄려 할 때 물어야 하는 일(받기 · 설치)은 일의 종류를 밝힌다 — 밝히지 않으면 `Light` 라 묻지 않는다 (P10-08)
+    const harnessKinds: Record<string, string> = {
+      clone_origin: "Fetch",
+      update_check: "Fetch",
+      update_pull: "Fetch",
+      install: "Install",
+      restore: "Install",
+    };
+    for (const [, name, body] of fns) {
+      const kind = harnessKinds[name as string];
+      const first = (body as string).trimStart().split("\n")[0] as string;
+      if (kind !== undefined) expect(first, `flow::${name as string} 은 ${kind} 로 밝혀야 한다`).toContain(`begin_task(HarnessTask::${kind})`);
+      else expect(first, `flow::${name as string} 은 짧은 일이다`).toContain("state.begin()");
     }
   });
 
@@ -1205,7 +1303,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     const capability = JSON.parse((await import("../../src-tauri/capabilities/default.json?raw")).default) as {
       permissions: string[];
     };
-    expect(capability.permissions).toEqual(["core:default"]);
+    expect(capability.permissions).toEqual(["core:event:allow-listen", "core:event:allow-unlisten"]);
   });
 
   it("폴더 고르기(dialog)는 Rust 에서만 쓴다 — 화면 권한에 dialog · fs 가 없고, fs 플러그인은 등록하지 않는다 (D-47)", async () => {
@@ -1390,11 +1488,17 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
         expect(body, `${name as string} 은 읽기만 한다`).not.toMatch(/flow::/);
       }
     }
-    // flow 의 함수는 모두 맨 앞에서 잠금(begin)을 잡는다
+    // flow 의 함수는 모두 맨 앞에서 잠금(begin · 일의 종류를 밝히는 begin_task)을 잡는다
     const fns = [...customFlowRs.matchAll(/pub fn ([a-z_]+)\([^)]*\)[^{]*\{\n([\s\S]*?)\n\}/g)];
     expect(sorted(fns.map((m) => m[1] as string))).toEqual(sorted(Object.values(writes)));
     for (const [, name, body] of fns) {
-      expect((body as string).trimStart(), `flow::${name as string} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.begin\(\)\?;/);
+      expect((body as string).trimStart(), `flow::${name as string} 은 맨 앞에서 잠금을 잡아야 한다`).toMatch(/^let (_guard|guard) = state\.(begin\(\)|begin_task\(HarnessTask::(Light|Fetch|Install)\))\?;/);
+    }
+    // 설치를 도는 적용 · 되돌리기만 앱을 끄려 할 때 묻는 일이다 (P10-08)
+    for (const [, name, body] of fns) {
+      const first = (body as string).trimStart().split("\n")[0] as string;
+      if (name === "apply" || name === "restore_to") expect(first, `flow::${name as string} 은 Install 로 밝혀야 한다`).toContain("begin_task(HarnessTask::Install)");
+      else expect(first, `flow::${name as string} 은 짧은 일이다`).toContain("state.begin()");
     }
   });
 
@@ -1425,7 +1529,7 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
 
   it("창 권한(capabilities) · 의존성은 내 수정 때문에 넓어지지 않았다", async () => {
     const capability = JSON.parse((await import("../../src-tauri/capabilities/default.json?raw")).default) as { permissions: string[] };
-    expect(capability.permissions).toEqual(["core:default"]);
+    expect(capability.permissions).toEqual(["core:event:allow-listen", "core:event:allow-unlisten"]);
     const cargo = (await import("../../src-tauri/Cargo.toml?raw")).default;
     // 해시는 `sha2` 하나만 (P9-01 검수 — 이미 Tauri 쪽에 있던 판을 직접 의존성으로). git 은 라이브러리가 아니라 git 실행 파일로.
     expect(cargo).toMatch(/^sha2 = "0\.10"$/m);

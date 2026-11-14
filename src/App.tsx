@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { NavPlace } from "./components/nav/AppNav";
 import Home from "./home/Home";
 import { ipc } from "./lib/ipc";
@@ -12,8 +12,8 @@ const Workspace = lazy(() => import("./workspace/Workspace"));
 // 내 수정 (P9-02) — 편집기(CodeMirror)를 쓰므로 같은 이유로 따로 불러온다.
 const EditScreen = lazy(() => import("./edit/EditScreen"));
 
-// 시안 틀 (P2) — 주소에 ?variant= 나 ?screen= 이 있을 때만 불러온다. 시안을 고른 뒤 이 연결은 지운다.
-const VariantFrame = lazy(() => import("./variants/VariantFrame"));
+// 시안 틀 (P2) — 주소에 ?variant= 나 ?screen= 이 있을 때만 불러온다. 개발 빌드에서만 (D-55) — 출시 빌드에서는 아래 시험 화면처럼 통째로 지워진다.
+const VariantFrame = import.meta.env.DEV ? lazy(() => import("./variants/VariantFrame")) : null;
 
 // Claude 연결 시험 화면 (P3-02) — 개발 빌드에서만. `import.meta.env.DEV` 가 출시 빌드에서 `false` 로 바뀌어
 // 이 줄과 아래 분기가 통째로 지워진다 (출시 빌드에는 시험 화면 코드가 들어가지 않는다).
@@ -70,6 +70,31 @@ function App() {
       unlisten?.();
     };
   }, [search]);
+  // 화면(집 · 작업 공간 · 내 수정)을 바꾸면 뿌리가 통째로 바뀌어 포커스가 body 로 빠진다 — 새 화면의 제목으로 옮겨 화면 읽기가 바뀐 것을 알게 한다.
+  // 처음 켤 때 · 창을 다시 열어 카드로 옮겨질 때(D-25, 카드가 포커스를 가져간다)는 건드리지 않고, 이미 다른 곳에 포커스가 있으면(대화상자 등) 빼앗지 않는다.
+  const shownPlace = useRef(view.place);
+  useEffect(() => {
+    if (shownPlace.current === view.place) return;
+    shownPlace.current = view.place;
+    if (view.reopen) return;
+    let tries = 0;
+    let frame = 0;
+    // 새 덩이를 불러오는 동안 React 가 옛 화면을 display:none 으로 숨겨 둔다 — 숨은 곳의 포커스 · 제목은 없는 것으로 본다
+    const hidden = (el: Element) => el.closest('[style*="display: none"]') !== null;
+    const attempt = () => {
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected && !hidden(active)) return;
+      const heading = Array.from(document.querySelectorAll<HTMLElement>("h1")).find((el) => !hidden(el));
+      if (heading) {
+        heading.focus();
+        return;
+      }
+      // 작업 공간 · 내 수정은 따로 불러오는 덩이라 제목이 늦게 나온다
+      if (++tries < 120) frame = requestAnimationFrame(attempt);
+    };
+    attempt();
+    return () => cancelAnimationFrame(frame);
+  }, [view.place, view.reopen]);
   if (SessionLab && wantsSessionLab(search)) {
     return (
       <Suspense fallback={null}>
@@ -84,7 +109,7 @@ function App() {
       </Suspense>
     );
   }
-  if (wantsVariantFrame(search)) {
+  if (VariantFrame && wantsVariantFrame(search)) {
     return (
       <Suspense fallback={null}>
         <VariantFrame search={search} />

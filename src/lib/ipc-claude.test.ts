@@ -2,7 +2,16 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "./fakeClaude";
 import { fakeProjects } from "./fakeProjects";
-import { AppError, CLAUDE_SESSION_EVENT, WINDOW_SHOWN_EVENT, ipc, type ClaudeEvent, type WindowShownEvent } from "./ipc";
+import {
+  AppError,
+  CLAUDE_SESSION_EVENT,
+  WINDOW_SHOWN_EVENT,
+  WINDOW_VISIBILITY_EVENT,
+  ipc,
+  type ClaudeEvent,
+  type WindowShownEvent,
+  type WindowVisibilityEvent,
+} from "./ipc";
 
 afterEach(() => {
   clearMocks();
@@ -166,7 +175,56 @@ describe("ipc — 숨어 있던 창이 열림 (D-50)", () => {
   it("출시 빌드의 Tauri 밖에서는 가짜로 돌지 않고 internal 오류를 낸다", async () => {
     vi.stubEnv("DEV", false);
     await expect(ipc.onWindowShown(() => undefined)).rejects.toMatchObject({ kind: "internal" });
+    await expect(ipc.onWindowVisibility(() => undefined)).rejects.toMatchObject({ kind: "internal" });
     vi.unstubAllEnvs();
+  });
+
+  it("창 보임 바뀜: Tauri 안에서는 Rust 이벤트를 듣고, 창 열림 · 세션 이벤트와 섞이지 않고, 그만 들으면 더 받지 않는다", async () => {
+    mockIPC(() => null, { shouldMockEvents: true });
+    const seen: WindowVisibilityEvent[] = [];
+    const shown: WindowShownEvent[] = [];
+    const stop = await ipc.onWindowVisibility((event) => seen.push(event));
+    await ipc.onWindowShown((event) => shown.push(event));
+
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> } })
+      .__TAURI_INTERNALS__;
+    const emit = (payload: WindowVisibilityEvent) => internals.invoke("plugin:event|emit", { event: WINDOW_VISIBILITY_EVENT, payload });
+
+    await emit({ visible: false });
+    await emit({ visible: true });
+    expect(seen).toEqual([{ visible: false }, { visible: true }]);
+    expect(shown).toEqual([]);
+
+    stop();
+    await emit({ visible: false });
+    expect(seen).toHaveLength(2);
+  });
+
+  it("창 보임 바뀜: 브라우저 가짜 모드는 흉내 낸 이벤트를 듣는 쪽마다 주고, 한쪽의 오류가 다른 쪽을 막지 않는다", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first: WindowVisibilityEvent[] = [];
+    const second: WindowVisibilityEvent[] = [];
+    await ipc.onWindowVisibility(() => {
+      throw new Error("boom");
+    });
+    const stopFirst = await ipc.onWindowVisibility((event) => first.push(event));
+    await ipc.onWindowVisibility((event) => second.push(event));
+
+    fakeClaude.simulateWindowVisibility(false);
+    fakeClaude.simulateWindowVisibility(true);
+    expect(first).toEqual([{ visible: false }, { visible: true }]);
+    expect(second).toEqual(first);
+    expect(quiet).toHaveBeenCalledTimes(2);
+
+    stopFirst();
+    fakeClaude.simulateWindowVisibility(false);
+    expect(first).toHaveLength(2);
+    expect(second).toHaveLength(3);
+
+    fakeClaude.reset();
+    fakeClaude.simulateWindowVisibility(true);
+    expect(second).toHaveLength(3);
+    quiet.mockRestore();
   });
 });
 

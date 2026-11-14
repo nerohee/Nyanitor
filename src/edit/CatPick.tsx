@@ -141,6 +141,9 @@ export function CatPick({ data, entries, agent, draft, onDraftCat, onBack, onDon
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tabs = useRef(new Map<string, HTMLButtonElement>());
+  const cards = useRef(new Map<string, HTMLButtonElement>());
+  // 고양이 칸의 「지금 칸」(로빙 탭인덱스) — 에이전트를 바꾸면 그 에이전트의 고른 칸부터 다시
+  const [cursor, setCursor] = useState<{ key: string; id: string } | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -248,6 +251,22 @@ export function CatPick({ data, entries, agent, draft, onDraftCat, onBack, onDon
   };
 
   if (!row) return null;
+  // 화살표는 칸 사이를 옮겨 다니기만 한다 — 고르기(저장)는 Space · Enter · 클릭 (D-55)
+  const stop = cursor && cursor.key === row.key && (CAT_IDS as readonly string[]).includes(cursor.id) ? cursor.id : (row.cat ?? CAT_IDS[0]);
+  const onCardKey = (event: KeyboardEvent, id: string) => {
+    const at = CAT_IDS.indexOf(id as (typeof CAT_IDS)[number]);
+    let to: number;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") to = at + 1;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") to = at - 1;
+    else if (event.key === "Home") to = 0;
+    else if (event.key === "End") to = CAT_IDS.length - 1;
+    else return;
+    event.preventDefault();
+    const next = CAT_IDS[(to + CAT_IDS.length) % CAT_IDS.length];
+    if (!next) return;
+    setCursor({ key: row.key, id: next });
+    cards.current.get(next)?.focus();
+  };
   const draftLabel = draft ? draft.label.trim() || draft.name : "";
   const owners = (id: string) => all.find((r) => r.key !== row.key && r.cat === id);
   const sub = row.kind === "main" ? t("edit.pick.mainSub") : row.mine ? t("edit.pick.mineSub") : null;
@@ -256,7 +275,7 @@ export function CatPick({ data, entries, agent, draft, onDraftCat, onBack, onDon
     <>
       <header className="ed-tray__head">
         <div className="ed-tray__titles">
-          <h1 className="ed-tray__title">{t("edit.pick.title")}</h1>
+          <h1 className="ed-tray__title" tabIndex={-1}>{t("edit.pick.title")}</h1>
           <p className="ed-tray__lead">{t("edit.pick.lead")}</p>
         </div>
         <button type="button" className="ws-btn" onClick={resetAll} disabled={!anyLinked || busy || draft !== null}>
@@ -407,8 +426,26 @@ export function CatPick({ data, entries, agent, draft, onDraftCat, onBack, onDon
                 const owner = owners(id);
                 const checked = row.cat === id;
                 return (
-                  <label key={id} className="ed-pk__card" data-checked={checked ? "true" : undefined} data-disabled={!picking || busy ? "true" : undefined}>
-                    <input type="radio" name="ed-pk-cat" value={id} checked={checked} disabled={!picking || busy} onChange={() => choose(id)} />
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    aria-disabled={busy ? true : undefined}
+                    disabled={!picking}
+                    tabIndex={id === stop ? 0 : -1}
+                    className="ed-pk__card"
+                    data-cat={id}
+                    data-checked={checked ? "true" : undefined}
+                    data-disabled={!picking || busy ? "true" : undefined}
+                    onClick={() => choose(id)}
+                    onFocus={() => setCursor({ key: row.key, id })}
+                    onKeyDown={(event) => onCardKey(event, id)}
+                    ref={(el) => {
+                      if (el) cards.current.set(id, el);
+                      else cards.current.delete(id);
+                    }}
+                  >
                     <span className="ed-pk__plate" aria-hidden="true">
                       <CatFigure cat={id} pose="sit" motion="still" />
                     </span>
@@ -421,7 +458,7 @@ export function CatPick({ data, entries, agent, draft, onDraftCat, onBack, onDon
                     ) : owner ? (
                       <span className="ed-pk__owner">{tf("edit.pick.usedBy", { agent: owner.label })}</span>
                     ) : null}
-                  </label>
+                  </button>
                 );
               })}
               <div className="ed-pk__card ed-pk__card--more">

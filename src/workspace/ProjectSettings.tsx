@@ -33,6 +33,7 @@ export function ProjectSettingsDialog({ project, readOnly, onClose, onChanged, o
   const ask = useRef<HTMLButtonElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
   const asked = useRef(false);
+  // 읽기 전용이면 이름 칸이 꺼져 있어 포커스를 못 받는다 — 비우면 대화상자 틀이 켜진 첫 칸(없으면 닫기 단추)으로 보낸다
   // 이 프로젝트에서 세션이 도는 중이면 미리 막는다 (그래도 Rust 의 거절은 아래에서 따로 처리 — 경합)
   const sessionHere = useSessionStore((state) => state.session?.projectId === project.id);
   const sessionHint = useId();
@@ -80,7 +81,7 @@ export function ProjectSettingsDialog({ project, readOnly, onClose, onChanged, o
   };
 
   return (
-    <Dialog titleId={titleId} onClose={onClose} busy={busy} initialFocus={() => nameInput.current} fallbackFocus={fallbackFocus}>
+    <Dialog titleId={titleId} onClose={onClose} busy={busy} initialFocus={() => (nameInput.current?.disabled ? null : nameInput.current)} fallbackFocus={fallbackFocus}>
       <header className="ws-dlg__head">
         <h2 id={titleId} className="ws-dlg__title">
           {t("ws.settings.title")}

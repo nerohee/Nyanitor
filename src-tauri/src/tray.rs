@@ -12,6 +12,7 @@ use tauri_plugin_log::log;
 
 use crate::attention::{self, AttentionHandle, Mood};
 use crate::strings;
+use crate::window;
 
 /// `tauri.conf.json` 의 메인 창 이름 (창을 따로 정하지 않으면 `main`).
 pub const MAIN_WINDOW: &str = "main";
@@ -73,13 +74,25 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>, cause: ShowCause) {
         log::warn!("main window not found when asked to show it");
         return;
     };
+    // 이 뒤부터 창 이벤트가 웹뷰를 숨기고 보인다 (첫 창이 보이기 전에는 건드리지 않는다)
+    window::begin(app);
     // 알 수 없으면 숨어 있던 것으로 본다 — 화면이 한 번 더 확인하는 편이 놓치는 것보다 낫다
     let was_away = !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true);
     // 최소화를 먼저 푼다. Windows 는 백그라운드 프로그램이 앞으로 나오는 것을 막아서(포커스 잠금)
     // set_focus 만으로는 다른 창 뒤에 남을 수 있다 — 잠깐 "항상 위" 로 올렸다 풀어 맨 위로 올린다.
+    let mut revealed = true;
+    for (step, result) in [("unminimize", window.unminimize()), ("show", window.show())] {
+        if let Err(err) = result {
+            log::warn!("failed to {step} the main window: {err}");
+            revealed = false;
+        }
+    }
+    // 숨겨 둔 웹뷰를 되돌린다 (화면에는 `app:window-visibility` 가 간다). 포커스를 주기 전에 — 숨은 웹뷰는 키보드 포커스를 받지 못한다.
+    // 창이 실제로 보이게 되지 않았으면 웹뷰도 그대로 둔다.
+    if revealed {
+        window::set_webview_visible(app, true);
+    }
     for (step, result) in [
-        ("unminimize", window.unminimize()),
-        ("show", window.show()),
         ("raise", window.set_always_on_top(true)),
         ("lower", window.set_always_on_top(false)),
         ("focus", window.set_focus()),
@@ -98,6 +111,7 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>, cause: ShowCause) {
 
 /// 메인 창의 닫기 요청은 막고 트레이로 숨긴다 (D-06). 완전 종료는 트레이 메뉴의 "종료".
 /// 창이 포커스를 얻으면 알림 쪽에 알린다 (알린 할 일을 창에서 봤는지 — D-50).
+/// 숨기거나 최소화하면 웹뷰도 숨기고, 다시 보이면 되돌린다 (`window.rs`, D-55).
 pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if window.label() != MAIN_WINDOW {
         return;
@@ -105,15 +119,22 @@ pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) 
     match event {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
-            if let Err(err) = window.hide() {
-                log::warn!("failed to hide the main window: {err}");
+            match window.hide() {
+                // 창만 숨기면 WebView2 는 "보임" 으로 남아 화면이 계속 돈다 — 웹뷰도 숨긴다 (D-55)
+                Ok(()) => {
+                    window::set_webview_visible(window.app_handle(), false);
+                }
+                Err(err) => log::warn!("failed to hide the main window: {err}"),
             }
         }
-        WindowEvent::Focused(true) => {
-            if let Some(handle) = window.try_state::<AttentionHandle>() {
+        WindowEvent::Focused(focused) => {
+            if *focused && let Some(handle) = window.try_state::<AttentionHandle>() {
                 handle.window_focused();
             }
+            // 최소화 · 최소화 풀림은 크기 · 포커스 이벤트로 온다 — 창의 실제 상태로 웹뷰를 맞춘다
+            window::sync_with_window(window);
         }
+        WindowEvent::Resized(_) => window::sync_with_window(window),
         _ => {}
     }
 }
@@ -129,15 +150,16 @@ fn quit<R: Runtime>(app: &AppHandle<R>) {
 /// 종료 경고 대화상자가 떠 있다 (두 번 눌러도 하나만)
 static QUIT_PROMPT_OPEN: AtomicBool = AtomicBool::new(false);
 
-/// 트레이 "종료" — 쉬는 중이면 바로 끝내고, 일하는 중이면 먼저 묻는다 (D-06 · D-50).
+/// 트레이 "종료" — 쉬는 중이면 바로 끝내고, 일하는 중이면 먼저 묻는다 (D-06 · D-50). 하네스 작업(설치 · 되돌리기 · 받기)이 도는 중이면 그 경고가 먼저다 (D-54).
+/// 끝내기로 고르면 그대로 끝낸다 — "도중 끝냄" 표시는 앱이 끝날 때(`lib.rs` 의 `RunEvent::Exit`) 남는다.
 /// 메뉴 처리기는 메인 스레드라 상태 확인은 따로 돌리고, 대화상자는 막지 않는 방식(`show` — 답이 오면 콜백)으로 띄운다.
 fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if !attention::quit_needs_warning(&app) {
+        let Some(warning) = attention::quit_warning(&app) else {
             quit(&app);
             return;
-        }
+        };
         if QUIT_PROMPT_OPEN.swap(true, Ordering::SeqCst) {
             // 이미 떠 있다 — 다른 창 뒤에 숨었을 수 있다 (P8-03 점검 5)
             log::info!("the quit prompt is already open — ignoring another quit");
@@ -146,7 +168,7 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
         let quit_app = app.clone();
         let mut dialog = app
             .dialog()
-            .message(strings::QUIT_MESSAGE)
+            .message(warning.message())
             .title(strings::QUIT_TITLE)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(

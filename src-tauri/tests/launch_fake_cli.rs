@@ -498,6 +498,32 @@ fn the_last_session_is_asked_and_resumed_by_project_id() {
 }
 
 #[test]
+fn the_plan_follows_the_screens_api_key_request_only_in_a_dev_build() {
+    let h = Harness::new("launch-apikey");
+    let db = open_db(&h);
+    let id = register(&db, &h, "p");
+    for requested in [false, true] {
+        let plan = launch::plan_start(
+            &db,
+            &plain_env(),
+            PlannerChoice::default(),
+            &StartRequest {
+                project_id: id,
+                resume: false,
+                use_api_key: requested,
+            },
+        )
+        .unwrap();
+        // 출시 빌드로 시험을 돌리면 true 를 보내도 false 다 (`cargo test --release`)
+        assert_eq!(
+            plan.use_api_key,
+            requested && cfg!(debug_assertions),
+            "requested {requested}"
+        );
+    }
+}
+
+#[test]
 fn resuming_a_project_with_no_saved_session_is_refused_and_asking_for_unknown_ids_fails() {
     let h = Harness::new("launch-noresume");
     let db = open_db(&h);

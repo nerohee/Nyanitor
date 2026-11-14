@@ -6,13 +6,16 @@
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
 
 use super::KNOWN_CLI_VERSION;
 use super::exec::{self, ClaudeCommand};
+use super::workdir;
 use crate::error::AppError;
 
 /// 짧은 명령 하나를 기다리는 최대 시간.
@@ -88,13 +91,17 @@ pub fn locate(
         .find(|candidate| candidate.is_file())
 }
 
-/// 이 프로세스의 환경(PATH · 홈)으로 찾는다.
+/// 이 프로세스의 환경(PATH · 홈)으로 찾는다. 못 찾으면 기억한 찾기 결과도 버린다 (`StatusCache`).
 pub fn locate_here(user_path: Option<&Path>) -> Option<PathBuf> {
-    locate(
+    let found = locate(
         user_path,
         std::env::var_os("PATH").as_deref(),
         std::env::home_dir().as_deref(),
-    )
+    );
+    if found.is_none() {
+        forget_status();
+    }
+    found
 }
 
 /// `claude --version` 의 첫 줄에서 버전 숫자만 (예: `2.1.296 (Claude Code)` → `2.1.296`).
@@ -229,15 +236,156 @@ pub fn status_with(
     status
 }
 
-/// 이 PC 에서 찾아 확인한다.
+/// 이 PC 에서 찾아 확인한다. 잘 갖춰진 결과(찾음 · 버전 읽음 · 로그인됨)는 5분 기억한다 (`StatusCache`) —
+/// 고양이 집을 열 때마다 `claude --version` · `claude auth status` 를 새로 띄우지 않게.
 pub fn status_here() -> ClaudeStatus {
     let cmd = locate_here(None).map(ClaudeCommand::new);
-    status_with(
-        cmd.as_ref(),
-        exec::api_key_present(),
-        exec::other_billing_vars(),
-    )
+    STATUS_CACHE.status(cmd.as_ref(), || {
+        status_with(
+            cmd.as_ref(),
+            exec::api_key_present(),
+            exec::other_billing_vars(),
+        )
+    })
 }
+
+/// 기억한 찾기 결과를 버린다 — 다음 `status_here` 가 프로세스를 새로 띄운다.
+/// 부르는 곳: 로그인 창을 띄울 때(`open_login_window`), `claude` 를 못 찾았을 때(`locate_here`), 세션 시작이 CLI 를 못 띄웠을 때(`session.rs`),
+/// 턴이 인증 오류로 끝났을 때(`forget_status_after_auth_error`). 기억은 5분이 지나거나 실행 파일이 바뀌어도 저절로 버려진다.
+pub fn forget_status() {
+    STATUS_CACHE.forget();
+}
+
+/// 턴이 끝날 때 받은 API 오류 번호가 인증 오류(401 · 403)이면 기억한 찾기 결과를 버린다 (로그인이 풀렸는데 "로그인됨" 이 남지 않게).
+pub fn forget_status_after_auth_error(api_error_status: Option<i64>) {
+    if matches!(api_error_status, Some(401 | 403)) {
+        forget_status();
+    }
+}
+
+/// 기억하는 시간 (사용량 기억과 같게 — `usage::CacheConfig::ok_ttl`)
+pub const STATUS_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// 기억한 결과가 어느 실행 파일의 것인가 — 경로 · 수정 시각 · 크기. 달라지면(지워졌거나 업데이트됐다) 다시 확인한다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Fingerprint {
+    program: PathBuf,
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+impl Fingerprint {
+    /// 실행 파일이 없으면 `None`
+    fn of(program: &Path) -> Option<Self> {
+        let meta = std::fs::metadata(program).ok()?;
+        Some(Self {
+            program: program.to_path_buf(),
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        })
+    }
+}
+
+struct Entry {
+    print: Fingerprint,
+    status: ClaudeStatus,
+    at: Instant,
+}
+
+/// 찾기 결과 기억 (P10-08, D-55). 기억하는 것은 **잘 갖춰진 결과**(찾음 · 버전 읽음 · 로그인됨 · 문제 없음)뿐이다 —
+/// 못 찾았거나 로그인이 안 됐거나 읽다 막힌 결과는 기억하지 않는다. 그래서 사용자가 로그인하거나 설치한 뒤 화면의 "다시 확인" 이
+/// 같은 명령을 다시 불러도 낡은 답이 나오지 않는다 (명령에 "다시 확인" 인자가 없다).
+///
+/// 같은 때 여러 번 불러도 (집 · 채팅이 함께 열린다) 프로세스는 한 번만 띄운다 — 뒤에 온 호출은 앞의 확인이 끝나기를 기다렸다 그 결과를 받는다.
+/// 확인하는 동안 `forget` 이 불렸으면 그 결과는 기억하지 않는다 (그 확인은 로그인 전 상태를 본 것일 수 있다).
+pub struct StatusCache {
+    entry: Mutex<Option<Entry>>,
+    /// `forget` 이 불릴 때마다 오른다 — 확인하는 사이에 불렸는지 알아본다
+    generation: AtomicU64,
+    /// 확인(프로세스 띄우기)은 한 번에 하나
+    probing: Mutex<()>,
+    ttl: Duration,
+}
+
+/// 한 번 읽은 결과를 기억해도 되는가
+fn cacheable(status: &ClaudeStatus) -> bool {
+    status.found
+        && status.version.is_some()
+        && status.logged_in == Some(true)
+        && status.problem.is_none()
+}
+
+impl StatusCache {
+    pub const fn new(ttl: Duration) -> Self {
+        Self {
+            entry: Mutex::new(None),
+            generation: AtomicU64::new(0),
+            probing: Mutex::new(()),
+            ttl,
+        }
+    }
+
+    fn entry(&self) -> MutexGuard<'_, Option<Entry>> {
+        self.entry.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// 기억을 버린다
+    pub fn forget(&self) {
+        let mut entry = self.entry();
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *entry = None;
+    }
+
+    fn lookup(&self, print: &Fingerprint) -> Option<ClaudeStatus> {
+        let mut entry = self.entry();
+        let hit = entry
+            .as_ref()
+            .is_some_and(|e| &e.print == print && e.at.elapsed() < self.ttl);
+        if hit {
+            return entry.as_ref().map(|e| e.status.clone());
+        }
+        // 낡았거나 다른 실행 파일의 것이다
+        *entry = None;
+        None
+    }
+
+    /// `cmd` 의 찾기 결과 — 기억한 것이 있고 아직 맞으면 그것, 아니면 `probe` 를 돌려 (한 번에 하나) 결과를 기억할 만하면 기억한다.
+    /// `cmd` 가 `None` (못 찾음) 이거나 실행 파일이 사라졌으면 기억을 버리고 `probe` 의 결과를 그대로 준다.
+    pub fn status(
+        &self,
+        cmd: Option<&ClaudeCommand>,
+        probe: impl FnOnce() -> ClaudeStatus,
+    ) -> ClaudeStatus {
+        let Some(print) = cmd.and_then(|cmd| Fingerprint::of(cmd.program())) else {
+            self.forget();
+            return probe();
+        };
+        if let Some(hit) = self.lookup(&print) {
+            return hit;
+        }
+        let _turn = self.probing.lock().unwrap_or_else(PoisonError::into_inner);
+        // 기다리는 동안 앞 호출이 채웠을 수 있다
+        if let Some(hit) = self.lookup(&print) {
+            return hit;
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let status = probe();
+        if cacheable(&status) {
+            let mut entry = self.entry();
+            if self.generation.load(Ordering::SeqCst) == generation {
+                *entry = Some(Entry {
+                    print,
+                    status: status.clone(),
+                    at: Instant::now(),
+                });
+            }
+        }
+        status
+    }
+}
+
+/// 앱 전체가 쓰는 기억 (`status_here`)
+static STATUS_CACHE: StatusCache = StatusCache::new(STATUS_TTL);
 
 /// `cmd.exe /C start ...` 에 넘길 글. 새 콘솔 창에서 `claude auth login` 이 돈다.
 /// 경로에 따옴표나 `%` 가 있으면 cmd 가 다르게 읽을 수 있어 거절한다.
@@ -266,6 +414,8 @@ fn system_cmd_exe(system_root: Option<&OsStr>) -> PathBuf {
 /// 로그인 안 됨 → `claude auth login` 을 새 터미널 창으로 띄운다. 로그인 흐름은 Anthropic 것이고 앱은 만들지 않는다 (D-19).
 /// 끝난 뒤 화면이 `status` 를 다시 불러 확인한다.
 pub fn open_login_window(program: &Path) -> Result<(), AppError> {
+    // 로그인하면 상태가 바뀐다 — 기억한 "로그인됨/안 됨" 을 버린다 (창을 못 띄워도 버린다: 사용자는 다른 길로 로그인할 수 있다)
+    forget_status();
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -274,12 +424,16 @@ pub fn open_login_window(program: &Path) -> Result<(), AppError> {
         let line = login_command_line(program)?;
         // `cmd.exe` 자체는 창 없이 돌고, `start` 가 claude 를 새 콘솔 창으로 띄운다.
         // PATH 에서 찾지 않고 System32 의 것을 쓴다 (환경을 비운 자식 · 쓰기 가능한 폴더의 가짜 `cmd.exe` 를 막는다).
+        // 앱 전용 빈 폴더에서 (공용 임시 폴더가 아니다 — `claude::workdir`)
+        let work_dir = workdir::for_spawn(None).map_err(|e| {
+            AppError::Internal(format!("could not prepare the CLI work folder: {e}"))
+        })?;
         let mut command = Command::new(system_cmd_exe(std::env::var_os("SystemRoot").as_deref()));
         command
             .raw_arg(line)
             .env_clear()
             .envs(exec::clean_env(std::env::vars_os(), false))
-            .current_dir(std::env::temp_dir())
+            .current_dir(work_dir)
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -921,5 +1075,302 @@ mod fix_tests {
 
     fn status_for_nothing() -> ClaudeStatus {
         status(None, false)
+    }
+}
+
+/// P10-08 — 찾기 결과 기억 (`StatusCache`)
+#[cfg(test)]
+mod cache_tests {
+    use super::super::test_util::TempDir;
+    use super::*;
+    use std::fs;
+
+    fn temp(name: &str) -> TempDir {
+        TempDir::new(name)
+    }
+
+    fn exe_name() -> &'static str {
+        if cfg!(windows) {
+            "claude.exe"
+        } else {
+            "claude"
+        }
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// 잘 갖춰진 결과 (찾음 · 버전 · 로그인됨)
+    fn good(path: &Path) -> ClaudeStatus {
+        ClaudeStatus {
+            found: true,
+            path: Some(path.display().to_string()),
+            version: Some("2.1.296".into()),
+            known_version: KNOWN_CLI_VERSION,
+            version_matches: Some(true),
+            logged_in: Some(true),
+            auth_method: Some("claude.ai".into()),
+            subscription_type: Some("pro".into()),
+            api_key_present: false,
+            other_billing: Vec::new(),
+            problem: None,
+        }
+    }
+
+    /// 실행 파일 자리에 둘 파일과, 그것을 가리키는 명령
+    fn exe_in(dir: &Path) -> (PathBuf, ClaudeCommand) {
+        let path = dir.join(exe_name());
+        fs::write(&path, b"v1").unwrap();
+        let cmd = ClaudeCommand::new(&path);
+        (path, cmd)
+    }
+
+    /// 부를 때마다 세고 `status` 를 돌려주는 확인 (프로세스를 띄우는 대신)
+    fn counted<'a>(
+        count: &'a AtomicUsize,
+        status: &'a ClaudeStatus,
+    ) -> impl FnOnce() -> ClaudeStatus + 'a {
+        move || {
+            count.fetch_add(1, Ordering::SeqCst);
+            status.clone()
+        }
+    }
+
+    #[test]
+    fn a_good_status_is_asked_for_once_when_asked_twice() {
+        let dir = temp("cache-twice");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        let first = cache.status(Some(&cmd), counted(&count, &status));
+        let second = cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn forgetting_makes_the_next_ask_probe_again() {
+        let dir = temp("cache-forget");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        cache.status(Some(&cmd), counted(&count, &status));
+        cache.forget();
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_memory_expires_after_its_time() {
+        let dir = temp("cache-ttl");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(Duration::from_millis(60));
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        cache.status(Some(&cmd), counted(&count, &status));
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        std::thread::sleep(Duration::from_millis(120));
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_default_memory_time_matches_the_usage_memory() {
+        assert_eq!(STATUS_TTL, crate::usage::CacheConfig::default().ok_ttl);
+    }
+
+    #[test]
+    fn a_changed_executable_is_asked_again() {
+        let dir = temp("cache-changed");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        cache.status(Some(&cmd), counted(&count, &status));
+        // 업데이트되어 크기가 달라졌다
+        fs::write(&path, b"version two is longer").unwrap();
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        // 크기는 같고 수정 시각만 달라졌다
+        fs::write(&path, b"version 3 is longer!!").unwrap();
+        let file = fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(3600))
+            .unwrap();
+        drop(file);
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        // 그 뒤로는 다시 기억한다
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn another_executable_path_is_asked_again() {
+        let dir = temp("cache-path");
+        let (path, cmd) = exe_in(&dir);
+        let other_dir = dir.join("other");
+        fs::create_dir_all(&other_dir).unwrap();
+        let (_, other) = exe_in(&other_dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        cache.status(Some(&cmd), counted(&count, &status));
+        cache.status(Some(&other), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_vanished_executable_is_asked_again_and_not_remembered() {
+        let dir = temp("cache-gone");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        cache.status(Some(&cmd), counted(&count, &status));
+        fs::remove_file(&path).unwrap();
+        cache.status(Some(&cmd), counted(&count, &status));
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        // 못 찾은 것(`None`)도 기억하지 않는다
+        cache.status(None, counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 4);
+    }
+
+    #[test]
+    fn only_a_complete_good_status_is_remembered() {
+        let dir = temp("cache-bad");
+        let (path, cmd) = exe_in(&dir);
+        let cases: Vec<(&str, ClaudeStatus)> = vec![
+            (
+                "logged out",
+                ClaudeStatus {
+                    logged_in: Some(false),
+                    ..good(&path)
+                },
+            ),
+            (
+                "login unknown",
+                ClaudeStatus {
+                    logged_in: None,
+                    problem: Some("auth_failed".into()),
+                    ..good(&path)
+                },
+            ),
+            (
+                "no version",
+                ClaudeStatus {
+                    version: None,
+                    problem: Some("version_failed".into()),
+                    ..good(&path)
+                },
+            ),
+            (
+                "not found",
+                ClaudeStatus {
+                    found: false,
+                    ..good(&path)
+                },
+            ),
+        ];
+        for (name, status) in cases {
+            let cache = StatusCache::new(STATUS_TTL);
+            let count = AtomicUsize::new(0);
+            cache.status(Some(&cmd), counted(&count, &status));
+            cache.status(Some(&cmd), counted(&count, &status));
+            assert_eq!(count.load(Ordering::SeqCst), 2, "{name}");
+        }
+    }
+
+    #[test]
+    fn logging_in_after_a_logged_out_answer_is_seen_on_the_next_ask() {
+        let dir = temp("cache-login");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let out = ClaudeStatus {
+            logged_in: Some(false),
+            ..good(&path)
+        };
+        assert_eq!(
+            cache.status(Some(&cmd), || out.clone()).logged_in,
+            Some(false)
+        );
+        // 사용자가 터미널에서 로그인했다 — 명령에 "다시 확인" 인자가 없어도 낡은 답이 남지 않는다
+        assert_eq!(
+            cache.status(Some(&cmd), || good(&path)).logged_in,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn a_forget_during_a_probe_keeps_that_probes_answer_out_of_the_memory() {
+        let dir = temp("cache-race");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        // 확인하는 사이에 로그인 창이 열렸다
+        cache.status(Some(&cmd), || {
+            cache.forget();
+            status.clone()
+        });
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "앞의 결과는 기억되지 않았다"
+        );
+        cache.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn calls_at_the_same_time_start_the_process_only_once() {
+        let dir = temp("cache-parallel");
+        let (path, cmd) = exe_in(&dir);
+        let cache = StatusCache::new(STATUS_TTL);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        std::thread::scope(|scope| {
+            for _ in 0..6 {
+                scope.spawn(|| {
+                    cache.status(Some(&cmd), || {
+                        count.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(150));
+                        status.clone()
+                    });
+                });
+            }
+        });
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_auth_error_and_a_login_window_forget_but_other_errors_do_not() {
+        // 앱 전체 기억(`STATUS_CACHE`)을 건드리므로 이 시험만 쓴다 (다른 시험은 자기 `StatusCache` 를 만든다)
+        let dir = temp("cache-auth");
+        let (path, cmd) = exe_in(&dir);
+        let count = AtomicUsize::new(0);
+        let status = good(&path);
+        STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+        for other in [None, Some(429), Some(500), Some(404)] {
+            forget_status_after_auth_error(other);
+        }
+        STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        forget_status_after_auth_error(Some(401));
+        STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        forget_status_after_auth_error(Some(403));
+        STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        // 로그인 창을 띄우려는 것도 버린다. 창은 실제로 띄우지 않는다 — `%` 가 든 경로는 창을 띄우기 전에 거절되고 (Windows), 다른 OS 는 아직 못 띄운다.
+        assert!(open_login_window(Path::new(r"C:\a%b\claude.exe")).is_err());
+        STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+        assert_eq!(count.load(Ordering::SeqCst), 4);
+        STATUS_CACHE.forget();
     }
 }

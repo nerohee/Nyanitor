@@ -274,6 +274,25 @@ describe("고양이 집 — 읽는 중 · 다시 읽기", () => {
     });
   }
 
+  it("읽은 때 줄(「n분 전 읽음」)은 읽어 주는 알림 영역이 아니다 — 갱신 실패만 따로 알린다 (D-55)", async () => {
+    const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
+    render(<Home {...NAV} />);
+    const line = await screen.findByText("10분 전 읽음");
+    expect(line.closest('[role="status"]')).toBeNull();
+    expect(line).not.toHaveAttribute("role");
+    const notice = (): string => Array.from(document.querySelectorAll(".hm-usage [role='status']")).map((el) => el.textContent).join("|");
+    expect(notice()).toBe("");
+
+    read.mockRejectedValue(new Error("boom"));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "다시 읽기" })));
+    expect(screen.getByText("갱신 실패 · 10분 전 기준").closest('[role="status"]')).toBeNull();
+    expect(notice()).toBe("사용량을 새로 읽지 못했어요. 마지막으로 읽은 값이 보여요.");
+
+    read.mockResolvedValue({ ...OK_USAGE, readAt: Math.floor(Date.now() / 1000) });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "다시 읽기" })));
+    expect(notice()).toBe("");
+  });
+
   it("받은 뒤 이유가 분명하면(로그인 풀림) 숫자를 지우고 이유를 보인다", async () => {
     const read = vi.spyOn(ipc, "usageRead").mockResolvedValue(tenMinutesAgo());
     render(<Home {...NAV} />);

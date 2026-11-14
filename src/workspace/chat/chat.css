@@ -458,6 +458,11 @@
     0 0 0 4px var(--accent),
     4px 5px 0 4px var(--ui-line);
 }
+/* 띠 (4px) 와 그림자 (오른쪽 8px · 아래 9px) 를 벗어난 바깥에 링을 그린다 — 안쪽에 그리면 어두운 테마에서 띠와 1.05:1 로 사라졌다.
+   링 (--focus-ring) 대 바닥: 밝게 5.14:1 · 어둡게 8.06:1. 띠 둘레 padding (--space-3 = 12px) 안에 들어가는 한계가 10px + 2px */
+.wc-card[data-pending="true"]:focus-visible {
+  outline-offset: 10px;
+}
 /* 지나감 · 취소됨 — 흐리게 (글자 대비는 지키고 테두리 · 그림자만 조용히) */
 .wc-card[data-status="expired"],
 .wc-card[data-status="cancelled"] {
@@ -1392,4 +1397,109 @@
   .wc-block {
     padding: var(--space-2);
   }
+}
+
+/* ── 폴더 설정 확인 (P10-10) — 대화상자(`.ws-dlg`) 안. 새 색 없이 토큰만 ── */
+.wc-trust {
+  gap: var(--space-3);
+}
+.wc-trust__lead {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.wc-trust__wait {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.wc-trust__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.wc-trust__file {
+  padding: var(--space-3);
+  border: 1.5px dashed var(--ui-line);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface-sunken);
+}
+/* 프로젝트 폴더 밖 파일은 눈에 띄게 */
+.wc-trust__file[data-outside="true"] {
+  border-style: solid;
+  border-color: var(--color-warning);
+  background: var(--banner-warn-bg);
+}
+.wc-trust__path {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+.wc-trust__scope {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.wc-trust__file[data-outside="true"] .wc-trust__scope {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+}
+.wc-trust__hint {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.wc-trust__unreadable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+}
+.wc-trust__group {
+  margin-top: var(--space-3);
+}
+.wc-trust__kind {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+/* 길면 칸 안 스크롤 */
+.wc-trust__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 9.5rem;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--wobble-sm);
+  background: var(--color-surface);
+  list-style: none;
+}
+.wc-trust__list li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.wc-trust__name {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.wc-trust__code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wc-trust__more {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }

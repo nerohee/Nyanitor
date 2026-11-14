@@ -108,8 +108,9 @@ fn not_found(err: &io::Error) -> bool {
 
 // ───────────────────────── 이름 · 경로 ─────────────────────────
 
-/// 윈도가 장치로 다루는 이름인가 (`CON.md` 도 장치다)
-fn is_reserved_device(name: &str) -> bool {
+/// 윈도가 장치로 다루는 이름인가 (`CON.md` 도 장치다) — 모든 OS 에서 거른다 (저장소를 윈도로 옮길 수 있다).
+/// 문서 경로 칸(`valid_component`)과 에이전트 · 스킬 · 고양이 이름(`custom::id`)이 같이 쓴다.
+pub fn is_reserved_device(name: &str) -> bool {
     let stem = name
         .split('.')
         .next()

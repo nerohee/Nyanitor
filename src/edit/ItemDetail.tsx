@@ -44,6 +44,13 @@ function partProblem(part: CustomTextPart): string | null {
 
 type ValueKey = "model" | "effort";
 
+/**
+ * 직접 만든 항목의 모델 · 수준을 저장하면 파일 앞머리가 바뀌어 상세가 새로 만들어진다 (`refreshAll` → 부모의 key) — 그 칸의 포커스가 빠지지 않게
+ * 저장 전에 어느 칸이었는지 적어 두고, 새로 만들어진 칸이 같은 자리에 포커스를 돌려 준다 (D-55). 오래된 기록은 쓰지 않는다.
+ */
+let restoreValueFocus: { item: string; key: ValueKey; option: string; at: number } | null = null;
+const RESTORE_MS = 5000;
+
 function ValueRow({
   id,
   label,
@@ -68,6 +75,25 @@ function ValueRow({
   const shown = (v: string) => (v === "" ? t("edit.valueNone") : valueLabel(valueKey, v));
   const originText = origin === null ? t("edit.valueNone") : shown(origin);
   const changed = value !== (origin ?? "");
+  // 「지금 칸」(로빙 탭인덱스) — 고른 값, 없으면 첫 칸. 화살표로 옮긴 칸이 이어진다
+  const [cursor, setCursor] = useState<string | null>(null);
+  const stop = cursor !== null && options.includes(cursor) ? cursor : options.includes(value) ? value : (options[0] ?? "");
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  // 화살표 · Home · End 는 옮기기만 한다 — 고르기(저장)는 Space · Enter · 클릭 (고양이 고르기와 같다, D-55)
+  const onKeyDown = (event: KeyboardEvent, option: string) => {
+    const at = options.indexOf(option);
+    let to: number;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") to = at + 1;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") to = at - 1;
+    else if (event.key === "Home") to = 0;
+    else if (event.key === "End") to = options.length - 1;
+    else return;
+    event.preventDefault();
+    const next = options[(to + options.length) % options.length];
+    if (next === undefined) return;
+    setCursor(next);
+    buttons.current.get(next)?.focus();
+  };
   return (
     <div className="ed-value" data-changed={showOrigin && changed ? "true" : undefined}>
       <span className="ed-value__label" id={`${id}-label`}>
@@ -76,10 +102,25 @@ function ValueRow({
       {/* 펼치는 목록(<select>)은 OS 가 그려 어두운 테마에서 글씨가 안 보였다 (고객, 2026-11-09) — 셋뿐이라 한 줄 단추로 */}
       <span className="ed-seg" role="radiogroup" aria-labelledby={`${id}-label`}>
         {options.map((option) => (
-          <label key={option || "none"} className="ed-seg__opt">
-            <input type="radio" name={id} value={option} checked={value === option} onChange={() => onChange(option)} />
-            <span>{shown(option)}</span>
-          </label>
+          <button
+            key={option || "none"}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            tabIndex={option === stop ? 0 : -1}
+            value={option}
+            data-key={valueKey}
+            className="ed-seg__opt"
+            onClick={() => onChange(option)}
+            onFocus={() => setCursor(option)}
+            onKeyDown={(event) => onKeyDown(event, option)}
+            ref={(el) => {
+              if (el) buttons.current.set(option, el);
+              else buttons.current.delete(option);
+            }}
+          >
+            {shown(option)}
+          </button>
         ))}
       </span>
       {showOrigin && (
@@ -107,11 +148,22 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
   const queue = useRef<Promise<void>>(Promise.resolve());
   const alive = useRef(true);
   const ids = useId();
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
+  }, []);
+  // 새로 만들어졌으면 값을 저장하던 칸에 포커스를 돌려 준다
+  useEffect(() => {
+    const want = restoreValueFocus;
+    restoreValueFocus = null;
+    if (!want || want.item !== entry.id || Date.now() - want.at > RESTORE_MS) return;
+    const radios = Array.from(box.current?.querySelectorAll<HTMLButtonElement>(`button[role="radio"][data-key="${want.key}"]`) ?? []);
+    (radios.find((radio) => radio.value === want.option) ?? radios.find((radio) => radio.getAttribute("aria-checked") === "true"))?.focus();
+    // 처음 그려질 때 한 번만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // 값을 저장하는 동안은 적용 단추를 켠다 (누르면 저장이 끝나기를 기다렸다가 적용한다)
   const saving = state.kind === "saving";
@@ -127,7 +179,7 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
   // 원본 값과 같게 고르면 "원본 값으로"(null) — 내가 만든 것은 원본이 없어 고른 값 그대로 (비우면 그 줄을 지운다)
   const wire = (selected: string, origin: string | null): string | null => (selected === "" || (!mine && selected === origin) ? null : selected);
 
-  const save = (nextModel: string, nextEffort: string) => {
+  const save = (nextModel: string, nextEffort: string, from: { key: ValueKey; option: string }) => {
     queue.current = queue.current.then(async () => {
       if (alive.current) setState({ kind: "saving" });
       try {
@@ -142,8 +194,10 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
           setState({ kind: "saved" });
           setNotOurs(result.notOurs);
         }
-        if (mine) await data.refreshAll();
-        else await data.refresh();
+        if (mine) {
+          restoreValueFocus = { item: entry.id, ...from, at: Date.now() };
+          await data.refreshAll();
+        } else await data.refresh();
       } catch (raw) {
         const kind = errorKind(raw);
         if (alive.current) setState({ kind: "failed", text: errorLine(kind) });
@@ -156,7 +210,7 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
     if (key === "model") setModel(next);
     else setEffort(next);
     setState({ kind: "saving" });
-    save(key === "model" ? next : model, key === "effort" ? next : effort);
+    save(key === "model" ? next : model, key === "effort" ? next : effort, { key, option: next });
   };
 
   return (
@@ -180,7 +234,7 @@ function ValuesSection({ entry, data, report }: { entry: CustomItemInfo; data: E
         </span>
       </h3>
       <p className="ed-sec__lead">{t(entry.kind === "main" ? "edit.valuesMain" : mine ? "edit.valuesMine" : "edit.valuesLead")}</p>
-      <div className="ed-values">
+      <div className="ed-values" ref={box}>
         <ValueRow id={`${ids}-model`} label={t("cat.info.model")} valueKey="model" value={model} origin={entry.model} showOrigin={!mine} onChange={(v) => change("model", v)} />
         <ValueRow id={`${ids}-effort`} label={t("cat.info.effort")} valueKey="effort" value={effort} origin={entry.effort} showOrigin={!mine} onChange={(v) => change("effort", v)} />
       </div>

@@ -7,6 +7,9 @@
 //!   (멀쩡한 파일을 일시적 문제로 치워 버리지 않으려고).
 //! - **DB 를 못 써도 앱은 뜬다.** `AppDb::open` 은 실패하지 않고, 못 쓰는 상태면 `read` · `write` 가 `db_unavailable` 을 돌려준다.
 //!
+//! 지운 글은 파일에 남지 않게 한다 (P10-07): 연결을 열 때마다 `PRAGMA secure_delete = ON` (지운 줄 · 빈 페이지를 0 으로 덮는다 — SQLite 기본은 덮지 않아
+//! 비운 채팅 글 · 뺀 프로젝트의 기록이 `nyanitor.db` 를 그냥 열면 보였다). 이미 빈 페이지에 남은 옛 글은 5번으로 올라갈 때 `VACUUM` 을 **한 번** 해서 없앤다 (`upgrade`).
+//!
 //! 설정 (작업자 판단): 롤백 저널(기본 `DELETE`) + `synchronous=FULL`(기본) — 파일 하나만 남고, 전기가 나가도 안 깨진다. 이 앱은 한 프로세스(single-instance)가
 //! 연결 하나를 `Mutex` 로 쓰므로 WAL 의 동시 읽기 이점이 없고, WAL 은 곁 파일이 늘어 옮기기 · 읽기 전용 열기가 까다롭다. `foreign_keys=ON`, `busy_timeout=2초`.
 
@@ -15,7 +18,7 @@ pub mod migrations;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, ErrorCode, OpenFlags};
 use tauri_plugin_log::log;
@@ -189,8 +192,50 @@ fn try_open(path: &Path) -> Result<Slot, OpenFailure> {
     }
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(classify)?;
-    migrations::apply(&mut conn, version, migrations::MIGRATIONS).map_err(classify)?;
+    // 지운 글을 0 으로 덮는다 — 연결마다 켜야 한다 (파일에 저장되는 설정이 아니다). 못 켜면 글이 남을 수 있으니 열지 않는다.
+    conn.pragma_update(None, "secure_delete", true)
+        .map_err(classify)?;
+    upgrade(&mut conn, version, &vacuum).map_err(classify)?;
     Ok(Slot::Ready(conn))
+}
+
+/// 파일을 다시 써서 빈 페이지를 없앤다 (트랜잭션 밖에서만 된다 — 열린 트랜잭션이 없는 연결에서 부른다).
+fn vacuum(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("VACUUM")
+}
+
+/// `from` 번 DB 를 가장 새 번호까지 올린다. 이미 데이터가 있던 DB(`from > 0`)가 `VACUUM_STEP` 번으로 올라가면 끝에 `vacuum` 을 한 번 부른다 —
+/// 앞 번호에서 지웠거나 이번에 비운 글이 빈 페이지에 남아 있어서다 (새 DB 는 지울 것이 없다. `VACUUM_STEP` 이상에서 시작한 DB 는 이미 했다).
+///
+/// 큰 DB 는 다시 쓰는 데 시간이 든다 (파일 크기에 거의 비례 — 이 앱 기록은 프로젝트당 5MB 안팎이라 보통 1초 안쪽) — 열기 한 번에 걸린 시간을 로그에 남긴다.
+/// `VACUUM` 이 실패해도(디스크 부족 · 다른 프로그램이 잠금 등) 앱은 뜬다: 번호를 `VACUUM_STEP - 1` 로 내려 다음 실행에서 그 번호를 다시 한다 (5번은 다시 해도 같다).
+/// 번호를 못 내려도 앱은 뜬다 (그때는 다시 하지 않을 뿐 — 이후 지우는 글은 `secure_delete` 가 덮는다). 구조 변경 자체가 실패하면 오류.
+fn upgrade(
+    conn: &mut Connection,
+    from: u32,
+    vacuum: &dyn Fn(&Connection) -> rusqlite::Result<()>,
+) -> Result<(), rusqlite::Error> {
+    migrations::apply(conn, from, migrations::MIGRATIONS)?;
+    if from == 0 || from >= migrations::VACUUM_STEP || SCHEMA_VERSION < migrations::VACUUM_STEP {
+        return Ok(());
+    }
+    let started = Instant::now();
+    match vacuum(conn) {
+        Ok(()) => log::info!(
+            "vacuumed the app database once to drop deleted text ({:?})",
+            started.elapsed()
+        ),
+        Err(err) => {
+            log::warn!(
+                "could not vacuum the app database ({err}); it will be tried again next time"
+            );
+            if let Err(err) = conn.pragma_update(None, "user_version", migrations::VACUUM_STEP - 1)
+            {
+                log::warn!("could not mark the vacuum as not done: {err}");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn now_secs() -> u64 {
@@ -532,6 +577,300 @@ mod tests {
         assert!(matches!(db.status(), DbStatus::Unavailable(_)));
         assert!(path.is_dir(), "left where it was");
         assert!(corrupt_files(&dir).is_empty());
+    }
+
+    // ───────── 지운 글이 파일에 남지 않게 (P10-07) ─────────
+
+    /// 파일 바이트에 이 글이 있는가 (곁 파일 `-journal` 도 같이 본다)
+    fn file_has(path: &Path, needle: &str) -> bool {
+        [String::new(), "-journal".to_string()].iter().any(|side| {
+            let bytes = fs::read(with_suffix(path, side)).unwrap_or_default();
+            bytes
+                .windows(needle.len())
+                .any(|window| window == needle.as_bytes())
+        })
+    }
+
+    /// 한 페이지(4096)보다 훨씬 커서 넘침 페이지까지 쓰는 글 — 표식이 앞 · 가운데 · 끝에 있다
+    fn big_text(marker: &str) -> String {
+        format!(
+            "{marker}-head {} {marker}-middle {} {marker}-tail",
+            "x".repeat(9_000),
+            "y".repeat(9_000)
+        )
+    }
+
+    fn put_chat_item(conn: &Connection, project_id: i64, kind: &str, body: &str) {
+        conn.execute(
+            "INSERT INTO chat_items (project_id, run_id, at, kind, body) VALUES (?1, 1, 1, ?2, ?3)",
+            rusqlite::params![project_id, kind, body],
+        )
+        .unwrap();
+    }
+
+    fn insert_project(conn: &Connection, key: &str) {
+        conn.execute(
+            "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES (?1, ?1, 'n', 1, 1)",
+            [key],
+        )
+        .unwrap();
+    }
+
+    fn user_version_of(conn: &Connection) -> u32 {
+        conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn secure_delete_is_on_for_the_apps_connection() {
+        let dir = TempDir::new("db-secure");
+        let db = AppDb::open(&dir.join(DB_FILE));
+        let on: i64 = db
+            .read(|conn| Ok(conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(on, 1);
+    }
+
+    #[test]
+    fn text_the_app_deletes_does_not_stay_in_the_file() {
+        // 대조: 설정을 끈 연결은 지워도 글이 파일에 남는다 (이 시험이 남은 글을 알아보는지)
+        let control_dir = TempDir::new("db-secure-control");
+        let control_path = control_dir.join(DB_FILE);
+        {
+            let mut conn = Connection::open(&control_path).unwrap();
+            conn.pragma_update(None, "secure_delete", false).unwrap();
+            conn.pragma_update(None, "foreign_keys", true).unwrap();
+            migrations::apply(&mut conn, 0, migrations::MIGRATIONS).unwrap();
+            insert_project(&conn, "k");
+            put_chat_item(&conn, 1, "text", &big_text("LEFTOVER-CONTROL"));
+            conn.execute("DELETE FROM projects", []).unwrap();
+        }
+        assert!(
+            file_has(&control_path, "LEFTOVER-CONTROL-middle"),
+            "without secure_delete the deleted text stays in the free pages"
+        );
+
+        // 앱의 연결: 프로젝트를 빼서 따라 지워진 글 · 글을 비운 줄 · 줄만 지운 글 모두 남지 않는다
+        let dir = TempDir::new("db-secure-app");
+        let path = dir.join(DB_FILE);
+        {
+            let db = AppDb::open(&path);
+            insert_row(&db, "gone");
+            insert_row(&db, "stays");
+            db.write(|conn| {
+                put_chat_item(conn, 1, "text", &big_text("SECRET-CASCADE"));
+                put_chat_item(conn, 2, "text", &big_text("SECRET-EMPTIED"));
+                put_chat_item(conn, 2, "text", &big_text("SECRET-DELETED"));
+                put_chat_item(conn, 2, "text", "kept line");
+                Ok(())
+            })
+            .unwrap();
+        }
+        // 글이 실제로 파일에 있었다 (살아 있는 동안은 보인다)
+        assert!(file_has(&path, "SECRET-EMPTIED-middle"));
+        {
+            let db = AppDb::open(&path);
+            db.write(|conn| {
+                conn.execute("DELETE FROM projects WHERE id = 1", [])?;
+                conn.execute(
+                    "UPDATE chat_items SET body = '{}' WHERE body LIKE '%SECRET-EMPTIED%'",
+                    [],
+                )?;
+                conn.execute(
+                    "DELETE FROM chat_items WHERE body LIKE '%SECRET-DELETED%'",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        for marker in ["SECRET-CASCADE", "SECRET-EMPTIED", "SECRET-DELETED"] {
+            for part in ["head", "middle", "tail"] {
+                assert!(
+                    !file_has(&path, &format!("{marker}-{part}")),
+                    "{marker}-{part} stayed in the database file"
+                );
+            }
+        }
+        // 남긴 줄은 그대로
+        let db = AppDb::open(&path);
+        let kept: i64 = db
+            .read(|conn| {
+                Ok(conn.query_row(
+                    "SELECT count(*) FROM chat_items WHERE body = 'kept line'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(kept, 1);
+    }
+
+    /// 앞 판(4번까지)이 만든 DB — `secure_delete` 를 끄고 만들어 지운 글이 빈 페이지에 남아 있다.
+    fn old_database_with_leftovers(path: &Path) {
+        let mut conn = Connection::open(path).unwrap();
+        conn.pragma_update(None, "secure_delete", false).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations::apply(&mut conn, 0, &migrations::MIGRATIONS[..4]).unwrap();
+        insert_project(&conn, "old-gone");
+        insert_project(&conn, "old-stays");
+        put_chat_item(&conn, 1, "text", &big_text("OLD-REMOVED-PROJECT"));
+        put_chat_item(&conn, 2, "text", &big_text("OLD-EMPTIED"));
+        put_chat_item(&conn, 2, "text", "kept line");
+        put_chat_item(
+            &conn,
+            2,
+            "session_ended",
+            r#"{"type":"session_ended","ended":"died","exitCode":1,"forced":false,"midTurn":false,"stderrTail":["token=OLD-STDERR-SECRET"]}"#,
+        );
+        conn.execute("DELETE FROM projects WHERE id = 1", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE chat_items SET body = '{}' WHERE body LIKE '%OLD-EMPTIED%'",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_old_database_is_vacuumed_once_when_it_comes_up_to_number_five() {
+        let dir = TempDir::new("db-vacuum-old");
+        let path = dir.join(DB_FILE);
+        old_database_with_leftovers(&path);
+        assert_eq!(user_version(&path), 4);
+        // 앞 판이 남긴 글이 지금 파일에 보인다
+        assert!(file_has(&path, "OLD-REMOVED-PROJECT-middle"));
+        assert!(file_has(&path, "OLD-EMPTIED-middle"));
+        assert!(file_has(&path, "OLD-STDERR-SECRET"));
+
+        let db = AppDb::open(&path);
+        assert_eq!(db.status(), DbStatus::Ready);
+        drop(db);
+        assert_eq!(user_version(&path), SCHEMA_VERSION);
+        for needle in [
+            "OLD-REMOVED-PROJECT-head",
+            "OLD-REMOVED-PROJECT-middle",
+            "OLD-REMOVED-PROJECT-tail",
+            "OLD-EMPTIED-head",
+            "OLD-EMPTIED-middle",
+            "OLD-STDERR-SECRET",
+        ] {
+            assert!(!file_has(&path, needle), "{needle} stayed in the file");
+        }
+        // 남긴 줄 · 프로젝트는 그대로, 세션 끝 줄은 stderr 글만 빠졌다
+        let db = AppDb::open(&path);
+        let (projects, items, ended): (i64, i64, String) = db
+            .read(|conn| {
+                Ok((
+                    conn.query_row("SELECT count(*) FROM projects", [], |r| r.get(0))?,
+                    conn.query_row("SELECT count(*) FROM chat_items", [], |r| r.get(0))?,
+                    conn.query_row(
+                        "SELECT body FROM chat_items WHERE kind = 'session_ended'",
+                        [],
+                        |r| r.get(0),
+                    )?,
+                ))
+            })
+            .unwrap();
+        assert_eq!((projects, items), (1, 3));
+        let ended: serde_json::Value = serde_json::from_str(&ended).unwrap();
+        assert_eq!(ended["stderrTail"], serde_json::json!([]));
+        assert_eq!(ended["exitCode"], 1);
+    }
+
+    #[test]
+    fn the_vacuum_is_skipped_for_new_databases_and_for_ones_already_at_number_five() {
+        let ran = std::cell::Cell::new(0);
+        let count_runs = |_: &Connection| {
+            ran.set(ran.get() + 1);
+            Ok(())
+        };
+        // 새 DB — 지울 것이 없다
+        let mut fresh = Connection::open_in_memory().unwrap();
+        upgrade(&mut fresh, 0, &count_runs).unwrap();
+        assert_eq!(ran.get(), 0);
+        assert_eq!(user_version_of(&fresh), SCHEMA_VERSION);
+        // 이미 5번 — 앞서 했다
+        upgrade(&mut fresh, SCHEMA_VERSION, &count_runs).unwrap();
+        assert_eq!(ran.get(), 0);
+        // 4번 DB — 한다
+        let mut old = Connection::open_in_memory().unwrap();
+        migrations::apply(&mut old, 0, &migrations::MIGRATIONS[..4]).unwrap();
+        upgrade(&mut old, 4, &count_runs).unwrap();
+        assert_eq!(ran.get(), 1);
+        assert_eq!(user_version_of(&old), SCHEMA_VERSION);
+        // 그 뒤로는 다시 안 한다
+        upgrade(&mut old, SCHEMA_VERSION, &count_runs).unwrap();
+        assert_eq!(ran.get(), 1);
+    }
+
+    #[test]
+    fn a_vacuum_that_fails_does_not_stop_the_app_and_is_tried_again_next_time() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::apply(&mut conn, 0, &migrations::MIGRATIONS[..2]).unwrap();
+        insert_project(&conn, "keep me");
+        let fail = |_: &Connection| {
+            Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+                Some("disk is full".into()),
+            ))
+        };
+        // 구조 변경은 끝났고 열기는 성공 — 번호만 한 칸 내려가 있다
+        upgrade(&mut conn, 2, &fail).unwrap();
+        assert_eq!(user_version_of(&conn), migrations::VACUUM_STEP - 1);
+        let index: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'chat_items_unbound'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, 1, "the 5th step's index is already there");
+        // 다음 실행: 5번만 다시 하고(이미 있는 색인에 걸리지 않는다) 이번에는 성공한다
+        let ran = std::cell::Cell::new(0);
+        upgrade(&mut conn, migrations::VACUUM_STEP - 1, &|_: &Connection| {
+            ran.set(ran.get() + 1);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(ran.get(), 1);
+        assert_eq!(user_version_of(&conn), SCHEMA_VERSION);
+        let projects: i64 = conn
+            .query_row("SELECT count(*) FROM projects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(projects, 1);
+    }
+
+    /// 큰 DB 에서 `VACUUM` 이 얼마나 걸리나 (보고용 — `cargo test vacuum_time -- --ignored --nocapture`)
+    #[test]
+    #[ignore = "measures the vacuum time on a large database; slow"]
+    fn vacuum_time_on_a_large_database() {
+        let dir = TempDir::new("db-vacuum-large");
+        let path = dir.join(DB_FILE);
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            conn.pragma_update(None, "foreign_keys", true).unwrap();
+            migrations::apply(&mut conn, 0, &migrations::MIGRATIONS[..4]).unwrap();
+            insert_project(&conn, "big");
+            let tx = conn.transaction().unwrap();
+            let body = format!("{{\"text\":\"{}\"}}", "z".repeat(4_000));
+            for _ in 0..25_000 {
+                put_chat_item(&tx, 1, "text", &body);
+            }
+            tx.commit().unwrap();
+            // 절반을 지워 빈 페이지를 만든다
+            conn.execute("DELETE FROM chat_items WHERE id % 2 = 0", [])
+                .unwrap();
+        }
+        let size = fs::metadata(&path).unwrap().len();
+        let started = Instant::now();
+        let db = AppDb::open(&path);
+        let took = started.elapsed();
+        assert_eq!(db.status(), DbStatus::Ready);
+        println!(
+            "opening a {} MB version-4 database (with the one-time vacuum) took {took:?}",
+            size / 1_000_000
+        );
     }
 
     #[test]

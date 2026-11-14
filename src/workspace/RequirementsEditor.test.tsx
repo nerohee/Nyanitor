@@ -61,7 +61,7 @@ describe("읽기", () => {
     expect(screen.getByText("저장됨")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "요구사항 (마크다운)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "쓰기" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "미리보기" })).toHaveAttribute("title", "미리보기 (Ctrl+Shift+V)");
+    expect(screen.getByRole("button", { name: "미리보기" })).toHaveAttribute("title", "미리보기 (Ctrl+Shift+E)");
     expect(screen.getAllByText("Ctrl").length).toBeGreaterThanOrEqual(2);
   });
 
@@ -120,6 +120,13 @@ describe("읽기", () => {
 });
 
 describe("저장", () => {
+  it("저장 표시는 읽어 주지 않는다 (role=status 없음) — 실패만 role=alert", async () => {
+    await mount();
+    expect(screen.getByText("저장됨").closest(".ws-ed__saved")).not.toHaveAttribute("role");
+    type("쓰는 중");
+    expect(screen.getByText("저장 안 됨").closest(".ws-ed__saved")).not.toHaveAttribute("role");
+  });
+
   it("쓰다가 1초 멈추면 자동 저장 — '저장 안 됨' → '저장됨 시각'", async () => {
     await mount();
     const write = vi.spyOn(ipc, "projectRequirementsWrite");
@@ -352,7 +359,7 @@ describe("바깥 변경", () => {
 });
 
 describe("쓰기 ↔ 미리보기", () => {
-  it("단추와 Ctrl+Shift+V 로 오가고, 돌아오면 편집기에 포커스", async () => {
+  it("단추와 Ctrl+Shift+E 로 오가고, 돌아오면 편집기에 포커스", async () => {
     await mount();
     expect(screen.getByRole("button", { name: "쓰기" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "미리보기" }));
@@ -360,13 +367,34 @@ describe("쓰기 ↔ 미리보기", () => {
     expect(screen.getByRole("button", { name: "미리보기" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector(".ws-ed__area")).toHaveAttribute("hidden");
 
-    fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "V", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "E", ctrlKey: true, shiftKey: true });
     expect(screen.queryByRole("heading", { level: 1, name: "고양이 앨범" })).not.toBeInTheDocument();
     expect(document.querySelector(".ws-ed__area")).not.toHaveAttribute("hidden");
     await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".cm-content")));
 
-    fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "V", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "E", ctrlKey: true, shiftKey: true });
     expect(screen.getByRole("heading", { level: 1, name: "고양이 앨범" })).toBeInTheDocument();
+  });
+
+  it("편집기에서 Ctrl+Shift+E 로 미리보기에 가면 미리보기 칸에 포커스 — 거기서 다시 누르면 쓰기로 돌아온다", async () => {
+    await mount();
+    const content = document.querySelector(".cm-content") as HTMLElement;
+    content.focus();
+    // 실제처럼 지금 포커스가 있는 곳에서 키를 누른다 (편집기 칸에 직접 보내면 포커스가 빠지는 것을 못 잡는다)
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "E", ctrlKey: true, shiftKey: true });
+    expect(screen.getByRole("heading", { level: 1, name: "고양이 앨범" })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "미리보기" })));
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "E", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByRole("heading", { level: 1, name: "고양이 앨범" })).not.toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".cm-content")));
+  });
+
+  it("Ctrl+Shift+V (서식 없이 붙여넣기) 는 가로채지 않는다", async () => {
+    await mount();
+    const down = fireEvent.keyDown(document.querySelector(".ws-ed") as HTMLElement, { key: "V", ctrlKey: true, shiftKey: true });
+    expect(down).toBe(true);
+    expect(screen.getByRole("button", { name: "쓰기" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("미리보기는 마크다운 안의 HTML · 이미지 · 링크를 그리지 않는다 (글자로 보이고, 눌러도 아무 일 없다)", async () => {

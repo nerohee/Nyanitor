@@ -14,4 +14,4 @@ pub mod hub;
 pub mod text;
 
 pub use decide::Mood;
-pub use hub::{AttentionHandle, quit_needs_warning, start};
+pub use hub::{AttentionHandle, QuitWarning, quit_needs_warning, quit_warning, start};

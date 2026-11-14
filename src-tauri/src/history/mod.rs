@@ -37,6 +37,8 @@ pub struct Limits {
     pub max_items_per_project: usize,
     /// 항목 하나의 긴 글(사용자 메시지 · 오케스트레이터 글 · 사용자의 답)을 자르는 글자 수. 잘리면 `…` 가 붙고 항목에 `truncated` 표시.
     pub max_text_chars: usize,
+    /// 사용량 줄(`usage_turns`)을 보관하는 기간(초). 턴이 끝나 줄을 쓸 때 그 줄의 시각보다 이만큼 더 오래된 줄을 지운다 (`usage::KEEP_SECS` 90일 — 근거는 거기).
+    pub usage_keep_secs: i64,
     /// 쓰기를 기다리는 항목 수의 상한. DB 가 오래 막혀도 메모리가 불어나지 않게 — 넘으면 새 항목을 버리고 로그에 남긴다.
     pub max_queued: usize,
 }
@@ -46,6 +48,7 @@ impl Default for Limits {
         Self {
             max_items_per_project: 10_000,
             max_text_chars: 8_000,
+            usage_keep_secs: usage::KEEP_SECS,
             max_queued: 5_000,
         }
     }

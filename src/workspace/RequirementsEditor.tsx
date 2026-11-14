@@ -1,6 +1,6 @@
 // 요구사항 편집기 — 그 프로젝트 폴더의 requirements.md (D-11). 시제품 `variants/shared/editor.tsx` 의 모양에 실제 읽기 · 저장을 이은 것.
 // 쓰기(CodeMirror 6) ↔ 미리보기 전환, 저장 표시, 바깥에서 바뀌었을 때의 충돌 띠, 없음 · 읽을 수 없음. 데이터 쪽은 `useRequirements`.
-// 단축키: `Ctrl+S` 바로 저장, `Ctrl+Shift+V` 쓰기 ↔ 미리보기 (Mac 은 ⌘).
+// 단축키: `Ctrl+S` 바로 저장, `Ctrl+Shift+E` 쓰기 ↔ 미리보기 (Mac 은 ⌘). Ctrl+Shift+V 는 일반 "서식 없이 붙여넣기" 라 쓰지 않는다 (Shift 가 붙어 Mac 의 Ctrl+E 줄 끝 이동과도 겹치지 않는다).
 import { useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
 import { t, tf, type TextKey } from "../i18n/ko";
 import type { RequirementsProblem } from "../lib/ipc-types";
@@ -30,6 +30,7 @@ function failureText(failure: SaveFailure): string {
   return failure.kind === "error" ? errorText(failure.error) : t(PROBLEM_TEXT[failure.reason]);
 }
 
+// 저장 표시는 글자를 칠 때마다 바뀐다 — 읽어 주면 "저장 안 됨 → 저장 중 → 저장함" 이 끝없이 이어지니 실패(role=alert)만 알린다
 function SaveBadge({ api }: { api: RequirementsApi }) {
   const { status, dirty, savedAt, conflict } = api;
   if (status.kind === "failed")
@@ -44,19 +45,19 @@ function SaveBadge({ api }: { api: RequirementsApi }) {
     );
   if (status.kind === "saving")
     return (
-      <span className="ws-ed__saved" data-state="saving" role="status">
+      <span className="ws-ed__saved" data-state="saving">
         {t("variant.ws.editor.saving")}
       </span>
     );
   if (dirty)
     return (
-      <span className="ws-ed__saved" data-state="unsaved" role="status">
+      <span className="ws-ed__saved" data-state="unsaved">
         <span className="ws-ed__dot" aria-hidden="true" />
         {conflict ? t("ws.editor.heldBack") : t("variant.ws.editor.unsaved")}
       </span>
     );
   return (
-    <span className="ws-ed__saved" data-state="saved" role="status">
+    <span className="ws-ed__saved" data-state="saved">
       <Icon name="check" size={14} />
       {savedAt ? tf("variant.ws.editor.savedAt", { at: clock(savedAt) }) : t("ws.editor.saved")}
     </span>
@@ -107,14 +108,22 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
     return () => onConflict(false);
   }, [onConflict, conflicting]);
 
-  // 미리보기에서 쓰기로 돌아오면 편집기로 포커스
+  // 미리보기에서 쓰기로 돌아오면 편집기로 포커스. 단축키로 미리보기로 가면 미리보기 칸으로 —
+  // 쓰기 칸이 숨으며 포커스가 이 편집기 밖으로 빠져 다시 `Ctrl+Shift+E` 를 받지 못했다 (단추로 바꾸면 포커스가 단추에 남아 괜찮다)
+  const preview = useRef<HTMLDivElement>(null);
+  const focusPreview = useRef(false);
   useEffect(() => {
     if (mode === "write" && userSwitched.current) handle.current?.focus();
+    if (mode === "preview" && focusPreview.current) {
+      focusPreview.current = false;
+      preview.current?.focus();
+    }
   }, [mode]);
 
-  const switchMode = (next: Mode) => {
+  const switchMode = (next: Mode, byKey = false) => {
     if (!ready) return;
     userSwitched.current = true;
+    focusPreview.current = byKey && next === "preview";
     setMode(next);
   };
 
@@ -124,9 +133,9 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
     if (key === "s" && !event.shiftKey) {
       event.preventDefault();
       api.saveNow();
-    } else if (key === "v" && event.shiftKey) {
+    } else if (key === "e" && event.shiftKey) {
       event.preventDefault();
-      switchMode(mode === "write" ? "preview" : "write");
+      switchMode(mode === "write" ? "preview" : "write", true);
     }
   };
 
@@ -150,7 +159,7 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
             aria-pressed={mode === "preview"}
             disabled={!ready}
             title={t("ws.editor.previewKeys")}
-            aria-keyshortcuts="Control+Shift+V"
+            aria-keyshortcuts="Control+Shift+E"
             onClick={() => switchMode("preview")}
           >
             {t("variant.ws.editor.preview")}
@@ -221,7 +230,8 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
         </div>
       )}
       {ready && mode === "preview" && (
-        <div className="ws-ed__preview">
+        // 포커스를 받는 칸 — 단축키가 계속 먹고, 키보드로 미리보기를 스크롤할 수 있다
+        <div className="ws-ed__preview" ref={preview} tabIndex={0} role="region" aria-label={t("variant.ws.editor.preview")}>
           <MarkdownPreview text={api.getText()} />
         </div>
       )}
@@ -231,7 +241,7 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
           {t("variant.ws.editor.autosave")} <kbd>Ctrl</kbd>+<kbd>S</kbd>
         </span>
         <span className="ws-ed__hint-key">
-          {t("ws.editor.previewToggle")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
+          {t("ws.editor.previewToggle")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>
         </span>
       </p>
     </div>

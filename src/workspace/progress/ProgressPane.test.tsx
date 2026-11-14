@@ -1,6 +1,7 @@
 // 진행 탭 화면 시험 (가짜 모드) — 일하는 고양이 · 단계 보드의 상태 하나하나 · 펼친 작업 · 진행률 없음 · 읽을 수 없음에서 나머지는 보임(D-22) · 요약 기록 · 원본 접기.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeClaude } from "../../lib/fakeClaude";
 import { fakeProgress, type FakeProgressMode } from "../../lib/fakeProgress";
 import { fakeProjects } from "../../lib/fakeProjects";
 import { ipc } from "../../lib/ipc";
@@ -8,7 +9,14 @@ import { AppError, type ClaudeEvent, type HandoffTask, type ProgressRead, type R
 import { newChat, resetSessionStore, useSessionStore } from "../chat/sessionStore";
 import { resetWorkerRoles } from "./workerCat";
 import { ProgressPane } from "./ProgressPane";
+import { buildSummaryLog } from "./summary";
 import type { WorkerEntry } from "./workers";
+
+// 요약 기록 계산이 불리는지 세려고 — 그대로 부르고 횟수만 센다
+vi.mock("./summary", async (original) => {
+  const real = await original<typeof import("./summary")>();
+  return { ...real, buildSummaryLog: vi.fn(real.buildSummaryLog) };
+});
 
 const NOW = new Date("2026-11-07T10:00:00");
 
@@ -416,5 +424,50 @@ describe("원본 출력", () => {
     fireEvent.scroll(pre);
     act(() => putWorkers([], raw(4)));
     expect(pre.scrollTop).toBe(50);
+  });
+});
+
+describe("안 보일 때는 요약 기록을 다시 계산하지 않는다 (D-55)", () => {
+  const calls = () => vi.mocked(buildSummaryLog).mock.calls.length;
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+  it("탭이 안 보이는 동안 이벤트가 와도 계산하지 않고, 보이면 한 번", async () => {
+    const view = mount(true);
+    await settle();
+    vi.mocked(buildSummaryLog).mockClear();
+    view.rerender(<ProgressPane projectId={1} visible={false} time="day" now={NOW} />);
+    act(() => putWorkers([worker({ toolUseId: "t1" })]));
+    act(() => putWorkers([worker({ toolUseId: "t1" }), worker({ toolUseId: "t2", name: "harness-tester" })]));
+    expect(calls()).toBe(0);
+    view.rerender(<ProgressPane projectId={1} visible={true} time="day" now={NOW} />);
+    expect(calls()).toBe(1);
+    // 보이는 동안에는 이벤트마다 그대로
+    act(() => putWorkers([worker({ toolUseId: "t1" })]));
+    expect(calls()).toBe(2);
+  });
+
+  it("창이 숨으면(앱 신호) 계산하지 않고, 다시 보이면 그때의 내용으로 한 번", async () => {
+    mount(true);
+    await settle();
+    vi.mocked(buildSummaryLog).mockClear();
+    act(() => fakeClaude.simulateWindowVisibility(false));
+    act(() => putWorkers([worker({ toolUseId: "t1" })]));
+    act(() => putWorkers([worker({ toolUseId: "t1" }), worker({ toolUseId: "t2", name: "harness-tester" })]));
+    expect(calls()).toBe(0);
+    act(() => fakeClaude.simulateWindowVisibility(true));
+    expect(calls()).toBe(1);
+  });
+
+  it("창이 숨으면(웹뷰 visibilitychange) 도 같다", async () => {
+    mount(true);
+    await settle();
+    vi.mocked(buildSummaryLog).mockClear();
+    const state = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    act(() => putWorkers([worker({ toolUseId: "t1" })]));
+    expect(calls()).toBe(0);
+    state.mockReturnValue("visible");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(calls()).toBe(1);
   });
 });

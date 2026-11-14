@@ -1,11 +1,12 @@
 // 진행 탭 (D-13 · D-49) — 위에 큰 둥근 창문 + 일하는 고양이, 아래(넓으면 오른쪽)에 단계 보드 · 요약 기록 · 원본 출력(접기). 시안 a 「들여다보는 창」 + ③ 스티커 수첩.
 // 단계 표를 읽을 수 없어도(D-22) 창문 · 일하는 고양이 · 기록은 그대로 — 보드만 "읽을 수 없음". 프로젝트마다 하나 (화면의 `key`).
 // 일하는 고양이 · 기록 · 원본은 세션 저장소(`chat/sessionStore.ts`)에서 고르고, 단계 · 메모는 `useProgress` 가 읽는다 (보일 때만).
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { TimeOfDay } from "../../components/house/time";
+import { useWindowShown } from "../../components/useWindowShown";
 import { t } from "../../i18n/ko";
 import { useMine } from "../../lib/mine";
-import { emptyChat } from "../chat/model";
+import { emptyChat, type ChatData } from "../chat/model";
 import { selectRawLines, selectWaitingAsker, selectWorkers, useSessionStore } from "../chat/sessionStore";
 import { PhaseBoard } from "./PhaseBoard";
 import { ProgressLog } from "./ProgressLog";
@@ -13,14 +14,33 @@ import { RawOutput } from "./RawOutput";
 import { RoomWindow } from "./RoomWindow";
 import { mergeLogs } from "./boardLog";
 import { windowScene } from "./placement";
-import { buildSummaryLog } from "./summary";
+import { buildSummaryLog, type LogItem } from "./summary";
 import { useProgress } from "./useProgress";
 import type { WorkerRoles } from "./workerCat";
-import { recentWorkers, workingWorkers } from "./workers";
+import { recentWorkers, workingWorkers, type WorkerEntry } from "./workers";
 import { WorkingCats } from "./WorkingCats";
 import "./progress.css";
 
 const EMPTY_CHAT = emptyChat();
+
+interface LogProps {
+  chat: ChatData;
+  workers: WorkerEntry[];
+  boardLog: LogItem[];
+  roles?: WorkerRoles;
+  mine: ReturnType<typeof useMine>;
+  /** 이 탭이 보이고 창도 보이는 중 */
+  active: boolean;
+}
+
+/** 요약 기록 — 안 보일 때(탭이 안 보이거나 창이 숨음)는 다시 그리지도 계산하지도 않고 마지막 모습에 머문다. 보이면 그때의 내용으로 한 번 (D-55) */
+const SummaryLog = memo(
+  function SummaryLog({ chat, workers, boardLog, roles, mine }: LogProps) {
+    const log = useMemo(() => mergeLogs(buildSummaryLog({ chat, workers, roles, mine }), boardLog), [chat, workers, boardLog, roles, mine]);
+    return <ProgressLog log={log} />;
+  },
+  (_before, after) => !after.active,
+);
 
 interface Props {
   projectId: number;
@@ -38,11 +58,13 @@ export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
   const chat = useSessionStore((store) => store.chats[projectId]?.data ?? EMPTY_CHAT);
   const raw = useSessionStore(selectRawLines(projectId));
   const waiting = useSessionStore(selectWaitingAsker(projectId));
+  // 탭이 안 보이거나 창이 숨어 있으면 요약 기록을 다시 계산하지 않는다 — 보일 때 한 번 (D-55)
+  const shown = useWindowShown();
+  const active = visible && shown;
 
   const working = useMemo(() => workingWorkers(workers), [workers]);
   const recent = useMemo(() => recentWorkers(workers), [workers]);
   const scene = useMemo(() => windowScene(working, waiting, roles, mine), [working, waiting, roles, mine]);
-  const log = useMemo(() => mergeLogs(buildSummaryLog({ chat, workers, roles, mine }), boardLog), [chat, workers, roles, mine, boardLog]);
 
   return (
     <div className="ws-pg" data-testid="progress-pane">
@@ -56,7 +78,7 @@ export function ProgressPane({ projectId, visible, time, now, roles }: Props) {
           <h3 className="ws-pg__h">{t("ws.progress.boardTitle")}</h3>
           <PhaseBoard state={state} onReload={reload} />
           <h3 className="ws-pg__h">{t("ws.progress.logTitle")}</h3>
-          <ProgressLog log={log} />
+          <SummaryLog chat={chat} workers={workers} boardLog={boardLog} roles={roles} mine={mine} active={active} />
           <RawOutput lines={raw} />
         </div>
       </div>

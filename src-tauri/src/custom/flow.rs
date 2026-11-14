@@ -2,10 +2,10 @@
 //! (받기 · 업데이트 · 설치와 겹치지 않게 — 잠겨 있으면 `harness_busy`). Tauri 명령(`commands`)이 부르는 일반 함수다 — 시험은 이 함수들로 한다.
 //!
 //! 읽기(목록 · 항목 읽기 · 적용 안 한 것의 차이 · 기록 목록 · 커밋 차이 · 고양이 · 보이는 이름 읽기)는 잠그지 않는다 (`items` · `history` · `cats` · `labels` 를 바로 부른다).
-//! 모든 함수는 맨 앞에서 잠금을 잡는다.
+//! 모든 함수는 맨 앞에서 잠금을 잡는다. 적용 · 어느 때로 되돌리기는 설치를 돌리므로 `HarnessTask::Install` 로 밝힌다 (앱을 끄려 할 때 묻는다), 나머지는 짧은 일(`begin`).
 
 use crate::error::AppError;
-use crate::harness::{Context, HarnessState};
+use crate::harness::{Context, HarnessState, HarnessTask};
 
 use super::Env;
 use super::apply;
@@ -102,7 +102,7 @@ pub fn apply(
     ctx: &Context,
     summary: Option<&str>,
 ) -> Result<ApplyResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Install)?;
     apply::apply(&Env::new(ctx), &guard, summary)
 }
 
@@ -112,7 +112,7 @@ pub fn restore_to(
     ctx: &Context,
     hash: &str,
 ) -> Result<RestoreResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Install)?;
     apply::restore_to(&Env::new(ctx), &guard, hash)
 }
 

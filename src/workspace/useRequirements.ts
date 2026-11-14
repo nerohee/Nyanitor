@@ -6,6 +6,7 @@
 //   - 없던 파일의 첫 저장은 `baseVersion: null`.
 // 저장은 한 번에 하나만 (돌고 있는 동안 또 부르면 끝난 뒤 이어서). 언마운트(프로젝트 · 화면 바꿈) 때 남은 것을 저장하고, 그 뒤에는 화면 상태를 건드리지 않는다.
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { isWindowShown, subscribeWindowShown } from "../components/useWindowShown";
 import { ipc } from "../lib/ipc";
 import type { AppErrorKind, RequirementsProblem, RequirementsRead } from "../lib/ipc-types";
 import { errorKind } from "./errors";
@@ -280,24 +281,23 @@ export function useRequirements(projectId: number, { isComposing }: Options): Re
     const flush = () => {
       if (!conflictRef.current && text.current !== saved.current) void save();
     };
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") flush();
-      else void check();
-    };
     const onFocus = () => void check();
     const tick = () => {
-      if (document.visibilityState === "visible") void check();
+      if (isWindowShown()) void check();
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", flush);
-    document.addEventListener("visibilitychange", onVisibility);
+    const unsubscribe = subscribeWindowShown((shown) => {
+      if (shown) void check();
+      else flush();
+    });
     const id = window.setInterval(tick, CHECK_MS);
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("beforeunload", flush);
-      document.removeEventListener("visibilitychange", onVisibility);
+      unsubscribe();
       window.clearInterval(id);
     };
   }, [ready, check, save]);

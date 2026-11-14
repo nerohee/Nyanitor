@@ -15,6 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 use super::docs::{self, DocReadResult, ListResult};
 use super::progress::{self, ProgressResult};
 use super::requirements::{ReadResult, VersionResult, WriteResult};
+use super::trust::{self, TrustCheck};
 use super::{
     AddRequest, PickedFolder, ProjectEntry, ProjectList, ProjectPatch, ProjectsState, add,
     handle_picked, list, remove, requirements_read, requirements_version, requirements_write,
@@ -194,6 +195,34 @@ pub async fn project_doc_read(
 ) -> Result<DocReadResult, AppError> {
     let (db, state) = (db.inner().clone(), state.inner().clone());
     blocking(move || docs::read(&db, &state.env(), id, &path))
+        .await
+        .map_err(AppError::logged)
+}
+
+/// 이 프로젝트 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 읽어 사용자 확인이 필요한지 알려 준다 (D-54).
+/// 필요 없는 폴더(위험한 내용이 없거나 이미 확인한 그대로)는 `required: false`. 요약은 확인 화면이 그대로 보인다.
+#[tauri::command]
+pub async fn project_trust_check(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+) -> Result<TrustCheck, AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || trust::check(&db, &state.env(), id))
+        .await
+        .map_err(AppError::logged)
+}
+
+/// 화면이 본 설정(`hash`)을 신뢰로 적는다. 지금 폴더에서 다시 읽은 해시와 다르면 `trust_changed` — 적지 않는다.
+#[tauri::command]
+pub async fn project_trust_grant(
+    db: State<'_, AppDb>,
+    state: State<'_, ProjectsState>,
+    id: i64,
+    hash: String,
+) -> Result<(), AppError> {
+    let (db, state) = (db.inner().clone(), state.inner().clone());
+    blocking(move || trust::grant(&db, &state.env(), id, &hash))
         .await
         .map_err(AppError::logged)
 }

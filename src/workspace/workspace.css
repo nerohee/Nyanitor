@@ -74,6 +74,11 @@ body:has(.ws) {
   opacity: 0.85;
   filter: saturate(0.8) blur(1.5px);
 }
+/* 흐린 마당은 멈춘 그림 — 흐림(filter) 안에서 풍경이 돌면 가만히 둬도 GPU 를 쓴다 (P10-02 보고 5, D-55) */
+.ws-backdrop,
+.ws-backdrop * {
+  animation: none !important;
+}
 .ws-paper {
   position: relative;
   display: grid;
@@ -423,10 +428,14 @@ body:has(.ws) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: inherit;
-  opacity: 0.85;
+  /* 투명도로 흐리게 하면 밝은 테마에서 4.36:1 — 토큰으로 (muted: 바닥 · 마우스 올림 위 밝게 5.64 · 5.18 / 어둡게 6.65 · 6.98) */
+  color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+}
+/* 고른 줄은 옅은 바탕 위 글자색을 그대로 (밝게 5.98 · 어둡게 6.85) */
+.ws-proj__item[aria-current="page"] .ws-proj__path {
+  color: inherit;
 }
 .ws-proj__none {
   margin: var(--space-2);

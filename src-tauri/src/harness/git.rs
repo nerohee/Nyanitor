@@ -224,7 +224,12 @@ pub enum GitError {
     TimedOut,
     /// 종료 코드가 0 이 아니다. `detail` 은 끝부분 몇 줄 (주소의 계정 정보는 지웠다)
     Exit { code: Option<i32>, detail: String },
+    /// 이 저장소의 `.git/index.lock` 이 방금 생겼다 — 사용자의 다른 git 이 쓰는 중일 수 있어 git 을 부르지 않았다 (`gitlock`)
+    Locked,
 }
+
+/// `GitError::Locked` 의 진단 글 (화면 문구가 아니다)
+pub const LOCKED_DETAIL: &str = "another git is using this repository (index.lock)";
 
 impl GitError {
     fn outcome(&self) -> GitOutcome {
@@ -239,6 +244,7 @@ impl GitError {
             GitError::Spawn(text) => Some(text.clone()),
             GitError::TimedOut => None,
             GitError::Exit { detail, .. } => (!detail.is_empty()).then(|| detail.clone()),
+            GitError::Locked => Some(LOCKED_DETAIL.to_string()),
         }
     }
 }
@@ -318,10 +324,16 @@ pub fn run_git<S: AsRef<OsStr>>(
         // 상위 폴더에 다른 저장소가 있어도 거슬러 올라가 그것을 잡지 않게
         command = command.with_extra_env("GIT_CEILING_DIRECTORIES", ceiling);
     }
+    // 인덱스를 쓰는 명령이면 꺼진 git 이 남긴 낡은 `index.lock` 을 치우고, 새 잠금이면 부르지 않는다 (D-54)
+    let slot = super::gitlock::enter(repo, &full)?;
     let out = command
         .run_capture(&full, ctx.timeout.unwrap_or(timeout))
         .map_err(|e| GitError::Spawn(format!("could not run git: {e}")))?;
     if out.timed_out {
+        // 시간 초과로 끈 git 이 남긴 잠금은 바로 치운다 (다음 명령이 실패하지 않게)
+        if let Some(slot) = &slot {
+            super::gitlock::after_timeout(slot);
+        }
         return Err(GitError::TimedOut);
     }
     if out.code != Some(0) {

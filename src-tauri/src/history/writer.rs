@@ -210,6 +210,8 @@ fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<usize, AppError>
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut touched = BTreeSet::new();
         let mut skipped = 0_usize;
+        // 이 묶음에서 쓴 사용량 줄의 가장 늦은 시각 — 오래된 줄을 지우는 기준
+        let mut newest_usage_at: Option<i64> = None;
         for op in ops {
             match op {
                 Op::Item(item) => {
@@ -220,10 +222,12 @@ fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<usize, AppError>
                             skipped += 1;
                         }
                     }
-                    if let SessionEvent::TurnEnded(summary) = &item.event
-                        && !wrote(usage::insert(&tx, &item.ctx, summary))?
-                    {
-                        skipped += 1;
+                    if let SessionEvent::TurnEnded(summary) = &item.event {
+                        if wrote(usage::insert(&tx, &item.ctx, summary))? {
+                            newest_usage_at = newest_usage_at.max(Some(item.ctx.at));
+                        } else {
+                            skipped += 1;
+                        }
                     }
                 }
                 Op::Bind {
@@ -235,6 +239,10 @@ fn write_ops(db: &AppDb, limits: &Limits, ops: &[Op]) -> Result<usize, AppError>
         }
         for project_id in touched {
             chat::trim(&tx, project_id, limits.max_items_per_project)?;
+        }
+        // 턴이 끝날 때만 (사용량 줄이 늘 때만) 오래된 줄을 가볍게 지운다 — 시각 색인으로 오래된 쪽만 본다
+        if let Some(at) = newest_usage_at {
+            usage::prune(&tx, at.saturating_sub(limits.usage_keep_secs))?;
         }
         tx.commit()?;
         Ok(skipped)
@@ -404,6 +412,61 @@ mod tests {
         assert_eq!(summary.today.turns, 1);
         assert_eq!(summary.today.total_tokens, 26);
         assert_eq!(summary.today.subscription_turns, 1);
+        recorder.shutdown(WAIT);
+    }
+
+    #[test]
+    fn a_turn_end_prunes_usage_rows_older_than_the_keep_period_and_leaves_the_chat_alone() {
+        let (_dir, db) = setup("rec-usage-prune");
+        let limits = Limits::default();
+        let now = 1_800_000_000_i64;
+        let at = |days: i64| RecordCtx {
+            at: now - days * 86_400,
+            ..ctx(1)
+        };
+        let recorder = Recorder::start(db.clone(), limits.clone());
+        // 오래된 턴 둘 (가장 새 줄(10일 전) 기준으로 90일 밖) · 안쪽 턴 하나
+        recorder.submit(at(120), turn_ended());
+        recorder.submit(at(101), turn_ended());
+        recorder.submit(at(10), turn_ended());
+        assert!(recorder.flush(WAIT));
+        let turns = |conn: &rusqlite::Connection| -> i64 {
+            conn.query_row("SELECT count(*) FROM usage_turns", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(
+            db.read(|c| Ok(turns(c))).unwrap(),
+            1,
+            "90일 밖의 두 줄이 지워졌다"
+        );
+        // 채팅 줄은 사용량 정리와 상관없이 셋 다 있다
+        let page = db.read(|c| chat::read_page(c, 1, None, 10, None)).unwrap();
+        assert_eq!(page.entries.len(), 3);
+        // 새 턴이 쓰이면 그 시각 기준으로 또 정리된다 — 남은 줄의 합은 그대로 더해진다
+        recorder.submit(at(0), turn_ended());
+        assert!(recorder.flush(WAIT));
+        assert_eq!(db.read(|c| Ok(turns(c))).unwrap(), 2);
+        let summary = db
+            .read(|c| usage::summarize(c, now - 86_400, None))
+            .unwrap();
+        assert_eq!(summary.today.turns, 1);
+        assert_eq!(summary.projects[0].total.turns, 2);
+        // 사용량이 아닌 이벤트만 쓰는 묶음은 정리하지 않는다 (오래된 줄이 새로 생긴 줄 때문에 지워지지 않으면 그대로)
+        recorder.submit(at(0), say(1));
+        assert!(recorder.flush(WAIT));
+        assert_eq!(db.read(|c| Ok(turns(c))).unwrap(), 2);
+        recorder.shutdown(WAIT);
+    }
+
+    #[test]
+    fn a_lone_old_turn_with_a_clock_far_in_the_past_is_not_pruned() {
+        // 시각이 작은 값(시험 · 시계가 거꾸로 간 PC)이어도 자기 자신을 지우지 않는다
+        let (_dir, db) = setup("rec-usage-old-clock");
+        let recorder = Recorder::start(db.clone(), Limits::default());
+        recorder.submit(ctx(1), turn_ended()); // at = 100
+        assert!(recorder.flush(WAIT));
+        let summary = db.read(|c| usage::summarize(c, 0, None)).unwrap();
+        assert_eq!(summary.today.turns, 1);
         recorder.shutdown(WAIT);
     }
 

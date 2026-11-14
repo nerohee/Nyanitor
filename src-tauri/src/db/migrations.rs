@@ -85,11 +85,47 @@ UPDATE chat_items
    AND json_extract(body, '$.summary') != '';
 ";
 
+/// 4번 — 프로젝트 폴더 신뢰 기록 (P10-03, D-54).
+/// 프로젝트마다 한 줄: 사용자가 확인했거나(또는 위험한 내용이 없어 앱이 적어 둔) 폴더 설정의 해시와 그 시각(초 단위 유닉스 시각).
+/// 해시는 SHA-256 16진수 글자 64자 — 줄이 없거나 지금 해시와 다르면 위험한 내용이 있는 폴더는 다시 묻는다.
+/// 프로젝트를 빼면 같이 지워진다 (`ON DELETE CASCADE`). 앞 번호의 데이터는 건드리지 않는다.
+const V4_PROJECT_TRUST: &str = "
+CREATE TABLE project_trust (
+    project_id    INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    settings_hash TEXT    NOT NULL CHECK (length(settings_hash) = 64),
+    trusted_at    INTEGER NOT NULL
+);
+";
+
+/// 5번 — 기록에 남는 글 줄이기 · 색인 (P10-07, D-54).
+/// - 세션 끝 기록의 `stderrTail` (CLI 가 마지막에 찍은 오류 글 — 훅 · MCP · 인증 오류에 키 · 토큰이 찍힐 수 있다)을 비운다. 앞 번호까지는 저장했다 (D-48 의 실패 결과 글과 같은 이유로 이제 저장하지 않는다).
+///   줄 자체 · 다른 칸은 그대로고, 기록을 읽는 화면은 빈 목록으로 읽는다. JSON 이 아니거나 `stderrTail` 이 목록이 아닌 줄은 건드리지 않는다.
+/// - `chat_items_unbound` — 세션 ID 를 아직 모르는 줄만 담는 색인. 첫 `system/init` 이 오면 그 실행의 빈 세션 ID 를 채우는데(`chat::bind_session`),
+///   색인이 없으면 그때마다 프로젝트의 줄(최대 1만 개)을 다 훑었다.
+/// - 사용량 표의 시각 색인 (`usage_turns_by_time`, `usage_turns_by_project`)은 2번에 이미 있어 더하지 않는다 — 오래된 줄 정리(`usage::prune`)와 "오늘" 합이 그것을 쓴다.
+/// - **이 번호로 올라갈 때 이미 데이터가 있던 DB 는 `VACUUM` 을 한 번 한다** (`VACUUM_STEP` · `db::upgrade`): 앞 번호에서 지운 글 · 위에서 비운 글이 빈 페이지에 남아 있어서다.
+///   `VACUUM` 이 실패하면 번호를 한 칸 내려 다음 실행에서 이 번호를 다시 한다 — 그래서 이 번호의 문장은 몇 번을 돌려도 같아야 한다 (`IF NOT EXISTS` · 다시 비워도 같다).
+const V5_RECORD_HYGIENE: &str = "
+UPDATE chat_items
+   SET body = json_set(body, '$.stderrTail', json('[]'))
+ WHERE kind = 'session_ended'
+   AND json_valid(body)
+   AND json_type(body, '$.stderrTail') = 'array'
+   AND json_array_length(body, '$.stderrTail') > 0;
+
+CREATE INDEX IF NOT EXISTS chat_items_unbound ON chat_items (project_id, run_id) WHERE session_id IS NULL;
+";
+
+/// 이 번호로 올라갈 때 (데이터가 있던 DB 에 한해) `VACUUM` 을 한 번 한다 — `V5_RECORD_HYGIENE` 설명.
+pub const VACUUM_STEP: u32 = 5;
+
 /// 번호 순서 (1번 = 0번째).
 pub const MIGRATIONS: &[&str] = &[
     V1_PROJECTS,
     V2_SESSION_RECORDS,
     V3_CLEAR_FAILED_TOOL_RESULT_TEXT,
+    V4_PROJECT_TRUST,
+    V5_RECORD_HYGIENE,
 ];
 
 /// 이 앱이 아는 가장 새 번호.
@@ -273,9 +309,8 @@ mod tests {
             0,
         );
 
-        apply(&mut conn, 2, MIGRATIONS).unwrap();
+        apply(&mut conn, 2, &MIGRATIONS[..3]).unwrap();
         assert_eq!(version(&conn), 3);
-        assert_eq!(SCHEMA_VERSION, 3);
 
         // 글만 비고, 나머지 칸 · 잘림 표시는 글이 없으니 풀린다
         assert_eq!(
@@ -327,10 +362,198 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         apply(&mut conn, 0, MIGRATIONS).unwrap();
         assert_eq!(version(&conn), SCHEMA_VERSION);
+        assert_eq!(SCHEMA_VERSION, 5);
         assert_eq!(
             tables(&conn),
-            ["chat_items", "projects", "sessions", "usage_turns"]
+            [
+                "chat_items",
+                "project_trust",
+                "projects",
+                "sessions",
+                "usage_turns"
+            ]
         );
+    }
+
+    #[test]
+    fn step_four_adds_the_trust_table_and_keeps_every_earlier_row() {
+        // 3번까지만 적용된 DB (앞 판이 만든 것) 에 프로젝트 · 세션 · 기록이 있다
+        let mut conn = conn_with_foreign_keys();
+        apply(&mut conn, 0, &MIGRATIONS[..3]).unwrap();
+        assert_eq!(version(&conn), 3);
+        conn.execute(
+            "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES ('p', 'p', 'keep me', 5, 6)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (1, '00000000-0000-4000-8000-000000000001', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_items (project_id, run_id, at, kind, body) VALUES (1, 1, 1, 'text', '{}')",
+            [],
+        )
+        .unwrap();
+
+        apply(&mut conn, 3, &MIGRATIONS[..4]).unwrap();
+        assert_eq!(version(&conn), 4);
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count("projects"), 1);
+        assert_eq!(count("sessions"), 1);
+        assert_eq!(count("chat_items"), 1);
+        // 새 표는 비어 있다 — 옛 프로젝트는 "아직 확인한 적 없음" 이다
+        assert_eq!(count("project_trust"), 0);
+    }
+
+    fn plan_of(conn: &Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) -> String {
+        conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map(params, |row| row.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+
+    #[test]
+    fn step_five_clears_stored_stderr_text_keeps_everything_else_and_can_run_twice() {
+        // 4번까지만 적용된 DB (앞 판이 만든 것) 에 세션 끝 줄들이 쌓여 있다
+        let mut conn = conn_with_foreign_keys();
+        apply(&mut conn, 0, &MIGRATIONS[..4]).unwrap();
+        assert_eq!(version(&conn), 4);
+        conn.execute(
+            "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES ('p', 'p', 'keep me', 5, 6)",
+            [],
+        )
+        .unwrap();
+        let put = |kind: &str, body: &str, session: Option<&str>| {
+            conn.execute(
+                "INSERT INTO chat_items (project_id, session_id, run_id, at, kind, body) VALUES (1, ?3, 1, 1, ?1, ?2)",
+                rusqlite::params![kind, body, session],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let died = put(
+            "session_ended",
+            r#"{"type":"session_ended","ended":"died","exitCode":1,"forced":false,"midTurn":true,"stderrTail":["Error: token=sk-secret","second line"]}"#,
+            Some("00000000-0000-4000-8000-000000000001"),
+        );
+        let clean = put(
+            "session_ended",
+            r#"{"type":"session_ended","ended":"normal","exitCode":0,"forced":false,"midTurn":false,"stderrTail":[]}"#,
+            None,
+        );
+        let other_kind = put(
+            "text",
+            r#"{"type":"text","text":"mentions stderrTail","stderrTail":["not a session end"]}"#,
+            None,
+        );
+        let broken = put("session_ended", "{ not json", None);
+        let not_a_list = put(
+            "session_ended",
+            r#"{"type":"session_ended","stderrTail":"text"}"#,
+            None,
+        );
+        let missing = put("session_ended", r#"{"type":"session_ended"}"#, None);
+
+        apply(&mut conn, 4, MIGRATIONS).unwrap();
+        assert_eq!(version(&conn), 5);
+
+        let json_of =
+            |id: i64| -> serde_json::Value { serde_json::from_str(&body_of(&conn, id).0).unwrap() };
+        // 글만 비고 나머지 칸은 그대로
+        let died_after = json_of(died);
+        assert_eq!(died_after["stderrTail"], serde_json::json!([]));
+        assert_eq!(died_after["exitCode"], 1);
+        assert_eq!(died_after["midTurn"], true);
+        assert!(!body_of(&conn, died).0.contains("sk-secret"));
+        assert_eq!(json_of(clean)["stderrTail"], serde_json::json!([]));
+        // 다른 종류 · 모양이 다른 줄은 그대로
+        assert!(body_of(&conn, other_kind).0.contains("not a session end"));
+        assert_eq!(body_of(&conn, broken).0, "{ not json");
+        assert_eq!(json_of(not_a_list)["stderrTail"], "text");
+        assert_eq!(body_of(&conn, missing).0, r#"{"type":"session_ended"}"#);
+        // 줄 수 · 세션 ID · 프로젝트는 그대로
+        let (items, bound): (i64, i64) = conn
+            .query_row(
+                "SELECT count(*), count(session_id) FROM chat_items",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((items, bound), (6, 1));
+        let name: String = conn
+            .query_row("SELECT name FROM projects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, "keep me");
+        // 5번의 문장은 몇 번을 돌려도 같다 (VACUUM 이 실패하면 번호를 내려 다시 한다)
+        conn.execute_batch(V5_RECORD_HYGIENE).unwrap();
+        assert_eq!(json_of(died)["stderrTail"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn the_unbound_index_serves_the_session_id_fill_and_the_time_index_serves_usage() {
+        let mut conn = conn_with_foreign_keys();
+        apply(&mut conn, 0, MIGRATIONS).unwrap();
+        // 세션 ID 채우기 (`chat::bind_session`) — 비어 있는 줄만 담은 색인을 쓴다
+        let plan = plan_of(
+            &conn,
+            "UPDATE chat_items SET session_id = ?3 WHERE project_id = ?1 AND run_id = ?2 AND session_id IS NULL",
+            &[&1_i64, &1_i64, &"s"],
+        );
+        assert!(plan.contains("chat_items_unbound"), "{plan}");
+        // 사용량: 오래된 줄 정리 · "오늘" 합은 시각 색인으로 (2번에 이미 있다)
+        let plan = plan_of(&conn, "DELETE FROM usage_turns WHERE at < ?1", &[&1_i64]);
+        assert!(plan.contains("usage_turns_by_time"), "{plan}");
+        let plan = plan_of(
+            &conn,
+            "SELECT project_id, COUNT(*) FROM usage_turns WHERE at >= ?1 GROUP BY project_id",
+            &[&1_i64],
+        );
+        println!("today sum plan: {plan}");
+        assert!(plan.contains("usage_turns_by_"), "{plan}");
+    }
+
+    #[test]
+    fn the_trust_table_rejects_bad_rows_and_follows_its_project() {
+        let mut conn = conn_with_foreign_keys();
+        apply(&mut conn, 0, MIGRATIONS).unwrap();
+        for key in ["a", "b"] {
+            conn.execute(
+                "INSERT INTO projects (path, path_key, name, created_at, last_opened_at) VALUES (?1, ?1, ?1, 1, 1)",
+                [key],
+            )
+            .unwrap();
+        }
+        let hash = "a".repeat(64);
+        let put = |project: i64, hash: &str| {
+            conn.execute(
+                "INSERT INTO project_trust (project_id, settings_hash, trusted_at) VALUES (?1, ?2, 1)",
+                rusqlite::params![project, hash],
+            )
+        };
+        assert!(put(1, &hash).is_ok());
+        assert!(put(1, &hash).is_err(), "one row per project");
+        assert!(put(2, "short").is_err(), "not 64 characters");
+        assert!(put(9, &hash).is_err(), "unregistered project");
+        assert!(put(2, &hash).is_ok());
+        // 프로젝트를 지우면 그 줄도 같이 지워진다 (다른 프로젝트의 것은 그대로)
+        conn.execute("DELETE FROM projects WHERE id = 1", [])
+            .unwrap();
+        let left: Vec<i64> = conn
+            .prepare("SELECT project_id FROM project_trust")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(left, [2]);
     }
 
     #[test]

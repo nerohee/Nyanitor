@@ -41,6 +41,19 @@ fn to_i64(value: u64) -> i64 {
     i64::try_from(value.min(MAX_TOKENS)).unwrap_or(i64::MAX)
 }
 
+/// 사용량 줄을 보관하는 기간 — 90일. 화면이 쓰는 가장 긴 기간은 "오늘"(이 PC 의 자정부터)과 지금 돌고 있는 세션의 이번 실행뿐이고
+/// (집 · 채팅 화면의 츄르 — `useAppChurros` · 세션 저장소), 프로젝트별 "전체" 합은 받아 가는 화면이 아직 없다. 가장 긴 한도 창(주간)도 7일이라
+/// 석 달이면 앞으로 월간 보기를 더해도 모자라지 않고, 표는 하루 수십~백 줄 × 90일 = 만 줄 안팎에서 멈춘다 (끝없이 쌓이지 않는다).
+/// 한 실행이 90일을 넘게 도는 일은 없어 그 실행의 합도 안전하다.
+pub const KEEP_SECS: i64 = 90 * 86_400;
+
+/// `cutoff`(그때 포함 안 함)보다 오래된 줄을 지운다. 지운 수를 돌려준다. 시각 색인(`usage_turns_by_time`)으로 오래된 쪽만 훑는다.
+/// 남은 줄의 합은 그대로다 — 다만 `ProjectUsage.total` 은 "보관 기간 안의 합" 이 된다.
+pub fn prune(conn: &Connection, cutoff: i64) -> rusqlite::Result<usize> {
+    conn.prepare_cached("DELETE FROM usage_turns WHERE at < ?1")?
+        .execute([cutoff])
+}
+
 /// 턴 하나를 쌓는다. 프로젝트가 이미 없으면(`FOREIGN KEY`) 오류 — 쓰는 쪽이 건너뛴다.
 pub fn insert(conn: &Connection, ctx: &RecordCtx, summary: &TurnSummary) -> rusqlite::Result<()> {
     let source = ctx
@@ -153,7 +166,7 @@ pub struct ProjectUsage {
     pub project_id: i64,
     /// 오늘(이 PC 의 자정부터) 이 프로젝트에서 쓴 합
     pub today: UsageSum,
-    /// 지금까지 쓴 합
+    /// 보관 기간(`KEEP_SECS` — 90일) 안에서 쓴 합
     pub total: UsageSum,
 }
 
@@ -189,10 +202,11 @@ pub struct UsageSummary {
 }
 
 fn grouped(conn: &Connection, since: Option<i64>) -> Result<BTreeMap<i64, UsageSum>, AppError> {
+    // "오늘" 은 시각 색인으로 오늘 줄만 읽는다 — 안 그러면 `GROUP BY project_id` 를 정렬 없이 하려고 (프로젝트, 시각) 색인 전체를 훑는다.
     let sql = format!(
         "SELECT project_id, {SUM_COLUMNS} FROM usage_turns {} GROUP BY project_id",
         if since.is_some() {
-            "WHERE at >= ?1"
+            "INDEXED BY usage_turns_by_time WHERE at >= ?1"
         } else {
             ""
         }
@@ -596,6 +610,81 @@ mod tests {
         conn.execute("DELETE FROM projects WHERE id = 1", [])
             .unwrap();
         assert!(summarize(&conn, SINCE, None).unwrap().projects.is_empty());
+    }
+
+    #[test]
+    fn rows_older_than_the_keep_period_are_pruned_and_the_period_sums_stay_the_same() {
+        let conn = conn();
+        let now = 1_800_000_000_i64;
+        let ages_days = [100_i64, 91, 89, 30, 1, 0];
+        for (n, days) in ages_days.into_iter().enumerate() {
+            insert(
+                &conn,
+                &ctx(1 + (n as i64 % 2), 1, now - days * 86_400, Some("none")),
+                &turn(10, 1, 0, 0, 0.5),
+            )
+            .unwrap();
+        }
+        let since = local_day_start(now);
+        let before = summarize(&conn, since, None).unwrap();
+        assert_eq!(
+            before.projects.iter().map(|p| p.total.turns).sum::<u64>(),
+            6
+        );
+
+        // 90일보다 오래된 두 줄만 지워진다 — 정확히 90일 된 줄은 남는다
+        assert_eq!(prune(&conn, now - KEEP_SECS).unwrap(), 2);
+        assert_eq!(prune(&conn, now - KEEP_SECS).unwrap(), 0, "다시 해도 같다");
+        let after = summarize(&conn, since, None).unwrap();
+        assert_eq!(after.today, before.today, "오늘의 합은 그대로");
+        let total_turns: u64 = after.projects.iter().map(|p| p.total.turns).sum();
+        assert_eq!(total_turns, 4);
+        let kept_ages: Vec<i64> = conn
+            .prepare("SELECT at FROM usage_turns ORDER BY at")
+            .unwrap()
+            .query_map([], |r| r.get::<_, i64>(0))
+            .unwrap()
+            .map(|at| (now - at.unwrap()) / 86_400)
+            .collect();
+        assert_eq!(kept_ages, [89, 30, 1, 0]);
+        // 이어 하기로 도는 세션 합 (이번 실행) 도 그대로 — 실행의 줄은 모두 90일 안이다
+        let live = LiveRun {
+            project_id: 1,
+            run_id: 1,
+            session_id: None,
+        };
+        let session = summarize(&conn, since, Some(&live))
+            .unwrap()
+            .session
+            .unwrap();
+        assert_eq!(session.usage.turns, 2);
+    }
+
+    #[test]
+    fn the_sums_read_the_time_index_not_the_whole_table() {
+        let conn = conn();
+        let plan = |sql: &str| -> String {
+            conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap()
+                .query_map([1_i64], |row| row.get::<_, String>(3))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect::<Vec<_>>()
+                .join(" | ")
+        };
+        let today = plan(&format!(
+            "SELECT project_id, {SUM_COLUMNS} FROM usage_turns INDEXED BY usage_turns_by_time WHERE at >= ?1 GROUP BY project_id"
+        ));
+        assert!(today.contains("usage_turns_by_time (at>?)"), "{today}");
+        let prune_plan = plan("DELETE FROM usage_turns WHERE at < ?1");
+        assert!(
+            prune_plan.contains("usage_turns_by_time (at<?)"),
+            "{prune_plan}"
+        );
+        // 그리고 합이 SQL 의 `at >= since` 를 같은 뜻으로 쓴다 (위 문장이 `grouped` 의 문장과 같은 모양인지 — 아래 합 시험이 확인)
+        let day = local_day_start(SINCE + 100);
+        insert(&conn, &ctx(1, 1, day, None), &turn(1, 0, 0, 0, 0.1)).unwrap();
+        assert_eq!(summarize(&conn, day, None).unwrap().today.turns, 1);
     }
 
     #[test]

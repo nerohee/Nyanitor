@@ -14,7 +14,7 @@ use nyanitor_lib::harness::script::{
     ScriptOutcome, ScriptResult, UnreadableReason, backups_list, install, plan, restore,
     restore_plan,
 };
-use nyanitor_lib::harness::{Context, HarnessState, flow};
+use nyanitor_lib::harness::{Context, HarnessState, HarnessTask, flow};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -337,6 +337,58 @@ fn a_script_that_does_not_finish_is_stopped_at_the_time_limit() {
         "{:?}",
         started.elapsed()
     );
+}
+
+/// P10-08 — 설치 · 되돌리기가 도는 동안은 앱을 끄려 할 때 물어야 하고 (`quit_task`), 끝나면 묻지 않는다. 미리보기 같은 짧은 일은 묻지 않는다.
+#[test]
+fn the_quit_warning_is_on_while_an_install_or_a_restore_runs_and_off_when_it_ends() {
+    let fr = FakeRepo::new(
+        "flow-quit-warning",
+        &[
+            ("plan", "plan-fresh.json"),
+            ("install", "install-change.json"),
+            ("backups", "backups.json"),
+            ("restore-plan", "restore-plan.json"),
+            ("restore", "restore.json"),
+        ],
+    );
+    let state = HarnessState::default();
+    // 짧은 일은 도는 중에도 묻지 않는다 (끝난 뒤 값으로 확인) · 일이 없을 때도
+    assert_eq!(state.quit_task(), None);
+    flow::install_plan(&state, &fr.ctx).unwrap();
+    flow::restore_plan(&state, &fr.ctx, LISTED).unwrap();
+    assert_eq!(state.quit_task(), None);
+
+    let seen_while_slow = |op: &str, run: &(dyn Fn() + Sync)| {
+        let before = fr.calls().len();
+        fr.sleep(op, 3);
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(run);
+            let deadline = Instant::now() + Duration::from_secs(60);
+            while fr.calls().len() == before {
+                assert!(Instant::now() < deadline, "{op} 이 시작하지 않았다");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let seen = state.quit_task();
+            worker.join().unwrap();
+            seen
+        })
+    };
+
+    let seen = seen_while_slow("install", &|| {
+        let result = flow::install(&state, &fr.ctx).unwrap();
+        assert_eq!(result.outcome, ScriptOutcome::Ran, "{result:?}");
+    });
+    assert_eq!(seen, Some(HarnessTask::Install), "설치 중");
+    assert_eq!(state.quit_task(), None, "설치가 끝났다");
+
+    flow::restore_plan(&state, &fr.ctx, LISTED).unwrap();
+    let seen = seen_while_slow("restore", &|| {
+        let result = flow::restore(&state, &fr.ctx, LISTED).unwrap();
+        assert_eq!(result.outcome, ScriptOutcome::Ran, "{result:?}");
+    });
+    assert_eq!(seen, Some(HarnessTask::Install), "되돌리기 중");
+    assert_eq!(state.quit_task(), None, "되돌리기가 끝났다");
 }
 
 // ───────────────────────────── 백업 번호 (되돌리기) ─────────────────────────────

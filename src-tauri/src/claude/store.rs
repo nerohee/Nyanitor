@@ -7,11 +7,15 @@
 //!   그 폴더를 등록하면(`projects::add`) `import_legacy_for_project` 가 옛 파일에서, 이미 이름을 바꾼 `.imported*` 파일에서도 그 폴더의 항목만 찾아 가져온다 (먼저 이름을 바꿔 버린 PC 를 위해).
 //!   DB 를 못 써서 못 가져왔으면 파일을 그대로 두고 다음 실행에서 다시 한다 (이미 있는 (프로젝트, 세션 ID) 는 건드리지 않아 몇 번을 해도 같다).
 //!   이 앱보다 새 모양(`version` 이 큼)이거나 읽지 못한 파일은 건드리지 않는다. 깨진 파일은 `.corrupt` 로 옮겨 둔다.
+//! - **프로젝트를 빼면 그 폴더의 항목도 옛 파일들에서 지운다** (`forget_legacy_entries` — D-48 "빼면 기록도 지운다"). 안 그러면 같은 폴더를 다시 등록할 때 위의 `.imported*` 가져오기가
+//!   뺀 프로젝트의 옛 세션 ID 를 "이어 하기" 로 되살린다. (다시 등록할 때 `.imported*` 를 읽지 않는 쪽은 고르지 않았다 — 처음 켠 때 프로젝트가 없어 이름이 바뀐 PC 에서
+//!   나중에 등록하는 폴더의 세션 ID 를 찾아 주는 쪽이 그 가져오기의 존재 이유라서, 지우는 쪽이 둘 다 지킨다.)
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -342,6 +346,75 @@ pub fn import_legacy_for_project(db: &AppDb, data_dir: &Path, key: &str) -> usiz
         log::info!("imported {imported} saved session(s) for a newly registered project");
     }
     imported
+}
+
+/// 옛 파일들을 고쳐 쓰는 일은 한 번에 하나 (읽고 → 고치고 → 바꿔 놓는 사이에 다른 프로젝트를 빼는 일이 끼어 되살리지 않게)
+static LEGACY_REWRITE: Mutex<()> = Mutex::new(());
+
+/// 프로젝트를 뺄 때: 옛 `claude-sessions.json` · 이름을 바꾼 `.imported*` 에서 이 폴더(`key` = `project_key`)의 항목을 지운다. 지운 항목 수를 돌려준다.
+///
+/// - 다른 폴더의 항목 · 모르는 칸은 그대로다 (`serde_json::Value` 로 고친다). 항목이 없는 파일은 건드리지 않는다. 이 앱이 못 읽는 파일(깨짐 · 새 모양 · 너무 큼)은 가져오지도 않으므로 건드리지 않는다.
+/// - 파일은 임시 파일에 쓴 뒤 이름을 바꿔 놓는다 (쓰다 끊겨도 옛 파일이 그대로 남는다). 못 쓰면 `file_write_failed` — 부른 쪽은 프로젝트를 빼지 않는다 (남기면 다시 등록할 때 되살아난다).
+/// - 파일이 없으면 지울 것이 없다 (오류 아님). 읽지 못하는 파일(권한 등)은 그 안에 항목이 있는지 알 수 없어 오류로 알린다.
+pub fn forget_legacy_entries(data_dir: &Path, key: &str) -> Result<usize, AppError> {
+    let _guard = LEGACY_REWRITE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut files = vec![data_dir.join(LEGACY_FILE)];
+    files.extend(renamed_legacy_files(data_dir));
+    let mut removed = 0;
+    for path in files {
+        removed += forget_in_file(&path, key)?;
+    }
+    if removed > 0 {
+        log::info!("removed {removed} old saved session entr(ies) of an unregistered project");
+    }
+    Ok(removed)
+}
+
+fn forget_in_file(path: &Path, key: &str) -> Result<usize, AppError> {
+    let file_error = |err: io::Error| AppError::FileWriteFailed(err.to_string());
+    match fs::metadata(path) {
+        Ok(meta) if meta.len() > MAX_RENAMED_BYTES => return Ok(0),
+        Ok(_) => {}
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(err) => return Err(file_error(err)),
+    }
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(0),
+        // UTF-8 이 아니다 = 가져오지도 못하는 깨진 파일
+        Err(err) if err.kind() == io::ErrorKind::InvalidData => return Ok(0),
+        Err(err) => return Err(file_error(err)),
+    };
+    // 가져올 수 있는 모양(`Parsed::Data`)이고 이 폴더의 항목이 있는 파일만 고친다
+    let Parsed::Data(data) = parse_legacy(&text) else {
+        return Ok(0);
+    };
+    if !data.projects.contains_key(key) {
+        return Ok(0);
+    }
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Ok(0);
+    };
+    let removed = value
+        .get_mut("projects")
+        .and_then(serde_json::Value::as_object_mut)
+        .is_some_and(|projects| projects.remove(key).is_some());
+    if !removed {
+        return Ok(0);
+    }
+    let mut body = serde_json::to_string_pretty(&value).map_err(|err| {
+        AppError::Internal(format!("could not serialize the old session file: {err}"))
+    })?;
+    body.push('\n');
+    let temp = with_suffix(path, ".tmp");
+    let written = fs::write(&temp, body.as_bytes()).and_then(|()| fs::rename(&temp, path));
+    if let Err(err) = written {
+        let _ = fs::remove_file(&temp);
+        return Err(file_error(err));
+    }
+    Ok(1)
 }
 
 fn move_corrupt(path: &Path) -> LegacyImport {
@@ -1057,5 +1130,102 @@ mod tests {
             project_key(Path::new("\\\\srv\\share")),
             project_key(Path::new("C:\\srv\\share"))
         );
+    }
+
+    // ───────── 프로젝트를 뺄 때 옛 파일의 항목 지우기 (P10-07) ─────────
+
+    fn entry_keys(path: &Path) -> Vec<String> {
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        value["projects"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn forgetting_a_folder_removes_only_its_entry_from_the_live_and_renamed_files() {
+        let dir = TempDir::new("legacy-forget");
+        let live = legacy_path(&dir);
+        let renamed = dir.join(format!("{LEGACY_FILE}.imported"));
+        let renamed_later = dir.join(format!("{LEGACY_FILE}.imported-1700000000"));
+        let untouched = dir.join(format!("{LEGACY_FILE}.imported-1700000001"));
+        fs::write(
+            &live,
+            r#"{"version":1,"note":"keep","projects":{"a":{"sessionId":"00000000-0000-4000-8000-0000000000a1","updatedAt":1},"b":{"sessionId":"00000000-0000-4000-8000-0000000000b2","updatedAt":2}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            &renamed,
+            legacy_json(&[("a", ID_A, 1), ("b", ID_B, 2), ("c", ID_A, 3)]),
+        )
+        .unwrap();
+        fs::write(&renamed_later, legacy_json(&[("a", ID_B, 9)])).unwrap();
+        let other_only = legacy_json(&[("c", ID_A, 3)]);
+        fs::write(&untouched, &other_only).unwrap();
+
+        assert_eq!(forget_legacy_entries(&dir, "a").unwrap(), 3);
+
+        assert_eq!(entry_keys(&live), ["b"]);
+        assert_eq!(entry_keys(&renamed), ["b", "c"]);
+        assert!(entry_keys(&renamed_later).is_empty());
+        // 다른 칸 · 다른 폴더의 항목 값은 그대로
+        let live_value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&live).unwrap()).unwrap();
+        assert_eq!(live_value["version"], 1);
+        assert_eq!(live_value["note"], "keep");
+        assert_eq!(
+            live_value["projects"]["b"]["sessionId"],
+            "00000000-0000-4000-8000-0000000000b2"
+        );
+        // 이 폴더의 항목이 없던 파일은 손대지 않았다 · 임시 파일이 남지 않았다
+        assert_eq!(fs::read_to_string(&untouched).unwrap(), other_only);
+        assert!(!with_suffix(&live, ".tmp").exists());
+        assert!(!with_suffix(&renamed, ".tmp").exists());
+        // 다시 해도 같다
+        assert_eq!(forget_legacy_entries(&dir, "a").unwrap(), 0);
+        // 가져오기는 뺀 폴더의 ID 를 더는 찾지 못한다
+        let db = db_with_projects(&dir, &["a"]);
+        assert_eq!(import_legacy_for_project(&db, &dir, "a"), 0);
+        assert_eq!(last(&db, 1), None);
+    }
+
+    #[test]
+    fn forgetting_leaves_unreadable_shapes_and_missing_files_alone() {
+        let dir = TempDir::new("legacy-forget-odd");
+        // 파일이 하나도 없다
+        assert_eq!(forget_legacy_entries(&dir, "a").unwrap(), 0);
+        let newer = dir.join(format!("{LEGACY_FILE}.imported"));
+        let broken = dir.join(format!("{LEGACY_FILE}.imported-1"));
+        let not_utf8 = dir.join(format!("{LEGACY_FILE}.imported-2"));
+        let huge = dir.join(format!("{LEGACY_FILE}.imported-3"));
+        let newer_body = r#"{"version":2,"projects":{"a":{"sessionId":"x","updatedAt":1}}}"#;
+        fs::write(&newer, newer_body).unwrap();
+        fs::write(&broken, "{ not json").unwrap();
+        fs::write(&not_utf8, [0xFF_u8, 0xFE, 0x00]).unwrap();
+        let mut huge_body = legacy_json(&[("a", ID_A, 1)]);
+        huge_body.push_str(&" ".repeat(MAX_RENAMED_BYTES as usize));
+        fs::write(&huge, &huge_body).unwrap();
+
+        assert_eq!(forget_legacy_entries(&dir, "a").unwrap(), 0);
+        assert_eq!(fs::read_to_string(&newer).unwrap(), newer_body);
+        assert_eq!(fs::read_to_string(&broken).unwrap(), "{ not json");
+        assert_eq!(fs::read(&not_utf8).unwrap(), [0xFF, 0xFE, 0x00]);
+        assert_eq!(fs::read_to_string(&huge).unwrap(), huge_body);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_rewritten_is_an_error_and_stays_as_it_was() {
+        let dir = TempDir::new("legacy-forget-fail");
+        let renamed = dir.join(format!("{LEGACY_FILE}.imported"));
+        let body = legacy_json(&[("a", ID_A, 1), ("b", ID_B, 2)]);
+        fs::write(&renamed, &body).unwrap();
+        // 임시 파일 자리에 폴더가 있어 쓸 수 없다
+        fs::create_dir(with_suffix(&renamed, ".tmp")).unwrap();
+        let err = forget_legacy_entries(&dir, "a").unwrap_err();
+        assert_eq!(err.kind(), "file_write_failed");
+        assert_eq!(fs::read_to_string(&renamed).unwrap(), body);
     }
 }

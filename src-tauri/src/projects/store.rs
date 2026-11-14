@@ -109,7 +109,7 @@ pub fn update(
 /// 표의 `ON DELETE CASCADE` 가 같은 일을 하지만 연결이 외래 키를 켜지 않았어도 남지 않게 먼저 직접 지운다. 한 트랜잭션이라 일부만 지워지지 않는다.
 pub fn remove(conn: &Connection, id: i64) -> Result<(), AppError> {
     let tx = conn.unchecked_transaction()?;
-    for table in ["sessions", "chat_items", "usage_turns"] {
+    for table in ["sessions", "chat_items", "usage_turns", "project_trust"] {
         tx.execute(&format!("DELETE FROM {table} WHERE project_id = ?1"), [id])?;
     }
     match tx.execute("DELETE FROM projects WHERE id = ?1", [id])? {
@@ -268,9 +268,14 @@ mod tests {
                 [project],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO project_trust (project_id, settings_hash, trusted_at) VALUES (?1, ?2, 1)",
+                rusqlite::params![project, "b".repeat(64)],
+            )
+            .unwrap();
         }
         remove(&conn, 1).unwrap();
-        for table in ["sessions", "chat_items", "usage_turns"] {
+        for table in ["sessions", "chat_items", "usage_turns", "project_trust"] {
             let count = |project: i64| -> i64 {
                 conn.query_row(
                     &format!("SELECT count(*) FROM {table} WHERE project_id = ?1"),

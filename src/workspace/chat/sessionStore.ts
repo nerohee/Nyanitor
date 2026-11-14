@@ -4,7 +4,7 @@
 // 기록 + 실시간 잇기: 목록을 읽기 전(`load` 가 `ready` 가 아닐 때)에 온 이벤트는 `buffer` 에 모아 두었다가, 읽은 뒤 `mergeLive` 가 기록 끝과 겹치는 것을 빼고 잇는다.
 import { create } from "zustand";
 import { ipc } from "../../lib/ipc";
-import { AppError, type AppErrorKind, type ClaudeEvent, type ClaudeResponse, type ClaudeSessionState, type RawLogEntry, type StartInfo } from "../../lib/ipc-types";
+import { AppError, type AppErrorKind, type ClaudeEvent, type ClaudeResponse, type ClaudeSessionState, type RawLogEntry, type StartInfo, type TrustCheck } from "../../lib/ipc-types";
 import type { WaitingAsker } from "../progress/placement";
 import { applyWorkerEvent, mergeHistoryWorkers, stopAllWorkers, type WorkerEntry } from "../progress/workers";
 import { emptyChat, foldEvent, fromEntries, mergeLive, prependEntries, settleWorkers, type ChatData } from "./model";
@@ -59,7 +59,30 @@ interface QueuedMessage {
   text: string;
 }
 
+/** 폴더 설정 확인 (D-54) — 세션을 시작하려는데 `trust_required` 라 확인 화면을 띄운 동안의 상태 */
+export interface TrustAsk {
+  projectId: number;
+  /** `loading`: 내용을 읽는 중 · `ready`: 보이는 중 · `granting`: 믿는다고 적는 중 */
+  stage: "loading" | "ready" | "granting";
+  /** 보이는 내용 (`loading` 의 처음에는 없다) */
+  check: TrustCheck | null;
+  /** 보는 사이 폴더 설정이 바뀌어 내용을 다시 읽었다 */
+  changed: boolean;
+}
+
+/** 사용자가 확인 화면에서 취소했다 — 오류가 아니라서 화면은 아무것도 알리지 않는다 (`isTrustDeclined`) */
+export class TrustDeclined extends Error {
+  constructor() {
+    super("the user declined to trust the project folder settings");
+    this.name = "TrustDeclined";
+  }
+}
+
+export const isTrustDeclined = (raw: unknown): boolean => raw instanceof TrustDeclined;
+
 interface State {
+  /** 폴더 설정 확인 화면 — 없으면 null (한 번에 하나) */
+  trustAsk: TrustAsk | null;
   /** 처음 상태(`claudeSessionState`)를 읽었다 */
   restored: boolean;
   session: LiveSession | null;
@@ -78,7 +101,7 @@ interface State {
   answeredTurns: number;
 }
 
-const initial = (): State => ({ restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, raw: null, draftBack: null, answeredTurns: 0 });
+const initial = (): State => ({ trustAsk: null, restored: false, session: null, chats: {}, churros: null, churrosStale: false, queued: null, queueError: null, raw: null, draftBack: null, answeredTurns: 0 });
 
 export const useSessionStore = create<State>()(() => initial());
 
@@ -258,6 +281,8 @@ export function resetSessionStore(): void {
   starting = null;
   early = [];
   churrosSeq += 1;
+  trustWaiter?.settle("declined");
+  trustWaiter = null;
   useSessionStore.setState(initial(), true);
 }
 
@@ -318,15 +343,93 @@ export async function refreshResumable(projectId: number): Promise<void> {
 
 // ───────────────────────── 세션 조작 ─────────────────────────
 
+// 폴더 설정 확인 (D-54) — 시작이 `trust_required` 로 거절되면 `trustAsk` 를 띄우고, 사용자가 믿거나(`grantTrust`) 취소할(`declineTrust`) 때까지 시작을 기다린다.
+// 취소하면 `TrustDeclined` 로 시작이 끝나고, 다른 오류(읽기 · 적기 실패)는 그 오류로 끝난다 — 부른 쪽의 오류 표시가 그대로 받는다.
+
+interface TrustWaiter {
+  projectId: number;
+  settle: (outcome: "granted" | "declined" | { error: unknown }) => void;
+}
+
+let trustWaiter: TrustWaiter | null = null;
+
+const asking = (projectId: number): boolean => trustWaiter?.projectId === projectId && get().trustAsk?.projectId === projectId;
+
+function finishTrust(outcome: "granted" | "declined" | { error: unknown }): void {
+  const waiter = trustWaiter;
+  trustWaiter = null;
+  set({ trustAsk: null });
+  waiter?.settle(outcome);
+}
+
+/** 폴더 설정을 (다시) 읽어 보인다. 그사이 이미 믿은 상태가 됐으면(`required: false`) 확인 없이 시작한다 */
+async function readTrust(projectId: number, changed: boolean): Promise<void> {
+  try {
+    const check = await ipc.projectTrustCheck(projectId);
+    if (!asking(projectId)) return;
+    if (!check.required) finishTrust("granted");
+    else set({ trustAsk: { projectId, stage: "ready", check, changed } });
+  } catch (raw) {
+    if (asking(projectId)) finishTrust({ error: raw });
+  }
+}
+
+function askTrust(projectId: number): Promise<"granted" | "declined"> {
+  trustWaiter?.settle("declined");
+  return new Promise((resolve, reject) => {
+    trustWaiter = {
+      projectId,
+      settle: (outcome) => (typeof outcome === "string" ? resolve(outcome) : reject(outcome.error)),
+    };
+    set({ trustAsk: { projectId, stage: "loading", check: null, changed: false } });
+    void readTrust(projectId, false);
+  });
+}
+
+/** 확인 화면의 「믿고 시작」 — 보여 준 내용(`hash`)을 믿는다고 적는다. 그사이 바뀌었으면(`trust_changed`) 새 내용을 다시 읽어 보인다 */
+export async function grantTrust(): Promise<void> {
+  const ask = get().trustAsk;
+  if (!ask || ask.stage !== "ready" || !ask.check) return;
+  const { projectId } = ask;
+  set({ trustAsk: { ...ask, stage: "granting" } });
+  try {
+    await ipc.projectTrustGrant(projectId, ask.check.hash);
+    if (asking(projectId)) finishTrust("granted");
+  } catch (raw) {
+    if (!asking(projectId)) return;
+    if (kindOf(raw) === "trust_changed") {
+      set({ trustAsk: { projectId, stage: "loading", check: ask.check, changed: true } });
+      await readTrust(projectId, true);
+    } else finishTrust({ error: raw });
+  }
+}
+
+/** 확인 화면의 「취소」 · Esc — 시작하지 않는다 */
+export function declineTrust(): void {
+  if (get().trustAsk?.stage === "granting") return;
+  finishTrust("declined");
+}
+
+/** 한 번 시작한다 — 폴더 설정을 확인해야 하면(`trust_required`) 확인을 받은 뒤 다시. 또 거절되면 그 오류 그대로 */
+async function startOnce(projectId: number, resume: boolean): Promise<StartInfo> {
+  try {
+    return await ipc.claudeSessionStart({ projectId, resume });
+  } catch (raw) {
+    if (kindOf(raw) !== "trust_required") throw raw;
+  }
+  if ((await askTrust(projectId)) === "declined") throw new TrustDeclined();
+  return ipc.claudeSessionStart({ projectId, resume });
+}
+
 /** 세션을 시작한다. 이어 하기(`resume`)가 안 되면(`no_saved_session`) 새 대화로 한 번 더 */
 export async function startChat(projectId: number, resume: boolean): Promise<StartInfo> {
   let info: StartInfo;
   try {
-    info = await ipc.claudeSessionStart({ projectId, resume });
+    info = await startOnce(projectId, resume);
   } catch (raw) {
     if (!resume || kindOf(raw) !== "no_saved_session") throw raw;
     patchChat(projectId, { resumable: false });
-    info = await ipc.claudeSessionStart({ projectId, resume: false });
+    info = await startOnce(projectId, false);
   }
   // `session_started` 이벤트가 곧 같은 일을 한다 — 먼저 와 있으면 그대로
   if (!get().session) set({ session: { projectId, busy: false, sessionId: info.resumeSessionId } });

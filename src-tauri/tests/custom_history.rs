@@ -683,3 +683,59 @@ fn removing_a_cat_when_there_is_no_file_creates_nothing() {
     assert!(!result.changed);
     assert!(!r.custom.exists());
 }
+
+// ───────────────────────────── 강제로 꺼진 git 이 남긴 index.lock (P10-08) ─────────────────────────────
+
+/// 잠금 파일을 만들고 수정 시각을 `age_secs` 초 전으로 돌린다
+fn plant_lock(r: &CustomRoot, age_secs: u64) -> std::path::PathBuf {
+    let lock = r.custom.join(".git").join("index.lock");
+    fs::write(&lock, b"").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&lock)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(age_secs))
+        .unwrap();
+    lock
+}
+
+#[test]
+fn an_old_index_lock_left_by_a_stopped_git_is_removed_and_the_write_goes_through() {
+    let r = CustomRoot::new("hist-lock-stale");
+    save(&r, "agent:harness-builder-ui", "opus");
+    let ctx = r.ctx();
+    let env = Env::new(&ctx);
+    // 기록을 시작한다 (적용 없이 저장만으로는 아직 없다 — `ensure_started`)
+    history::ensure_started(&env).unwrap();
+    let lock = plant_lock(&r, 120);
+    let history::Access::Ready(repo) = history::access(&env) else {
+        panic!("the history is not ready");
+    };
+    // 다음 쓰는 git 이 낡은 잠금을 치우고 성공한다
+    repo.stage_all().unwrap();
+    assert!(!lock.exists(), "낡은 잠금이 남았다");
+}
+
+#[test]
+fn a_fresh_index_lock_is_left_alone_and_reported_as_another_git_using_the_repository() {
+    let r = CustomRoot::new("hist-lock-fresh");
+    save(&r, "agent:harness-builder-ui", "opus");
+    let ctx = r.ctx();
+    let env = Env::new(&ctx);
+    history::ensure_started(&env).unwrap();
+    let history::Access::Ready(repo) = history::access(&env) else {
+        panic!("the history is not ready");
+    };
+    // 사용자가 터미널에서 같은 저장소에 git 을 돌리는 중이다 (방금 생긴 잠금)
+    let lock = plant_lock(&r, 0);
+    let error = repo.stage_all().unwrap_err();
+    assert_eq!(error, nyanitor_lib::harness::git::GitError::Locked);
+    assert!(lock.exists(), "남의 잠금을 지웠다");
+    assert!(history::describe(&error).contains("another git"));
+    // 읽기 명령은 잠금과 상관없이 돈다
+    repo.short_head().unwrap();
+    // 잠금이 낡은 뒤에는 지나간다
+    plant_lock(&r, 120);
+    repo.stage_all().unwrap();
+    assert!(!lock.exists());
+}

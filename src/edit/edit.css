@@ -220,7 +220,7 @@
   font-weight: 400;
   letter-spacing: 0.01em;
 }
-.ed-list__scroll > section:first-child > .ed-list__title {
+.ed-list__scroll > [role="group"]:first-child > .ed-list__title {
   margin-top: 0;
 }
 .ed-list__note {
@@ -278,9 +278,9 @@
   outline: var(--focus-ring-w) solid var(--focus-ring);
   outline-offset: 1px;
 }
-.ed-item[data-unreadable="true"] .ed-item__name,
-.ed-item[data-unreadable="true"] .ed-item__file {
-  opacity: 0.65;
+/* 읽을 수 없음은 「읽을 수 없음」 표시 · 이유 글로 알리고, 이름은 흐린 토큰 색으로만 (투명도로 흐리게 하면 4.5:1 이 깨진다) */
+.ed-item[data-unreadable="true"] .ed-item__name {
+  color: var(--color-text-muted);
 }
 .ed-item__text {
   display: flex;
@@ -297,7 +297,7 @@
   overflow: hidden;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -533,6 +533,20 @@
   color: var(--on-accent);
 }
 .ed-seg__opt:has(input:focus-visible) {
+  outline: var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+/* 「내 수정」 모델 · 수준 줄은 단추(role="radio") — 고양이 고르기와 같은 규칙 */
+button.ed-seg__opt {
+  border: 0;
+  background: none;
+  font-family: inherit;
+}
+button.ed-seg__opt[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+button.ed-seg__opt:focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -1637,17 +1651,13 @@ textarea.ed-input {
   border: 1.5px dashed var(--color-border-strong);
   border-radius: var(--wobble);
   background: var(--color-surface);
+  color: inherit;
+  font: inherit;
   text-align: center;
   cursor: default;
   transition:
     transform var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
-}
-.ed-pk__card input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
 }
 .ed-pk__card:hover:not([data-disabled="true"]) {
   border: 1.5px solid var(--ui-line);
@@ -1664,7 +1674,7 @@ textarea.ed-input {
 .ed-pk__card[data-disabled="true"]:not([data-checked="true"]) {
   opacity: 0.7;
 }
-.ed-pk__card:has(input:focus-visible) {
+.ed-pk__card:focus-visible {
   outline: var(--focus-ring-w) solid var(--focus-ring);
   outline-offset: 6px;
 }
@@ -1810,4 +1820,44 @@ textarea.ed-input {
 :root[data-motion="reduced"] .ed-apply__spin,
 :root[data-motion="reduced"] .ed-apply__progress::after {
   animation: none;
+}
+
+/* 낮은 창 (1366×768 @200% 최대화 = 683×343) — 머리말 · 적용 바를 줄이고, 그래도 모자라면 쟁반 전체가 스크롤된다 (D-55).
+   줄인 글은 화면에서만 숨기고 읽어 주기에는 남긴다. 911×450 · 1024×640 은 그대로. */
+@media (max-height: 420px) {
+  .ed-tray__head {
+    padding: var(--space-2) var(--space-4);
+  }
+  .ed-tray__title {
+    font-size: var(--text-xl);
+  }
+  .ed-tray__lead,
+  .ed-apply__where {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .ed-apply__bar,
+  .ed-foot {
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+  .ed-apply__note {
+    flex-basis: 160px;
+  }
+  .ed-panel__head {
+    padding: var(--space-2) var(--space-4);
+  }
+  .ed-panel__face .ed-face {
+    width: 32px;
+    height: 32px;
+  }
+  .ed-panel__title {
+    font-size: var(--text-lg);
+  }
 }

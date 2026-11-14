@@ -7,6 +7,8 @@
 //! - `status` — 위치 · 원본 · 받은 원본 · git · Git Bash 한눈에 (읽기만)
 //! - `script` — 설치 스크립트 실행 · 표준 출력 JSON 읽기 · 백업 번호 검사
 //! - `backups` — 오래된 백업 정리 (최신 12개만)
+//! - `gitlock` — 강제로 꺼진 git 이 남긴 `.git/index.lock` 을 git 을 부르기 직전에 치운다 (오래된 것만)
+//! - `interrupted` — 하네스 작업 도중 앱을 끝냈다는 표시 (앱 데이터 폴더, 다음 실행이 읽고 지운다)
 //! - `flow` — 한 번에 하나 잠금 + 본 것만 한다 (확인 → 받기, 미리보기 → 설치 · 되돌리기를 Rust 에서 지키는 기억)
 //! - `commands` — Tauri 명령 (얇게: `flow` 로 전달만)
 //!
@@ -17,6 +19,8 @@ pub mod backups;
 pub mod commands;
 pub mod flow;
 pub mod git;
+pub mod gitlock;
+pub mod interrupted;
 pub mod locate;
 pub mod script;
 pub mod status;
@@ -95,35 +99,89 @@ struct Memory {
     restore_plan: Option<(String, PathBuf)>,
 }
 
+/// 하네스 일이 어떤 종류인가 — 앱을 끄려 할 때 물어야 하는지 · 뭐라고 물을지를 정한다 (P10-08, D-54).
+/// 일을 시작하는 쪽이 `HarnessState::begin_task` 로 밝힌다. 밝히지 않은 일(`begin`)은 `Light`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HarnessTask {
+    /// 짧은 읽기 · 미리보기 · 파일 저장 — 도중에 끊겨도 다시 하면 된다 (끝낼 때 묻지 않는다)
+    Light,
+    /// 원본 받기 · 업데이트 확인 · 받아 오기 (git) — 끊기면 받던 것이 반쯤 남을 수 있다
+    Fetch,
+    /// 설치 · 되돌리기 · 내 수정 적용 · 기록 되돌리기 — 끊기면 `~/.claude` 가 반쯤 바뀌거나, 설치는 됐는데 기록은 안 남을 수 있다
+    Install,
+}
+
+impl HarnessTask {
+    fn code(self) -> u8 {
+        match self {
+            HarnessTask::Light => 1,
+            HarnessTask::Fetch => 2,
+            HarnessTask::Install => 3,
+        }
+    }
+
+    fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(HarnessTask::Light),
+            2 => Some(HarnessTask::Fetch),
+            3 => Some(HarnessTask::Install),
+            _ => None,
+        }
+    }
+
+    /// 앱을 끌 때 묻고 · "도중 끝냄" 표시를 남길 일인가
+    pub fn needs_quit_warning(self) -> bool {
+        self != HarnessTask::Light
+    }
+}
+
 /// 하네스 일(git · 스크립트 · 정리)은 앱 안에서 한 번에 하나 (정해 둔 것 11).
 /// `begin()` 이 돌려준 표를 쥐고 있는 동안 다른 `begin()` 은 실패한다. 버려지면(오류 · 패닉 포함) 풀린다.
 /// 기억(`Memory`)은 표를 쥔 쪽만 읽고 쓴다 — 앱을 다시 띄우면 비어 있다.
+/// 표에는 일의 종류(`HarnessTask`)가 같이 적힌다 — 하나의 원자 값이라 "돌고 있나" 와 "무슨 일인가" 가 어긋나지 않는다.
 #[derive(Debug, Clone, Default)]
 pub struct HarnessState {
-    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// 0 = 일 없음, 아니면 `HarnessTask::code`
+    running: std::sync::Arc<std::sync::atomic::AtomicU8>,
     memory: std::sync::Arc<std::sync::Mutex<Memory>>,
 }
 
 #[derive(Debug)]
 pub struct BusyGuard {
-    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    running: std::sync::Arc<std::sync::atomic::AtomicU8>,
     memory: std::sync::Arc<std::sync::Mutex<Memory>>,
 }
 
 impl HarnessState {
+    /// 표를 잡는다 — 종류는 `Light` (끌 때 묻지 않는 짧은 일). 묻어야 하는 일은 `begin_task`.
     pub fn begin(&self) -> Result<BusyGuard, crate::error::AppError> {
+        self.begin_task(HarnessTask::Light)
+    }
+
+    /// 표를 잡고 일의 종류를 밝힌다 (앱을 끄려 할 때 `running_task` 가 읽는다).
+    pub fn begin_task(&self, task: HarnessTask) -> Result<BusyGuard, crate::error::AppError> {
         use std::sync::atomic::Ordering;
-        self.busy
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        self.running
+            .compare_exchange(0, task.code(), Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| crate::error::AppError::HarnessBusy)?;
         Ok(BusyGuard {
-            busy: self.busy.clone(),
+            running: self.running.clone(),
             memory: self.memory.clone(),
         })
     }
 
     pub fn is_busy(&self) -> bool {
-        self.busy.load(std::sync::atomic::Ordering::Acquire)
+        self.running.load(std::sync::atomic::Ordering::Acquire) != 0
+    }
+
+    /// 지금 도는 일의 종류 (없으면 `None`)
+    pub fn running_task(&self) -> Option<HarnessTask> {
+        HarnessTask::from_code(self.running.load(std::sync::atomic::Ordering::Acquire))
+    }
+
+    /// 앱을 끄려 할 때 물어야 하는 일이 돌고 있으면 그 종류 (`Light` 는 묻지 않는다)
+    pub fn quit_task(&self) -> Option<HarnessTask> {
+        self.running_task().filter(|task| task.needs_quit_warning())
     }
 }
 
@@ -171,7 +229,7 @@ impl BusyGuard {
 
 impl Drop for BusyGuard {
     fn drop(&mut self) {
-        self.busy.store(false, std::sync::atomic::Ordering::Release);
+        self.running.store(0, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -192,6 +250,49 @@ mod tests {
         assert!(!state.is_busy());
         let again = state.begin().unwrap();
         drop(again);
+    }
+
+    #[test]
+    fn the_running_task_is_told_while_the_turn_is_held_and_gone_when_it_is_dropped() {
+        let state = HarnessState::default();
+        assert_eq!(state.running_task(), None);
+        assert_eq!(state.quit_task(), None);
+        for task in [HarnessTask::Fetch, HarnessTask::Install] {
+            let guard = state.begin_task(task).unwrap();
+            assert_eq!(state.running_task(), Some(task));
+            assert_eq!(state.quit_task(), Some(task));
+            // 같은 상태를 복사해 가진 쪽에도 같은 것이 보이고, 둘째 일은 종류를 바꾸지 못한다
+            assert_eq!(state.clone().quit_task(), Some(task));
+            assert!(state.begin_task(HarnessTask::Light).is_err());
+            assert_eq!(state.running_task(), Some(task));
+            drop(guard);
+            assert_eq!(state.running_task(), None);
+            assert_eq!(state.quit_task(), None);
+        }
+    }
+
+    #[test]
+    fn a_light_turn_is_busy_but_does_not_ask_the_user_before_quitting() {
+        let state = HarnessState::default();
+        let guard = state.begin().unwrap();
+        assert!(state.is_busy());
+        assert_eq!(state.running_task(), Some(HarnessTask::Light));
+        assert_eq!(state.quit_task(), None);
+        drop(guard);
+        assert!(!state.is_busy());
+    }
+
+    #[test]
+    fn the_task_is_cleared_when_the_work_panics() {
+        let state = HarnessState::default();
+        let inner = state.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = inner.begin_task(HarnessTask::Install).unwrap();
+            panic!("boom");
+        })
+        .join();
+        assert_eq!(state.quit_task(), None);
+        assert!(state.begin().is_ok());
     }
 
     #[test]

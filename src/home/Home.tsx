@@ -114,7 +114,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, on
     <div className="home" data-testid="home" data-skin="3" data-time={time}>
       <AppNav current="house" onGo={onGo} />
       <main className="hm-view">
-        <h1 className="hm-sr">{t("home.title")}</h1>
+        <h1 className="hm-sr" tabIndex={-1}>{t("home.title")}</h1>
         <div className="hm-scene" ref={sceneRef}>
           <HouseScene
             className="hm-room"

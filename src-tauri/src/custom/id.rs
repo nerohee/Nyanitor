@@ -1,10 +1,11 @@
 //! 항목 id (D-51) — 화면이 보내는 것은 항목 id 와 값 · 글뿐이다. 경로 · 파일 이름은 받지 않는다.
 //!
 //! - `main` (오케스트레이터 = 하네스 설정 `planner`), `agent:<이름>` (`agents/<이름>.md`), `skill:<이름>` (`skills/<이름>/SKILL.md`)
-//! - `<이름>` 은 `^[a-z][a-z0-9-]{0,63}$`. 경로는 이 모듈이 이름에서 만든다 (`/` 로 이은 상대 경로 — 원본 폴더 · 내 수정 폴더 어느 쪽에나 붙인다).
+//! - `<이름>` 은 `^[a-z][a-z0-9-]{0,63}$` 이고 윈도 장치 이름(`con` · `nul` · `com1` …)은 아니다. 경로는 이 모듈이 이름에서 만든다 (`/` 로 이은 상대 경로 — 원본 폴더 · 내 수정 폴더 어느 쪽에나 붙인다).
 //! - `agents/_common` 은 항목이 아니다 (이름 모양에 `_` 가 없다). `agent:main` 도 거절한다 (`main` 은 오케스트레이터의 이름이다 — 고양이 연결의 키).
 
 use crate::error::AppError;
+use crate::projects::docs::is_reserved_device;
 
 /// 이름의 최대 길이
 pub const NAME_MAX: usize = 64;
@@ -21,6 +22,8 @@ pub fn valid_cat_id(id: &str) -> bool {
     valid_slug(id, CAT_ID_MAX)
 }
 
+/// 이름 모양 + 윈도 장치 이름(`con` · `nul` · `aux` · `prn` · `com1`~`com9` · `lpt1`~`lpt9`)이 아님 —
+/// 장치 이름은 파일 · 폴더 이름으로 쓰면 윈도에서 만들 수 없거나 장치로 열린다. 모든 OS 에서 거절한다 (`cons` · `com10` · `null` 은 받는다).
 fn valid_slug(text: &str, max: usize) -> bool {
     let bytes = text.as_bytes();
     !bytes.is_empty()
@@ -29,6 +32,7 @@ fn valid_slug(text: &str, max: usize) -> bool {
         && bytes
             .iter()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+        && !is_reserved_device(text)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -164,6 +168,34 @@ mod tests {
             &"a".repeat(65),
         ] {
             assert!(!valid_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn windows_device_names_are_not_names() {
+        let devices = [
+            "con", "prn", "aux", "nul", "com1", "com5", "com9", "lpt1", "lpt9",
+        ];
+        for device in devices {
+            assert!(!valid_name(device), "{device}");
+            assert!(!valid_cat_id(device), "{device}");
+            assert!(
+                ItemId::parse(&format!("agent:{device}")).is_err(),
+                "{device}"
+            );
+            assert!(
+                ItemId::parse(&format!("skill:{device}")).is_err(),
+                "{device}"
+            );
+        }
+        // 비슷하지만 장치가 아닌 이름은 받는다
+        for fine in [
+            "cons", "com10", "null", "com", "com0", "lpt", "lpt10", "conn", "aux2", "prn-x",
+            "nul-1", "xcon",
+        ] {
+            assert!(valid_name(fine), "{fine}");
+            assert!(valid_cat_id(fine), "{fine}");
+            assert!(ItemId::parse(&format!("skill:{fine}")).is_ok(), "{fine}");
         }
     }
 

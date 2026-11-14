@@ -21,7 +21,9 @@ use super::decide::{
 use crate::claude::events::SessionEvent;
 use crate::claude::session::SessionManager;
 use crate::db::AppDb;
+use crate::harness::{HarnessState, HarnessTask};
 use crate::projects::{self, ProjectsState, progress};
+use crate::strings;
 use crate::tray;
 
 enum Msg {
@@ -67,17 +69,54 @@ impl AttentionHandle {
     }
 }
 
-/// 트레이 "종료" 를 눌렀을 때 물어야 하나 — 턴이 돌거나 · 작업자가 일하거나 · 남은 요청이 있다.
+/// 앱을 끄려 할 때 묻는 까닭 — 하네스 작업이 먼저다 (끊기면 파일이 반쯤 바뀐 채 남을 수 있어 일하는 중보다 무겁다).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitWarning {
+    /// 하네스 작업 (받기 · 업데이트 · 설치 · 되돌리기) 또는 내 수정 적용 · 되돌리기가 도는 중 — 어떤 일인지 같이 들고 있다
+    Harness(HarnessTask),
+    /// 먹물이 일하는 중 (턴 · 작업자 · 남은 요청)
+    Working,
+}
+
+impl QuitWarning {
+    /// 대화상자 본문 (`strings.rs`)
+    pub fn message(self) -> &'static str {
+        match self {
+            QuitWarning::Harness(HarnessTask::Fetch) => strings::QUIT_MESSAGE_FETCH,
+            // `Light` 는 `pick_quit_warning` 이 걸러 여기 오지 않는다 — 와도 설치 경고가 더 안전한 쪽이다
+            QuitWarning::Harness(_) => strings::QUIT_MESSAGE_INSTALL,
+            QuitWarning::Working => strings::QUIT_MESSAGE,
+        }
+    }
+}
+
+/// 묻는 까닭을 고른다 (순수). 하네스 작업(`Light` 는 뺀다)이 일하는 중보다 먼저, 둘 다 아니면 `None`.
+pub fn pick_quit_warning(harness: Option<HarnessTask>, working: bool) -> Option<QuitWarning> {
+    if let Some(task) = harness.filter(|task| task.needs_quit_warning()) {
+        return Some(QuitWarning::Harness(task));
+    }
+    working.then_some(QuitWarning::Working)
+}
+
+/// 트레이 "종료" 를 눌렀을 때 물어야 하는 까닭 — 하네스 작업이 돌거나 · 턴이 돌거나 · 작업자가 일하거나 · 남은 요청이 있다.
 /// 이벤트를 따라온 값과 세션 관리자의 지금 상태 중 하나라도 "그렇다" 면 묻는다 (일을 멈추는 쪽으로 틀리지 않게).
 /// 세션 관리자의 잠금을 짧게 쥐므로 메뉴 처리기(메인 스레드)에서 부르지 않는다.
-pub fn quit_needs_warning<R: Runtime>(app: &AppHandle<R>) -> bool {
+pub fn quit_warning<R: Runtime>(app: &AppHandle<R>) -> Option<QuitWarning> {
+    let harness = app
+        .try_state::<HarnessState>()
+        .and_then(|state| state.quit_task());
     let tracked = app
         .try_state::<AttentionHandle>()
         .is_some_and(|handle| handle.quit_warning_hint());
     let live = app
         .try_state::<SessionManager>()
         .is_some_and(|manager| state_needs_quit_warning(&manager.state()));
-    tracked || live
+    pick_quit_warning(harness, tracked || live)
+}
+
+/// 트레이 "종료" 를 눌렀을 때 물어야 하나 (`quit_warning` 이 있으면 참)
+pub fn quit_needs_warning<R: Runtime>(app: &AppHandle<R>) -> bool {
+    quit_warning(app).is_some()
 }
 
 /// 이 모듈의 스레드를 띄운다.
@@ -196,5 +235,57 @@ impl Host for TauriHost {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_harness_task_that_writes_is_asked_about_even_when_nothing_else_works() {
+        for task in [HarnessTask::Fetch, HarnessTask::Install] {
+            assert_eq!(
+                pick_quit_warning(Some(task), false),
+                Some(QuitWarning::Harness(task))
+            );
+        }
+    }
+
+    #[test]
+    fn a_light_task_or_no_task_asks_nothing() {
+        assert_eq!(pick_quit_warning(None, false), None);
+        assert_eq!(pick_quit_warning(Some(HarnessTask::Light), false), None);
+    }
+
+    #[test]
+    fn the_session_alone_keeps_the_old_warning() {
+        assert_eq!(pick_quit_warning(None, true), Some(QuitWarning::Working));
+        assert_eq!(
+            pick_quit_warning(Some(HarnessTask::Light), true),
+            Some(QuitWarning::Working)
+        );
+    }
+
+    #[test]
+    fn a_harness_task_wins_over_a_working_session() {
+        assert_eq!(
+            pick_quit_warning(Some(HarnessTask::Install), true),
+            Some(QuitWarning::Harness(HarnessTask::Install))
+        );
+    }
+
+    #[test]
+    fn each_cause_has_its_own_words() {
+        let working = QuitWarning::Working.message();
+        let install = QuitWarning::Harness(HarnessTask::Install).message();
+        let fetch = QuitWarning::Harness(HarnessTask::Fetch).message();
+        assert_eq!(working, strings::QUIT_MESSAGE);
+        assert!(
+            install.starts_with("설치하는 중이에요 — 지금 끝내면 Claude 설정이 반쯤 바뀐 채로")
+        );
+        assert_ne!(install, working);
+        assert_ne!(fetch, install);
+        assert_ne!(fetch, working);
     }
 }

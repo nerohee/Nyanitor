@@ -70,6 +70,7 @@ pub fn describe(error: &GitError) -> String {
     match error {
         GitError::Spawn(text) => text.clone(),
         GitError::TimedOut => "git timed out".to_string(),
+        GitError::Locked => crate::harness::git::LOCKED_DETAIL.to_string(),
         GitError::Exit { code, detail } => format!(
             "git exited with {}: {}",
             code.map_or("no code".to_string(), |c| c.to_string()),

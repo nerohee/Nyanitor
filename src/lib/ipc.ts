@@ -9,6 +9,7 @@ import {
   AppError,
   CLAUDE_SESSION_EVENT,
   WINDOW_SHOWN_EVENT,
+  WINDOW_VISIBILITY_EVENT,
   toAppError,
   type AgentsList,
   type AppInfo,
@@ -52,9 +53,11 @@ import {
   type StartInfo,
   type StartRequest,
   type StopInfo,
+  type TrustCheck,
   type UsageResult,
   type UsageSummary,
   type WindowShownEvent,
+  type WindowVisibilityEvent,
 } from "./ipc-types";
 
 export * from "./ipc-types";
@@ -122,6 +125,22 @@ async function onWindowShown(handler: (event: WindowShownEvent) => void): Promis
   return unlisten;
 }
 
+/**
+ * 창이 숨겨지거나(트레이 · 최소화) 다시 보여 화면(웹뷰)이 숨겨졌다 · 보인다는 것을 듣는다 (D-55). 바뀔 때만 온다.
+ * 돌려주는 함수를 부르면 그만 듣는다. 브라우저에서는 가짜 모드가 흉내 낸다 (`fakeClaude.simulateWindowVisibility`).
+ * 웹뷰가 숨겨지면 `document.visibilityState` 도 `hidden` 이 되므로, 화면 코드는 이 이벤트가 아니라 `visibilitychange` 를 봐도 된다 (이 이벤트는 그 보강).
+ */
+async function onWindowVisibility(handler: (event: WindowVisibilityEvent) => void): Promise<() => void> {
+  if (!inTauri()) {
+    const { fakeClaude } = await loadFake().catch((raw: unknown) => {
+      throw toAppError(raw);
+    });
+    return fakeClaude.subscribeWindowVisibility(handler);
+  }
+  const unlisten: UnlistenFn = await listen<WindowVisibilityEvent>(WINDOW_VISIBILITY_EVENT, (event) => handler(event.payload));
+  return unlisten;
+}
+
 export const ipc = {
   appInfo: () => call<AppInfo>("app_info"),
 
@@ -129,7 +148,7 @@ export const ipc = {
   claudeDiscover: () => call<ClaudeStatus>("claude_discover"),
   /** `claude auth login` 을 새 터미널 창으로 띄운다 (로그인은 Anthropic 의 흐름 — 앱은 로그인 화면을 만들지 않는다) */
   claudeOpenLogin: () => call<void>("claude_open_login"),
-  /** 세션 시작 — **등록된 프로젝트 번호로만** (D-47). 폴더는 Rust 가 번호로 찾고, 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다. 돌려주는 `model` · `effort` 가 실제로 쓴 값 */
+  /** 세션 시작 — **등록된 프로젝트 번호로만** (D-47). 폴더는 Rust 가 번호로 찾고, 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다. 돌려주는 `model` · `effort` 가 실제로 쓴 값. 폴더 설정(훅 · 허용 규칙 · MCP 등)을 아직 확인하지 않았으면 `trust_required` — 프로세스를 띄우지 않는다 (`projectTrustCheck` · `projectTrustGrant`, D-54) */
   claudeSessionStart: (request: StartRequest) => call<StartInfo>("claude_session_start", { request }),
   claudeSessionSend: (text: string) => call<void>("claude_session_send", { text }),
   claudeSessionRespond: (requestId: string, response: ClaudeResponse) =>
@@ -142,6 +161,7 @@ export const ipc = {
   claudeRawLog: () => call<RawLogEntry[]>("claude_raw_log"),
   onClaudeEvent,
   onWindowShown,
+  onWindowVisibility,
 
   // 하네스 설치 · 업데이트 (P4-02). 넘기는 값은 백업 번호 하나뿐 — 실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다.
   /** 위치 · 원본(개발자 모드) · 받은 원본 · git · Git Bash. 읽기만 한다 */
@@ -252,4 +272,10 @@ export const ipc = {
   projectDocsList: (id: number) => call<DocsList>("project_docs_list", { id }),
   /** 문서 하나 읽기. `path` 는 `projectDocsList` 가 준 경로 — 모양이 틀리면(`..` · 절대 경로 · `.md` 아님 …) `invalid_input` */
   projectDocRead: (id: number, path: string) => call<DocRead>("project_doc_read", { id, path }),
+
+  // 프로젝트 폴더 신뢰 (P10-03, D-54) — 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP · 플러그인 · env)을 사용자가 확인하기 전에는 세션을 시작하지 않는다. 프로젝트 번호와 해시만 넘긴다.
+  /** 이 프로젝트 폴더의 설정을 읽어 확인이 필요한지 + 요약 + 해시. 위험한 내용이 없으면 `required: false` (오류가 아니다). 등록 안 된 번호 · 폴더 없음 · 고를 수 없는 폴더는 세션 시작과 같은 오류 */
+  projectTrustCheck: (id: number) => call<TrustCheck>("project_trust_check", { id }),
+  /** 화면이 본 설정(`hash` = `projectTrustCheck` 가 준 값)을 신뢰로 적는다. 지금 다시 읽은 해시와 다르면 `trust_changed` (적지 않음 — 다시 `projectTrustCheck`), 모양이 틀린 해시는 `invalid_input`. 세션 시작은 이 뒤에도 시작 직전에 다시 판단한다 (`trust_required`) */
+  projectTrustGrant: (id: number, hash: string) => call<void>("project_trust_grant", { id, hash }),
 };

@@ -665,7 +665,8 @@ pub fn summarize_tool_input(tool: &str, input: Option<&Value>) -> String {
         "WebSearch" => &["query"],
         // 작업자를 부르는 도구 — 지시 글(`prompt`)은 요약에 쓰지 않는다 (기록에 남을 수 있어 D-48)
         "Agent" | "Task" => &["description", "subagent_type"],
-        _ => &["description", "command", "file_path", "prompt"],
+        // 모르는 도구(MCP · 새 도구)도 `prompt` 는 쓰지 않는다 — 길고 비밀이 섞일 수 있는 글이 기록 DB 에 남는다 (P10-07)
+        _ => &["description", "command", "file_path"],
     };
     keys.iter()
         .find_map(|key| str_at(input, key))
@@ -892,6 +893,292 @@ fn is_broad_content(content: &str) -> bool {
     content.chars().all(|c| c == '*' || c == '/') || content == ":*"
 }
 
+// ── CLI 가 제안한 규칙 거르기 (P10-07, D-54) ──
+// 제안 규칙은 CLI 가 만든 것이라 앱의 보호 이름(`PROTECTED_NAMES`) 검사를 거치지 않았다. 받아들이기 전에 같은 목록으로 다시 본다.
+// 거절하면 그 제안은 "이번만 허용" 만 남는다 (항상 허용 버튼 없음 — 파일 도구는 앱이 직접 만드는 폴더 규칙(`folder_rule`)이 있으면 그것).
+
+/// `*` · `?` 만 가진 글(`pattern`)이 `text` 와 맞는가 (대소문자 무시).
+fn glob_matches(pattern: &str, text: &str) -> bool {
+    let pattern: Vec<char> = pattern.to_lowercase().chars().collect();
+    let text: Vec<char> = text.to_lowercase().chars().collect();
+    let (mut p, mut t) = (0, 0);
+    let mut backtrack: Option<(usize, usize)> = None;
+    while t < text.len() {
+        if p < pattern.len() && (pattern[p] == '?' || pattern[p] == text[t]) {
+            p += 1;
+            t += 1;
+        } else if p < pattern.len() && pattern[p] == '*' {
+            backtrack = Some((p, t));
+            p += 1;
+        } else if let Some((star, matched)) = backtrack {
+            backtrack = Some((star, matched + 1));
+            p = star + 1;
+            t = matched + 1;
+        } else {
+            return false;
+        }
+    }
+    pattern[p..].iter().all(|&c| c == '*')
+}
+
+/// `Edit(...)` 규칙 내용(경로 패턴)이 보호 이름이 든 곳을 열 수 있는가 (`true` 면 받아들이지 않는다).
+/// 받아들이는 것은 **기준이 분명한 경로** 하나뿐이다: `/` · `//` · `~/` · `./` · 드라이브 글자로 시작하고, 칸마다 보호 이름이 아닌 글자 그대로의 이름이고,
+/// 끝 칸만 `**`(그 폴더 아래 전부 — 앞에 폴더 이름이 하나 이상 있어야 한다) 이거나 보호 이름과 맞지 않는 `*` · `?` 글이다.
+/// 나머지는 모두 거절한다 — 기준 없는 패턴(어느 깊이에서나 맞을 수 있다), 가운데 `**` · 가운데 와일드카드(`/.*/…` 가 `.git` 을 연다), `..`, `[ ] { } !`, 8.3 짧은 이름 · 끝에 점 · `:` 같은 다른 이름으로 읽힐 글자.
+/// 폴더 규칙 `/src/**` 은 받는다 — 앱이 직접 만드는 규칙(`folder_rule`)과 같은 모양이다. 그 아래에 중첩된 보호 폴더(`src/.git`)는 허용 규칙 문법으로는 뺄 수 없다 (제외는 거부 규칙으로만 된다) —
+/// CLI 가 `.git` · `.claude` 쓰기를 규칙과 상관없이 따로 묻는 것(D-45, P3-05 실험)에 기댄다.
+fn edit_rule_reaches_protected(content: &str) -> bool {
+    let text = content.trim().replace('\\', "/");
+    let drive = text.as_bytes().get(1) == Some(&b':') && text.as_bytes()[0].is_ascii_alphabetic();
+    if !(text.starts_with('/') || text.starts_with("~/") || text.starts_with("./") || drive) {
+        return true; // 기준 없는 패턴
+    }
+    let segments: Vec<&str> = text
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    // 맨 앞 `~` · `C:` 는 기준일 뿐 폴더 이름이 아니다
+    let is_drive_name = |name: &str| {
+        name.len() == 2 && name.ends_with(':') && name.as_bytes()[0].is_ascii_alphabetic()
+    };
+    // (`//c/…` 는 `c` 드라이브 — 한 글자 이름도 드라이브로 본다)
+    let anchor = usize::from(segments.first().is_some_and(|first| {
+        *first == "~"
+            || is_drive_name(first)
+            || (text.starts_with("//")
+                && first.len() == 1
+                && first.as_bytes()[0].is_ascii_alphabetic())
+    }));
+    for (index, segment) in segments.iter().enumerate() {
+        let last = index + 1 == segments.len();
+        if index < anchor {
+            continue;
+        }
+        if *segment == ".." || is_protected_name(segment) {
+            return true;
+        }
+        if *segment == "**" {
+            // 그 폴더 아래 전부 — 끝에서만, 그리고 기준 바로 뒤(`~/**` · `/**`)는 안 된다
+            if !last || index <= anchor {
+                return true;
+            }
+        } else if segment.contains(['*', '?', '[', ']', '{', '}', '!']) {
+            let simple = !segment.contains(['[', ']', '{', '}', '!']);
+            let protected_match = PROTECTED_NAMES
+                .iter()
+                .any(|name| glob_matches(segment.trim_end_matches(['.', ' ']), name));
+            // 끝 칸의 단순한 `*` · `?` 글만, 앞에 폴더 이름이 있고, 보호 이름과 맞지 않을 때
+            if !last || !simple || index <= anchor || protected_match {
+                return true;
+            }
+        } else if risky(segment) {
+            return true;
+        }
+    }
+    false
+}
+
+/// 셸 · 인터프리터 이름 (소문자, 확장자 · 끝의 버전 숫자를 뗀 것). 규칙의 고정 글(앞부분)이 이 프로그램에 코드를 직접 넘기게 하면 "아무 코드나 돌리는 규칙" 이다.
+const SHELLS: &[&str] = &[
+    "bash", "sh", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh",
+];
+const POWERSHELLS: &[&str] = &["powershell", "pwsh"];
+/// 이 목록의 프로그램은 `-e` 같은 한 글자 옵션(묶음 `-pe` · `-lne` 포함)으로 코드를 받는다 — 이름 → 코드를 받는 옵션 글자
+const CODE_LETTERS: &[(&str, &str)] = &[
+    ("node", "ep"),
+    ("nodejs", "ep"),
+    ("bun", "ep"),
+    ("deno", "ep"),
+    ("python", "c"),
+    ("pythonw", "c"),
+    ("py", "c"),
+    ("pypy", "c"),
+    ("perl", "eE"),
+    ("ruby", "e"),
+    ("php", "rRBE"),
+    ("lua", "e"),
+    ("luajit", "e"),
+    ("rscript", "e"),
+    ("osascript", "e"),
+    ("npx", "c"),
+];
+/// 코드를 받는 긴 옵션 · 하위 명령 (소문자)
+const CODE_WORDS: &[&str] = &["--eval", "--print", "--command", "--call", "eval"];
+/// PowerShell 이 코드를 직접 실행하는 명령 (규칙 앞부분에 오면 거절)
+const POWERSHELL_RUNNERS: &[&str] = &[
+    "invoke-expression",
+    "iex",
+    "invoke-command",
+    "icm",
+    "start-process",
+    "saps",
+];
+/// 다른 프로그램을 앞에서 감싸 실행하는 것들 — 건너뛰고 뒤의 프로그램을 본다
+const WRAPPERS: &[&str] = &[
+    "env", "command", "exec", "nohup", "time", "sudo", "doas", "nice", "timeout", "stdbuf",
+    "builtin", "call", "start", "&",
+];
+
+/// 프로그램 이름 하나를 규칙 비교용으로 — 경로 · 확장자 · 끝의 버전(`python3.12`) 을 뗀다.
+fn program_name(token: &str) -> String {
+    let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
+    let lower = base.to_ascii_lowercase();
+    let stem = ["exe", "cmd", "bat", "com", "ps1"]
+        .iter()
+        .find_map(|ext| lower.strip_suffix(&format!(".{ext}")))
+        .unwrap_or(&lower);
+    stem.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.')
+        .to_string()
+}
+
+fn is_assignment(token: &str) -> bool {
+    token.split_once('=').is_some_and(|(name, _)| {
+        !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+}
+
+/// `5` · `10s` 처럼 `timeout` · `nice` 뒤에 오는 숫자 글
+fn is_number_like(token: &str) -> bool {
+    let digits = token.trim_end_matches(['s', 'm', 'h', 'd']);
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
+}
+
+/// 한 옵션이 이 프로그램에 코드를 직접 넘기는가
+fn passes_code(program: &str, option: &str) -> bool {
+    let lower = option.to_ascii_lowercase();
+    if CODE_WORDS.contains(&lower.as_str())
+        || lower.starts_with("--eval=")
+        || lower.starts_with("--print=")
+        || lower.starts_with("--command=")
+    {
+        return true;
+    }
+    if SHELLS.contains(&program) {
+        // `-c` · `-lc` · `-xc` 처럼 묶인 옵션에 `c` 가 있다
+        return option.starts_with('-') && !option.starts_with("--") && option.contains('c');
+    }
+    if program == "cmd" {
+        return ["/c", "/k", "/r"]
+            .iter()
+            .any(|flag| lower.starts_with(flag));
+    }
+    if POWERSHELLS.contains(&program) {
+        let name = lower.trim_start_matches(['-', '/']);
+        let is_option = lower.starts_with(['-', '/']) && !name.is_empty();
+        return is_option
+            && ("command".starts_with(name)
+                || ("encodedcommand".starts_with(name) && !name.starts_with("ex")));
+    }
+    if let Some((_, letters)) = CODE_LETTERS.iter().find(|(name, _)| *name == program) {
+        return option.starts_with('-')
+            && !option.starts_with("--")
+            && option.chars().skip(1).any(|c| letters.contains(c));
+    }
+    false
+}
+
+/// 이 이름이 코드를 받는 프로그램인가 (셸 · 인터프리터 · `cmd` · `wsl`)
+fn is_interpreter(program: &str) -> bool {
+    program == "cmd"
+        || program == "wsl"
+        || SHELLS.contains(&program)
+        || POWERSHELLS.contains(&program)
+        || CODE_LETTERS.iter().any(|(name, _)| *name == program)
+}
+
+/// `Bash(...)` · `PowerShell(...)` 규칙 내용이 인터프리터로 아무 코드나 돌리게 하는가 (`true` 면 받아들이지 않는다).
+/// - 와일드카드(`:*` · `*`)가 없으면 그 명령 하나뿐이라 받는다.
+/// - 와일드카드 앞의 고정 글에서 프로그램(`env` · `sudo` 같은 감싸는 것은 건너뛴다)을 찾아, 인터프리터이면:
+///   고정 글에 코드를 받는 옵션이 있으면(`node -e:*` · `python -c *` · `bash -c:*` · `cmd /c:*` · `powershell -Command *`),
+///   또는 옵션이 아닌 인자(스크립트 · 하위 명령 · 모듈)가 하나도 없으면(`node:*` · `python -m:*` — 와일드카드 자리에 `-e` 가 들어올 수 있다) 거절한다. `wsl` 은 와일드카드 규칙을 모두 거절한다.
+/// - 첫 글자가 따옴표이거나 프로그램 이름에 와일드카드가 있으면 읽을 수 없어 거절한다. PowerShell 의 `Invoke-Expression` 류도 거절한다.
+///
+/// 목록에 없는 프로그램(`awk` 의 프로그램 글 · `find -exec` · `git -c` 등)은 거르지 못한다 — 알게 되면 위 목록에 더한다.
+fn command_rule_runs_any_code(content: &str) -> bool {
+    let content = content.trim();
+    let (prefix, wildcard) = if let Some(prefix) = content.strip_suffix(":*") {
+        (prefix, true)
+    } else if let Some((prefix, _)) = content.split_once('*') {
+        // 별표가 이름에 붙어 있으면(`n*de -e *`) 그 마지막 이름은 끝까지 쓰이지 않은 조각이다 — 버린다
+        let whole = prefix
+            .rsplit_once(char::is_whitespace)
+            .map_or("", |(head, _)| head);
+        (
+            if prefix.ends_with(char::is_whitespace) {
+                prefix
+            } else {
+                whole
+            },
+            true,
+        )
+    } else {
+        (content, false)
+    };
+    if !wildcard {
+        return false;
+    }
+    let mut tokens = prefix.split_whitespace().peekable();
+    // 프로그램 찾기: 앞의 `VAR=값` · 감싸는 프로그램과 그 옵션을 건너뛴다
+    let mut program = None;
+    while let Some(token) = tokens.next() {
+        if token.starts_with(['"', '\'']) || token.contains(['?', '*']) {
+            return true; // 읽을 수 없는 이름
+        }
+        if is_assignment(token) {
+            continue;
+        }
+        let name = program_name(token);
+        if WRAPPERS.contains(&name.as_str()) || token == "&" {
+            // `start /b node` 처럼 `cmd` 의 짧은 `/옵션` 도 건너뛴다
+            let short_slash = name == "start";
+            while tokens.peek().is_some_and(|next| {
+                next.starts_with('-')
+                    || is_assignment(next)
+                    || is_number_like(next)
+                    || (short_slash && next.len() <= 3 && next.starts_with('/'))
+            }) {
+                tokens.next();
+            }
+            continue;
+        }
+        program = Some(name);
+        break;
+    }
+    // 프로그램 이름까지 와일드카드 안이다 (`:*` 앞이 비었다 · 감싸는 프로그램뿐이다)
+    let Some(program) = program else {
+        return true;
+    };
+    if POWERSHELL_RUNNERS.contains(&program.as_str()) {
+        return true;
+    }
+    if !is_interpreter(&program) {
+        return false;
+    }
+    if program == "wsl" {
+        return true;
+    }
+    let args: Vec<&str> = tokens.collect();
+    if args.iter().any(|arg| passes_code(&program, arg)) {
+        return true;
+    }
+    // 옵션이 아닌 인자(스크립트 · 하위 명령 · 모듈)가 하나도 없다 — 와일드카드 자리에 코드 옵션이 올 수 있다.
+    // (`cmd` 는 `/` 로 시작하는 것도 옵션이다)
+    !args
+        .iter()
+        .any(|arg| !arg.starts_with('-') && !(program == "cmd" && arg.starts_with('/')))
+}
+
+/// 제안된 규칙 하나를 받아도 되는가 (위 두 검사). 파일 도구 · 명령 도구 말고는 그대로 받는다.
+fn suggested_content_is_safe(rule_tool: &str, content: &str) -> bool {
+    if FILE_EDIT_TOOLS.contains(&rule_tool) {
+        !edit_rule_reaches_protected(content)
+    } else if matches!(rule_tool, "Bash" | "PowerShell") {
+        !command_rule_runs_any_code(content)
+    } else {
+        true
+    }
+}
+
 fn suggested_rule(tool: &str, suggestions: &[Value]) -> Option<(AlwaysRule, Value)> {
     suggestions.iter().find_map(|suggestion| {
         if str_at(suggestion, "type") != Some("addRules")
@@ -914,6 +1201,10 @@ fn suggested_rule(tool: &str, suggestions: &[Value]) -> Option<(AlwaysRule, Valu
             let content = str_at(rule, "ruleContent");
             match content {
                 Some(content) if !is_broad_content(content) => {
+                    // 앱의 보호 이름 목록 · 인터프리터 검사 — 걸리면 이 제안은 쓰지 않는다 ("이번만 허용" 만)
+                    if !suggested_content_is_safe(rule_tool, content) {
+                        return None;
+                    }
                     shown.push(format!("{rule_tool}({content})"));
                     rebuilt.push(json!({ "toolName": rule_tool, "ruleContent": content }));
                 }
@@ -2782,6 +3073,29 @@ mod edge_tests_lines {
         assert_eq!(summarize_tool_input("Bash", Some(&json!(null))), "");
         assert_eq!(summarize_tool_input("Bash", Some(&json!("ls"))), "");
     }
+
+    #[test]
+    fn unknown_tools_never_summarize_with_the_prompt_text() {
+        // 모르는 도구(MCP · 새 도구)의 `prompt` 는 길고 비밀이 섞일 수 있다 — 요약(기록에 남는다)에 쓰지 않는다
+        let prompt_only = json!({ "prompt": "use the key sk-secret-0123 to call the service" });
+        for tool in ["mcp__srv__ask", "Unknown", "Agent", "Task"] {
+            assert_eq!(summarize_tool_input(tool, Some(&prompt_only)), "", "{tool}");
+        }
+        // 다른 칸이 있으면 그것을 쓴다 (`prompt` 가 있어도)
+        let input = json!({ "prompt": "secret text", "description": "ask the service" });
+        assert_eq!(
+            summarize_tool_input("mcp__srv__ask", Some(&input)),
+            "ask the service"
+        );
+        // 알려진 칸은 그대로
+        let command = json!({ "prompt": "secret text", "command": "do-it" });
+        assert_eq!(
+            summarize_tool_input("mcp__srv__run", Some(&command)),
+            "do-it"
+        );
+        let path = json!({ "prompt": "secret text", "file_path": "a.txt" });
+        assert_eq!(summarize_tool_input("mcp__srv__open", Some(&path)), "a.txt");
+    }
 }
 
 /// P3-05 — "항상 허용" 범위 좁히기 (D-45) · 제안 규칙 거르기 · 입력 표시 한계 · 줄 읽기 고침.
@@ -3289,5 +3603,308 @@ mod fix_tests {
             outcome(&interp.handle(&error_result(json!({})))),
             TurnOutcome::Limit
         );
+    }
+}
+
+/// P10-07 — CLI 가 제안한 "항상 허용" 규칙을 앱의 보호 이름 · 인터프리터 목록으로 다시 거르기 (D-54).
+#[cfg(test)]
+mod suggested_rule_guard_tests {
+    use super::*;
+
+    fn suggestion(tool: &str, content: &str) -> Value {
+        json!({
+            "type": "addRules",
+            "rules": [{ "toolName": tool, "ruleContent": content }],
+            "behavior": "allow",
+            "destination": "localSettings",
+        })
+    }
+
+    fn accepted(tool: &str, content: &str) -> bool {
+        // 요청한 도구 이름은 규칙의 도구와 같다 (파일 도구끼리는 한 묶음)
+        suggested_rule(tool, &[suggestion(tool, content)]).is_some()
+    }
+
+    #[test]
+    fn folder_and_file_rules_in_a_plain_place_are_still_accepted() {
+        for content in [
+            "/src/**",
+            "/docs/**",
+            "/hello.txt",
+            "/src/lib/Main.java",
+            "/src/*.ts",
+            "/a/b/c/**",
+            "./src/**",
+            "~/work/proj/**",
+            "C:/work/proj/src/**",
+            "C:\\work\\proj\\src\\**",
+            "//c/Users/me/proj/src/**",
+            "/my app/**",
+        ] {
+            for tool in ["Edit", "Write"] {
+                assert!(accepted(tool, content), "{tool}({content})");
+            }
+        }
+        // 규칙은 CLI 가 준 그대로 (알려진 칸만) 다시 만든다
+        let (info, value) = suggested_rule("Edit", &[suggestion("Edit", "/src/**")]).unwrap();
+        assert_eq!(info.rule, "Edit(/src/**)");
+        assert_eq!(info.scope, AlwaysScope::Suggested);
+        assert_eq!(value["rules"][0]["ruleContent"], "/src/**");
+    }
+
+    #[test]
+    fn rules_that_name_a_protected_place_anywhere_in_the_path_are_refused() {
+        for content in [
+            "/.claude/**",
+            "/.claude/settings.local.json",
+            "/.git/hooks/pre-commit",
+            "/src/.git/**",
+            "/a/b/.husky/pre-commit",
+            "/.githooks/**",
+            "/.vscode/tasks.json",
+            "/.idea/**",
+            "/.github/workflows/ci.yml",
+            "/.mcp.json",
+            "/sub/.envrc",
+            "/.cargo/config.toml",
+            "~/.claude/**",
+            "//c/Users/me/proj/.claude/**",
+            "C:\\work\\proj\\.git\\hooks\\x",
+            // 대소문자 · 끝의 점 · 공백은 같은 이름이다
+            "/src/.GIT/x",
+            "/src/.Claude./x",
+            "/src/.git /x",
+            "\\src\\.git\\x",
+        ] {
+            for tool in ["Edit", "Write", "MultiEdit", "NotebookEdit"] {
+                assert!(!accepted(tool, content), "{tool}({content})");
+            }
+        }
+    }
+
+    #[test]
+    fn rules_that_can_reach_a_protected_place_through_wildcards_or_odd_names_are_refused() {
+        for content in [
+            // 프로젝트 · 집 · 드라이브 전체
+            "/**",
+            "~/**",
+            "//c/**",
+            "C:/**",
+            "/*",
+            "**",
+            // 가운데 `**` · 가운데 와일드카드 · 보호 이름과 맞는 와일드카드
+            "/src/**/x.ts",
+            "/*/**",
+            "/.*/**",
+            "/.c*/x",
+            "/src/.g?t/x",
+            "/src/*",
+            "/src/.*",
+            "/src/.cl*",
+            "/src/*.json", // `.mcp.json` 과 맞는다
+            "/src/[.]git/x",
+            "/src/{a,b}/x",
+            "/src/!x",
+            // 기준이 없는 패턴 (어느 깊이에서나 맞을 수 있다)
+            "src/**",
+            "**/x.ts",
+            "*.ts",
+            "pre-commit",
+            "~x/**",
+            // 위로 올라가기 · 다른 이름으로 읽힐 글
+            "/src/../.git/x",
+            "/src/CLAUDE~1/x",
+            "/src/.claude::$INDEX_ALLOCATION/x",
+            "/src/a(1)/x",
+        ] {
+            assert!(!accepted("Edit", content), "Edit({content})");
+        }
+    }
+
+    #[test]
+    fn rules_that_let_an_interpreter_run_any_code_are_refused() {
+        for content in [
+            "node -e:*",
+            "node -p *",
+            "node --eval *",
+            "node -pe *",
+            "node:*",
+            "node --max-old-space-size=4096:*",
+            "python -c *",
+            "python3 -c:*",
+            "python3.12 -c *",
+            "py -3 -c:*",
+            "python:*",
+            "python -m:*",
+            "pythonw -c *",
+            "bash -c:*",
+            "sh -c *",
+            "bash -lc *",
+            "zsh -xc *",
+            "bash:*",
+            "cmd /c:*",
+            "cmd /C *",
+            "cmd.exe /c:*",
+            "cmd /k *",
+            "cmd:*",
+            "powershell -Command *",
+            "powershell -command *",
+            "powershell.exe -c:*",
+            "pwsh -EncodedCommand *",
+            "pwsh -e:*",
+            "powershell:*",
+            "powershell -NoProfile:*",
+            "powershell -NoProfile -Command *",
+            "perl -e:*",
+            "perl -lne *",
+            "ruby -e:*",
+            "php -r *",
+            "deno eval:*",
+            "bun -e:*",
+            "npx -c:*",
+            "npx:*",
+            "wsl:*",
+            "wsl ls:*",
+            // 감싸는 프로그램 · 환경 변수 · 경로 · 확장자 뒤에 있어도 같다
+            "env node -e:*",
+            "FOO=1 node -e:*",
+            "sudo bash -c *",
+            "timeout 5 node -e:*",
+            "nice -n 5 python -c *",
+            "/usr/bin/python3 -c:*",
+            "C:\\Python312\\python.exe -c:*",
+            "./node_modules/.bin/node -e:*",
+            // 읽을 수 없는 이름 · 프로그램 이름까지 와일드카드 안
+            "\"C:\\Program Files\\nodejs\\node.exe\" -e:*",
+            "n*de -e *",
+            "sudo *",
+            "env:*",
+        ] {
+            assert!(!accepted("Bash", content), "Bash({content})");
+        }
+    }
+
+    #[test]
+    fn ordinary_command_rules_are_still_accepted() {
+        for content in [
+            "ls *",
+            "npm run test:*",
+            "npm install:*",
+            "cargo test:*",
+            "mkdir probe-dir *",
+            "node scripts/build.js:*",
+            "node --test tests/a.test.js:*",
+            "python -m pytest:*",
+            "python manage.py:*",
+            "bash scripts/deploy.sh:*",
+            "bash -x scripts/deploy.sh:*",
+            "powershell -File scripts/build.ps1:*",
+            "powershell -NoProfile -File build.ps1 *",
+            "cmd /d build.bat:*",
+            "npx tsc:*",
+            "FOO=1 npm run build:*",
+            // 와일드카드가 없으면 그 명령 하나뿐이다 (아무 코드나 돌지 않는다)
+            "node --version",
+            "node -e \"console.log(1)\"",
+            "python -c \"print(1)\"",
+            "bash -c \"ls\"",
+            "which python",
+        ] {
+            assert!(accepted("Bash", content), "Bash({content})");
+        }
+    }
+
+    #[test]
+    fn the_powershell_tool_gets_the_same_checks_and_its_own_code_runners() {
+        for content in [
+            "Invoke-Expression *",
+            "iex:*",
+            "Invoke-Command *",
+            "Start-Process:*",
+            "powershell -c *",
+            "node -e:*",
+            "cmd /c *",
+        ] {
+            assert!(!accepted("PowerShell", content), "PowerShell({content})");
+        }
+        for content in ["Get-ChildItem *", "dotnet test:*", "npm run build:*"] {
+            assert!(accepted("PowerShell", content), "PowerShell({content})");
+        }
+    }
+
+    #[test]
+    fn other_tools_and_mcp_rules_are_not_affected() {
+        assert!(accepted("WebFetch", "domain:example.com"));
+        assert!(accepted("Read", "/src/**"));
+        let mcp = json!({
+            "type": "addRules", "rules": [{ "toolName": "mcp__srv__tool" }],
+            "behavior": "allow", "destination": "localSettings",
+        });
+        assert!(suggested_rule("mcp__srv__tool", &[mcp]).is_some());
+    }
+
+    #[test]
+    fn one_unsafe_rule_among_several_makes_the_whole_suggestion_unusable() {
+        let mixed = json!({
+            "type": "addRules",
+            "rules": [
+                { "toolName": "Bash", "ruleContent": "ls *" },
+                { "toolName": "Bash", "ruleContent": "node -e:*" }
+            ],
+            "behavior": "allow", "destination": "localSettings",
+        });
+        assert!(suggested_rule("Bash", std::slice::from_ref(&mixed)).is_none());
+        // 앞의 제안이 거절돼도 뒤의 쓸 만한 제안은 쓴다
+        let good = suggestion("Bash", "npm run test:*");
+        let (info, _) = suggested_rule("Bash", &[mixed, good]).unwrap();
+        assert_eq!(info.rule, "Bash(npm run test:*)");
+    }
+
+    #[test]
+    fn a_refused_suggestion_leaves_no_always_button_for_commands_and_the_apps_own_rule_for_files() {
+        // 명령: 항상 허용 규칙이 없다 — 카드는 "이번만 허용" 만
+        let mut interp = Interpreter::new(Path::new("C:\\p"));
+        let out = interp.handle(&json!({
+            "type": "control_request", "request_id": "r1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash",
+                "input": { "command": "node -e \"1\"" },
+                "permission_suggestions": [suggestion("Bash", "node -e:*")]
+            }
+        }));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!("expected a card");
+        };
+        assert_eq!(info.always_rule, None);
+
+        // 파일: CLI 가 `/.claude/**` 를 제안해도 그 파일이 프로젝트의 보호 폴더 아래면 규칙이 없다 (앱의 폴더 규칙도 같은 목록으로 거절한다)
+        let out = Interpreter::new(Path::new("C:\\p")).handle(&json!({
+            "type": "control_request", "request_id": "r2",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Write",
+                "input": { "file_path": "C:\\p\\.claude\\settings.local.json" },
+                "permission_suggestions": [suggestion("Edit", "/.claude/**")]
+            }
+        }));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!("expected a card");
+        };
+        assert_eq!(info.always_rule, None);
+
+        // 파일: 보호 폴더를 연 제안은 버리고, 평범한 파일이면 앱이 직접 만드는 폴더 규칙으로
+        let out = Interpreter::new(Path::new("C:\\p")).handle(&json!({
+            "type": "control_request", "request_id": "r3",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Write",
+                "input": { "file_path": "C:\\p\\src\\a.ts" },
+                "permission_suggestions": [suggestion("Edit", "/src/.git/**")]
+            }
+        }));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!("expected a card");
+        };
+        let rule = info.always_rule.as_ref().unwrap();
+        assert_eq!(rule.rule, "Edit(/src/**)");
+        assert_eq!(rule.scope, AlwaysScope::Folder);
     }
 }

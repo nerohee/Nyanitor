@@ -22,7 +22,7 @@ fn fixture(name: &str) -> String {
 }
 
 /// 고정 문서를 놓은 프로젝트 폴더 (`docs/02-development/` + `docs/` 의 다른 문서들)
-fn project() -> PathBuf {
+fn project() -> TestDir {
     let root = unique_dir("project-docs");
     let dev = root.join("docs").join("02-development");
     fs::create_dir_all(dev.join("briefs")).unwrap();

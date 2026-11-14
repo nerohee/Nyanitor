@@ -12,7 +12,8 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { chatErrorText } from "./errors";
 import { useOrchestrator } from "./Lines";
 import { pendingCount } from "./model";
-import { interrupt, loadChat, loadOlder, newChat, refreshResumable, respond, sendMessage, startChat, stopSession, useSessionStore } from "./sessionStore";
+import { declineTrust, grantTrust, interrupt, isTrustDeclined, loadChat, loadOlder, newChat, refreshResumable, respond, sendMessage, startChat, stopSession, useSessionStore } from "./sessionStore";
+import { TrustDialog } from "./TrustDialog";
 import { useClaudeReady, useSkillList } from "./useChatEnv";
 import "./chat.css";
 
@@ -77,6 +78,7 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
   const chat = useSessionStore((state) => state.chats[project.id]) ?? newChat();
   const churros = useSessionStore((state) => state.churros);
   const churrosStale = useSessionStore((state) => state.churrosStale);
+  const trustAsk = useSessionStore((state) => state.trustAsk);
   const { ready, recheck } = useClaudeReady();
   const skills = useSkillList();
   const composer = useRef<ComposerHandle>(null);
@@ -107,17 +109,34 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
     if (restored && noSession) void refreshResumable(project.id);
   }, [restored, noSession, project.id]);
 
+  // 폴더 설정 확인 화면을 거쳤나 (시작이 끝난 뒤 포커스를 정하려고)
+  const trustAsked = useRef(false);
+  useEffect(() => {
+    if (trustAsk) trustAsked.current = true;
+  }, [trustAsk]);
+
   const guard = async (kind: "starting" | "swapping" | "ending", run: () => Promise<unknown>) => {
     setAction(kind);
     setActionError(null);
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    let asked = false;
     try {
       await run();
+      asked = trustAsked.current;
     } catch (raw) {
-      setActionError(chatErrorText(raw));
+      // 폴더 설정 확인에서 취소 — 오류가 아니다. 시작 단추로 포커스를 돌려준다
+      if (isTrustDeclined(raw)) {
+        window.setTimeout(() => {
+          if (opener?.isConnected) opener.focus();
+        }, 0);
+      } else setActionError(chatErrorText(raw));
     } finally {
+      trustAsked.current = false;
       setAction(null);
       setConfirm(null);
     }
+    // 확인을 거쳐 시작됐으면 입력줄로 (확인 화면을 연 단추는 사라졌거나 쓸 수 없다)
+    if (asked && kind === "starting") composer.current?.focus();
   };
 
   const jump = () => {
@@ -125,6 +144,46 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
     card?.scrollIntoView?.({ block: "start" });
     card?.focus();
   };
+
+  // 기다리던 카드에 답하면 그 카드가 접혀 포커스가 body 로 빠진다 — 다음 기다리는 카드로, 없으면 입력줄로 (D-55).
+  // 새 카드 · 답함을 읽어 주는 것은 `PendingAnnouncer` 가 이미 하니 여기서는 포커스만 옮긴다.
+  const inCard = useRef(false);
+  const lastPending = useRef(pending);
+  // 기다리는 카드가 있으면 채팅 안의 첫 Tab (또는 Tab 으로 채팅에 들어올 때) 은 카드로 간다 (2026-11-14 고객).
+  // 한 번만 — 그 뒤엔 보통 순서라 Tab 으로 채팅을 빠져나갈 수 있다. 새 카드가 오거나 포커스가 채팅 밖으로 나가면 다시.
+  const tabbedToCard = useRef(false);
+  const lastTabAt = useRef(0);
+  useEffect(() => {
+    const note = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Tab" && !event.shiftKey) lastTabAt.current = Date.now();
+    };
+    document.addEventListener("keydown", note, true);
+    return () => document.removeEventListener("keydown", note, true);
+  }, []);
+  const tabToCard = (target: EventTarget | null): boolean => {
+    if (tabbedToCard.current || pending === 0) return false;
+    if (target instanceof Element && (target.closest('[data-pending="true"]') || target.closest('[role="dialog"]'))) return false;
+    const card = root.current?.querySelector<HTMLElement>('[data-pending-card="true"]');
+    if (!card) return false;
+    tabbedToCard.current = true;
+    card.scrollIntoView?.({ block: "nearest" });
+    card.focus({ preventScroll: true });
+    return true;
+  };
+  useEffect(() => {
+    if (pending > lastPending.current) tabbedToCard.current = false;
+    const dropped = pending < lastPending.current;
+    lastPending.current = pending;
+    if (!dropped || !inCard.current) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    inCard.current = false;
+    const next = root.current?.querySelector<HTMLElement>('[data-pending-card="true"]');
+    if (next) {
+      next.scrollIntoView?.({ block: "nearest" });
+      next.focus({ preventScroll: true });
+    } else composer.current?.focus();
+  }, [pending]);
 
   // 바깥 요청 — 목록을 읽고 카드가 그려진 뒤에 옮긴다. 읽기를 마쳤는데도 카드가 없으면 그 요청은 버린다 (나중에 온 카드로 뜬금없이 옮기지 않게)
   const handledFocus = useRef(0);
@@ -281,7 +340,28 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
   }
 
   return (
-    <div className="wc" ref={root} data-testid="chat-pane">
+    <div
+      className="wc"
+      ref={root}
+      data-testid="chat-pane"
+      onFocus={(event) => {
+        // Tab 으로 채팅 밖에서 들어왔으면 기다리는 카드부터 (마우스로 누른 것은 그대로)
+        const fromOutside = !(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget));
+        if (fromOutside && Date.now() - lastTabAt.current < 200 && tabToCard(event.target)) return;
+        inCard.current = event.target instanceof Element && event.target.closest('[data-pending="true"]') !== null;
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+        if (tabToCard(event.target)) event.preventDefault();
+      }}
+      onBlur={(event) => {
+        // 다른 곳(채팅 밖)으로 옮겨 갔으면 잊는다 — 카드가 사라져서 빠지는 것(받는 곳 없음)과 구별
+        if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
+          inCard.current = false;
+          tabbedToCard.current = false;
+        }
+      }}
+    >
       <div className="wc-head" data-state={status}>
         <span className="wc-head__avatar" aria-hidden="true">
           <CatFigure cat={orch.cat} crop="face" />
@@ -353,6 +433,9 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
         empty={logBody}
       />
       {bottom}
+      {trustAsk && trustAsk.projectId === project.id && (
+        <TrustDialog ask={trustAsk} onGrant={() => void grantTrust()} onCancel={declineTrust} fallbackFocus={() => root.current?.querySelector<HTMLElement>("textarea") ?? null} />
+      )}
     </div>
   );
 }

@@ -5,12 +5,14 @@ import { t } from "../../i18n/ko";
 import { Icon } from "../../variants/shared/icons";
 import { chatErrorKindText, chatErrorText } from "./errors";
 import { SkillPicker, withSkill } from "./SkillPicker";
-import { cancelQueued, takeDraftBack, useSessionStore } from "./sessionStore";
+import { cancelQueued, isTrustDeclined, takeDraftBack, useSessionStore } from "./sessionStore";
 import type { SkillChoicesState } from "./useChatEnv";
 
 export interface ComposerHandle {
   /** 스킬 고르기를 연다 (빈 상태의 "스킬 고르기" 단추) */
   openSkills: () => void;
+  /** 글 칸에 포커스 (카드에 답한 뒤 기다리는 카드가 없을 때) */
+  focus: () => void;
 }
 
 interface Props {
@@ -41,7 +43,14 @@ export function Composer({ ref, projectId, skills, busy, waiting, onSend, onInte
   const queueError = useSessionStore((state) => state.queueError);
   const draftBack = useSessionStore((state) => (state.draftBack && state.draftBack.projectId === projectId ? state.draftBack.text : null));
 
-  useImperativeHandle(ref, () => ({ openSkills: () => setPicker({ open: true, by: "button" }) }), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      openSkills: () => setPicker({ open: true, by: "button" }),
+      focus: () => input.current?.focus({ preventScroll: true }),
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (confirming) confirmRef.current?.focus();
@@ -74,7 +83,8 @@ export function Composer({ ref, projectId, skills, busy, waiting, onSend, onInte
       await onSend(value);
       setText("");
     } catch (raw) {
-      setError(chatErrorText(raw));
+      // 폴더 설정 확인에서 취소 — 오류가 아니다 (쓴 글은 그대로)
+      if (!isTrustDeclined(raw)) setError(chatErrorText(raw));
     } finally {
       setSending(false);
     }

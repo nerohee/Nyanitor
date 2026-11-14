@@ -19,6 +19,7 @@
 //!   `NYANITOR_FAKE_LONG_LINE=<바이트>` 첫 `system/init` 뒤에 그만큼 긴 assistant 글 한 줄을 끼움
 //! - `NYANITOR_FAKE_CHILD_PIDFILE=<파일>` 손자 프로세스(60초 자는 것, stdout 을 쥔 채)를 띄우고 pid 를 적는다
 //! - `NYANITOR_FAKE_ENV_DUMP=<파일>` 받은 환경 변수 **이름**을 적는다 · `NYANITOR_FAKE_LOG=<파일>` 받은 인자(와 이 프로세스의 pid)와 stdin 줄을 적는다
+//! - (P10-08) `NYANITOR_FAKE_CWD_DUMP=<파일>` 이 프로세스의 작업 폴더를 적는다 (앱이 어디에서 띄웠는지 보려고)
 //! - `NYANITOR_FAKE_VERSION=<버전>` (`--version`) · `NYANITOR_FAKE_AUTH=in|out|garbage|slow` (`auth status`)
 //! - (P3-03) `NYANITOR_FAKE_VERSION_OUT=<글>` · `NYANITOR_FAKE_VERSION_CODE=<코드>` (`--version` 이 글 그대로 · 이 종료 코드) ·
 //!   `NYANITOR_FAKE_VERSION_DELAY_MS=<ms>` (`--version` 이 느림 — 시작이 오래 걸리는 동안의 경계 시험) ·
@@ -102,6 +103,10 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let config = Config::from_env();
     config.log_line(&json!({ "argv": args, "pid": std::process::id() }));
+    if let Some(path) = env::var_os("NYANITOR_FAKE_CWD_DUMP") {
+        let cwd = env::current_dir().unwrap_or_default();
+        let _ = fs::write(path, cwd.display().to_string());
+    }
     if let Some(path) = env::var_os("NYANITOR_FAKE_ENV_DUMP") {
         let mut names: Vec<String> = env::vars_os()
             .map(|(k, _)| k.to_string_lossy().into_owned())

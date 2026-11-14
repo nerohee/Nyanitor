@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::process_tree::{self, ProcessTree};
+use super::workdir;
 
 /// 환경에 있으면 CLI 가 구독 대신 이 키로 과금한다 (D-19). 값은 읽지도 남기지도 않는다.
 pub const API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
@@ -144,6 +145,8 @@ pub struct ClaudeCommand {
     extra_env: Vec<(OsString, OsString)>,
     /// 시험용: 부모 환경 대신 쓸 값. `None` 이면 이 프로세스의 환경.
     base_env: Option<Vec<(OsString, OsString)>>,
+    /// 시험용: 짧은 명령이 도는 작업 폴더. `None` 이면 앱 전용 폴더 (`workdir`).
+    work_dir: Option<PathBuf>,
 }
 
 impl ClaudeCommand {
@@ -153,6 +156,7 @@ impl ClaudeCommand {
             keep_api_key: false,
             extra_env: Vec::new(),
             base_env: None,
+            work_dir: None,
         }
     }
 
@@ -170,6 +174,17 @@ impl ClaudeCommand {
     pub fn with_base_env(mut self, base: Vec<(OsString, OsString)>) -> Self {
         self.base_env = Some(base);
         self
+    }
+
+    /// 시험용: 짧은 명령(`run_capture` · `/usage`)의 작업 폴더를 정한다 (앱은 `workdir` 의 앱 전용 폴더를 쓴다).
+    pub fn with_work_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.work_dir = Some(dir.into());
+        self
+    }
+
+    /// 짧은 명령이 돌 작업 폴더 — 앱 전용 빈 폴더 (없으면 만들고 CLI 설정 이름이 생겨 있으면 지운다). 만들 수 없으면 오류.
+    pub fn work_dir(&self) -> io::Result<PathBuf> {
+        workdir::for_spawn(self.work_dir.as_deref())
     }
 
     pub fn program(&self) -> &Path {
@@ -197,15 +212,16 @@ impl ClaudeCommand {
         command
     }
 
-    /// 짧은 명령을 돌려 결과를 받는다. 시간이 넘으면 트리를 끄고 `timed_out` 으로 돌려준다.
+    /// 짧은 명령을 돌려 결과를 받는다 (작업 폴더는 앱 전용 빈 폴더 — `workdir`). 시간이 넘으면 트리를 끄고 `timed_out` 으로 돌려준다.
     pub fn run_capture<I, S>(&self, args: I, timeout: Duration) -> io::Result<Captured>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
+        let work_dir = self.work_dir()?;
         let mut command = self.command(args);
         command
-            .current_dir(std::env::temp_dir())
+            .current_dir(work_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

@@ -9,6 +9,7 @@
 //! - `events` — 화면으로 가는 이벤트 · 명령 입출력 모양
 //! - `launch` — 세션 시작 계획: 프로젝트 번호 → 폴더, 하네스 `planner` 설정 → 모델 · 수준 (D-47)
 //! - `exec` · `process_tree` — 환경 정리 · 창 숨기기 · 프로세스 트리 끄기
+//! - `workdir` — `--version` · `auth status` · `/usage` 같은 짧은 CLI 가 도는 앱 전용 빈 폴더 (`cli-work`)
 //! - `store` — 프로젝트별 세션 ID (앱 DB 의 `sessions` 표) · 옛 `claude-sessions.json` 가져오기
 //! - `commands` — Tauri 명령 (얇게: 입력 확인 · 전달만)
 
@@ -21,6 +22,7 @@ pub mod process_tree;
 pub mod protocol;
 pub mod session;
 pub mod store;
+pub mod workdir;
 
 /// 이 앱이 시험해 확인한 CLI 버전 (P3-01). 다르면 막지 않고 경고만 한다. CLI 를 올리면 `scripts/cli-probe` 를 다시 돌린다.
 pub const KNOWN_CLI_VERSION: &str = "2.1.296";
@@ -61,7 +63,14 @@ pub(crate) mod test_util {
 
     impl Drop for TempDir {
         fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
+            // 끝난 세션 · 기록 쓰기 스레드가 아직 DB 파일을 쥐고 있을 수 있다 (Windows 는 열린 파일을 지우지 못한다) — 잠깐 기다리며 다시 시도한다.
+            // 한 번만 시도하면 시험 폴더가 가끔 남는다.
+            for _ in 0..60 {
+                if std::fs::remove_dir_all(&self.0).is_ok() || !self.0.exists() {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
         }
     }
 }

@@ -157,8 +157,10 @@ export function UsageBlock({ result, reading, stale, now, churros = null, onRefr
       ) : null}
       {churros && <ChurrosLine churros={churros} />}
       <div className="hm-usage__foot">
-        <span className="hm-usage__read" role="status">
-          {readLine(reading, stale, readAt, now)}
+        {/* 「n분 전 읽음」은 1분마다 바뀌어 알리지 않는다 — 바뀜(갱신 실패)만 따로 알린다 (D-55) */}
+        <span className="hm-usage__read">{readLine(reading, stale, readAt, now)}</span>
+        <span className="hm-sr" role="status">
+          {stale && !reading ? t("home.usage.staleNotice") : ""}
         </span>
         <button type="button" className="hm-btn" onClick={onRefresh} disabled={reading}>
           <Icon name="refresh" size={16} />

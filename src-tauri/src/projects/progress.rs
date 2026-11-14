@@ -2153,11 +2153,12 @@ mod tests {
     // ── 등록된 프로젝트 번호로만 ──
 
     struct Registered {
-        _dir: TempDir,
         db: AppDb,
         env: Env,
         id: i64,
         folder: std::path::PathBuf,
+        /// 맨 끝 칸 — 필드는 적은 순서대로 버려지므로 DB 가 먼저 닫힌 뒤에 폴더를 지운다 (열린 DB 파일이 있으면 Windows 는 지우지 못한다)
+        _dir: TempDir,
     }
 
     fn registered() -> Registered {
@@ -2175,11 +2176,11 @@ mod tests {
         handle_picked(&db, &state, &env, &folder).unwrap();
         let id = add(&db, &state, &env, AddRequest::default()).unwrap().id;
         Registered {
-            _dir: dir,
             db,
             env,
             id,
             folder,
+            _dir: dir,
         }
     }
 

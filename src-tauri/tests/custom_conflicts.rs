@@ -1027,6 +1027,69 @@ fn a_failed_slow_install_is_not_confused_by_a_late_write_and_leaves_everything_u
     assert_eq!(kinds(&r), [CommitKind::Start]);
 }
 
+/// P10-08 — 적용 · 어느 때로 되돌리기가 설치를 도는 동안은 앱을 끄려 할 때 물어야 하고(`quit_task`), 끝나면 묻지 않는다. 짧은 저장은 묻지 않는다.
+#[test]
+fn the_quit_warning_is_on_while_an_apply_or_a_restore_installs_and_off_when_it_ends() {
+    let r = root("conflict-quit-warning");
+    let shared = state();
+    let ctx = r.ctx();
+    // 저장 · 첫 적용은 빠르다 — 일이 없을 때 · 짧은 일 뒤에는 묻지 않는다
+    assert_eq!(shared.quit_task(), None);
+    saved(&save_values(&r, "agent:harness-builder-ui", "opus"));
+    assert_eq!(shared.quit_task(), None);
+    assert_eq!(
+        flow::apply(&shared, &ctx, Some("처음")).unwrap().outcome,
+        ApplyOutcome::Applied
+    );
+    assert_eq!(shared.quit_task(), None);
+    let first = head(&r);
+    saved(&save_values(&r, "agent:harness-builder-ui", "haiku"));
+    assert_eq!(
+        flow::apply(&shared, &ctx, Some("둘째")).unwrap().outcome,
+        ApplyOutcome::Applied
+    );
+
+    // 느린 설치를 돌리는 동안의 `quit_task` 를 본다
+    let seen_while = |run: &(dyn Fn() + Sync)| {
+        let before = r.install_calls();
+        fs::write(r.source.join("install.sleep"), "3").unwrap();
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(run);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while r.install_calls() == before {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "설치가 시작하지 않았다"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let seen = shared.quit_task();
+            worker.join().unwrap();
+            seen
+        })
+    };
+
+    // 어느 때로 되돌리기
+    let seen = seen_while(&|| {
+        let result = flow::restore_to(&shared, &ctx, &first).unwrap();
+        assert_eq!(result.outcome, RestoreOutcome::Restored, "{result:?}");
+    });
+    assert_eq!(seen, Some(nyanitor_lib::harness::HarnessTask::Install));
+    assert_eq!(shared.quit_task(), None, "되돌리기가 끝났다");
+
+    // 적용
+    saved(&save_values(&r, "agent:harness-builder-ui", "sonnet"));
+    let seen = seen_while(&|| {
+        assert_eq!(
+            flow::apply(&shared, &ctx, None).unwrap().outcome,
+            ApplyOutcome::Applied
+        );
+    });
+    assert_eq!(seen, Some(nyanitor_lib::harness::HarnessTask::Install));
+    assert_eq!(shared.quit_task(), None, "적용이 끝났다");
+    fs::remove_file(r.source.join("install.sleep")).unwrap();
+}
+
 // ───────────────────────────── 경우 9 — Windows 편집기 흔적 (CRLF + BOM) ─────────────────────────────
 
 fn crlf(text: &str) -> String {

@@ -283,15 +283,16 @@ describe("프로젝트 ipc (브라우저 가짜 모드)", () => {
   });
 
   it("쿼리 읽기: 모르는 값은 기본값", () => {
-    expect(parseFakeProjectsQuery("")).toEqual({ projects: "many", pick: "fresh", requirements: "saved", db: "ok" });
-    expect(parseFakeProjectsQuery("?projects=none&pick=harness&requirements=conflict&db=read_only")).toEqual({
+    expect(parseFakeProjectsQuery("")).toEqual({ projects: "many", pick: "fresh", requirements: "saved", db: "ok", trust: "required" });
+    expect(parseFakeProjectsQuery("?projects=none&pick=harness&requirements=conflict&db=read_only&trust=none")).toEqual({
       projects: "none",
       pick: "harness",
       requirements: "conflict",
       db: "read_only",
+      trust: "none",
     });
     expect(parseFakeProjectsQuery("?pick=home")).toMatchObject({ pick: "home" });
-    expect(parseFakeProjectsQuery("?projects=x&pick=y&requirements=z&db=w")).toEqual({ projects: "many", pick: "fresh", requirements: "saved", db: "ok" });
+    expect(parseFakeProjectsQuery("?projects=x&pick=y&requirements=z&db=w&trust=v")).toEqual({ projects: "many", pick: "fresh", requirements: "saved", db: "ok", trust: "required" });
   });
 });
 

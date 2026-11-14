@@ -37,6 +37,12 @@ export function SkillPicker({ skills, open, openedBy, onOpenChange, onPick, onCl
     (list.current ?? pop.current)?.focus();
   }, [open]);
 
+  // 화살표로 옮긴 줄이 긴 목록 밖이면 보이게 (포커스는 목록에 그대로 — aria-activedescendant)
+  useEffect(() => {
+    if (!open) return;
+    document.getElementById(`${listId}-${cursor}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [open, cursor, listId]);
+
   const close = (focus: "input" | "button" | null) => {
     onOpenChange(false);
     if (focus === "button") button.current?.focus();

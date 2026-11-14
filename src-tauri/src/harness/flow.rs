@@ -6,7 +6,9 @@
 //!   오류가 아니라 결과로 `refused` + `plan_first` · `source_changed`.
 //! - 받기 · 업데이트 받기 · 설치 · 되돌리기 뒤에는 본 것이 낡았으니 기억을 지운다.
 //!
-//! 모든 함수는 맨 앞에서 잠금(`HarnessState::begin`)을 잡는다 — 다른 하네스 일이 도는 중이면 `harness_busy`.
+//! 모든 함수는 맨 앞에서 잠금(`HarnessState::begin` · `begin_task`)을 잡는다 — 다른 하네스 일이 도는 중이면 `harness_busy`.
+//! 받기 · 업데이트 확인 · 업데이트 받기는 `Fetch`, 설치 · 되돌리기는 `Install` 로 밝힌다 — 앱을 끄려 할 때 물어야 하는 일이다 (`attention::quit_needs_warning`).
+//! 미리보기 · 백업 목록은 읽기뿐이라 `Light` (`begin`).
 //! 잠금 · 기억을 시험하려고 명령 함수에서 따로 뺀 일반 함수다 (명령은 이 함수를 부르기만 한다).
 
 use std::path::PathBuf;
@@ -14,12 +16,12 @@ use std::path::PathBuf;
 use super::git::{self, CheckedUpdate, GitOutcome, GitResult};
 use super::locate::same_path;
 use super::script::{self, ScriptOutcome, ScriptResult};
-use super::{Context, HarnessState};
+use super::{Context, HarnessState, HarnessTask};
 use crate::error::AppError;
 
 /// 원본 받기. 새로 받았을 때만 본 것을 지운다 (이미 있거나 쓸 수 없어 아무것도 안 했으면 그대로).
 pub fn clone_origin(state: &HarnessState, ctx: &Context) -> Result<GitResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Fetch)?;
     let result = git::clone_origin(ctx);
     if result.outcome == GitOutcome::Cloned {
         guard.forget_all();
@@ -29,7 +31,7 @@ pub fn clone_origin(state: &HarnessState, ctx: &Context) -> Result<GitResult, Ap
 
 /// 업데이트 확인. 본 커밋을 기억한다 (확인이 끝나지 못했으면 기억을 지운다).
 pub fn update_check(state: &HarnessState, ctx: &Context) -> Result<GitResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Fetch)?;
     let result = git::update_check(ctx);
     guard.remember_check(CheckedUpdate::from_result(&result));
     Ok(result)
@@ -37,7 +39,7 @@ pub fn update_check(state: &HarnessState, ctx: &Context) -> Result<GitResult, Ap
 
 /// 업데이트 받기. 기억한 확인을 꺼내 (한 번 쓰면 없어진다) 그 커밋까지만 받는다.
 pub fn update_pull(state: &HarnessState, ctx: &Context) -> Result<GitResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Fetch)?;
     let checked = guard.take_check();
     let result = git::update_pull(ctx, checked.as_ref());
     // 받기에 성공해 원본이 바뀌었고 내 수정 기록이 시작돼 있으면 "원본 업데이트 받음" 빈 커밋 하나 (P9-01 — 실패해도 업데이트 결과는 그대로, 로그만)
@@ -84,7 +86,7 @@ fn same_source(ctx: &Context, planned: Option<PathBuf>) -> Result<PathBuf, Box<S
 
 /// 설치. 미리보기를 돌린 그 원본일 때만 돈다. 끝나면 기억을 지운다.
 pub fn install(state: &HarnessState, ctx: &Context) -> Result<ScriptResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Install)?;
     let script = match same_source(ctx, guard.install_plan()) {
         Ok(script) => script,
         Err(refused) => return Ok(*refused),
@@ -119,7 +121,7 @@ pub fn restore(
     ctx: &Context,
     backup_id: &str,
 ) -> Result<ScriptResult, AppError> {
-    let guard = state.begin()?;
+    let guard = state.begin_task(HarnessTask::Install)?;
     script::check_backup_id_shape(backup_id)?;
     let planned = guard
         .restore_plan()

@@ -46,8 +46,8 @@ pub fn fixtures_dir() -> PathBuf {
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// 시험마다 새 임시 폴더 (프로젝트 폴더 · 저장 파일 · 로그가 들어간다).
-pub fn unique_dir(name: &str) -> PathBuf {
+/// 새 임시 폴더를 만들어 경로만 돌려준다 — 지우기는 부른 쪽 몫이다 (`Harness` · `HarnessRoot` 는 스스로 지운다). 보통은 `unique_dir` 를 쓴다.
+fn fresh_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "nyanitor-test-{name}-{}-{}",
         std::process::id(),
@@ -56,6 +56,44 @@ pub fn unique_dir(name: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// 폴더를 지운다. 끝난 스레드가 아직 파일(DB 등)을 쥐고 있을 수 있어 잠깐 기다리며 다시 시도한다.
+fn remove_dir_patiently(dir: &Path) {
+    for _ in 0..60 {
+        if fs::remove_dir_all(dir).is_ok() || !dir.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// 시험이 만든 임시 폴더 — 버려지면 지운다 (패닉으로 끝나도). 경로처럼 쓴다 (`.join(..)` · `&dir`).
+/// 값은 선언한 순서의 반대로 버려지므로, 이 폴더 안의 DB 를 여는 값(`AppDb` 등)은 이 폴더보다 **나중에** 선언해야 먼저 닫힌다.
+pub struct TestDir(PathBuf);
+
+impl std::ops::Deref for TestDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TestDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        remove_dir_patiently(&self.0);
+    }
+}
+
+/// 시험마다 새 임시 폴더 (프로젝트 폴더 · 저장 파일 · 로그가 들어간다) — 시험이 끝나면 지워진다.
+pub fn unique_dir(name: &str) -> TestDir {
+    TestDir(fresh_dir(name))
 }
 
 pub struct ChannelSink(Mutex<Sender<SessionEvent>>);
@@ -144,12 +182,7 @@ struct RootGuard(PathBuf);
 impl Drop for RootGuard {
     fn drop(&mut self) {
         // 끝난 세션의 스레드가 아직 DB 손잡이를 쥐고 있을 수 있다 — 잠깐 기다리며 다시 시도한다
-        for _ in 0..60 {
-            if fs::remove_dir_all(&self.0).is_ok() || !self.0.exists() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        remove_dir_patiently(&self.0);
     }
 }
 
@@ -206,7 +239,7 @@ impl Harness {
     }
 
     fn build(name: &str, config: ManagerConfig, saved: Option<&str>, state: DbState) -> Self {
-        let root = unique_dir(name);
+        let root = fresh_dir(name);
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
         if state == DbState::Unusable {
@@ -290,6 +323,8 @@ impl Harness {
             model: None,
             effort: None,
             warnings: Vec::new(),
+            // 이 도우미는 `launch::plan_start` 를 거치지 않는다 (신뢰 확인 없이 직접 시작) — 끝날 때 해시도 적지 않는다
+            trust: None,
         }
     }
 
@@ -452,7 +487,7 @@ pub struct HarnessRoot {
 
 impl HarnessRoot {
     pub fn new(name: &str) -> Self {
-        let root = unique_dir(name);
+        let root = fresh_dir(name);
         let locations = Locations {
             claude_dir: root.join("claude"),
             harness_home: root.join("hh"),
@@ -475,7 +510,7 @@ impl HarnessRoot {
 
 impl Drop for HarnessRoot {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
+        remove_dir_patiently(&self.root);
     }
 }
 

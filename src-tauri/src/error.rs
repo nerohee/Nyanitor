@@ -55,6 +55,12 @@ pub enum AppError {
     /// 등록된 프로젝트인데 폴더가 이제 고를 수 없는 폴더다 (설정이 바뀐 뒤). 세션을 시작하지 않는다.
     #[error("the project folder cannot be used as a project now: project {0}")]
     ProjectFolderForbidden(i64),
+    /// 이 프로젝트 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 사용자가 아직 확인하지 않았다 (D-54). 세션을 시작하지 않는다 — 화면은 `project_trust_check` 로 요약을 받아 보여 준다.
+    #[error("the project folder settings need to be trusted first: project {0}")]
+    TrustRequired(i64),
+    /// 화면이 본 폴더 설정과 지금 폴더 설정이 다르다 (보고 있는 사이 바뀌었다). 신뢰로 적지 않는다 — 다시 `project_trust_check` 로 읽어 보여 준다.
+    #[error("the project folder settings changed since they were shown: project {0}")]
+    TrustChanged(i64),
     /// 파일을 쓰지 못했다 (디스크 · 권한 · 다른 프로그램이 쥐고 있음). 옛 파일은 그대로 남는다.
     #[error("could not write the file: {0}")]
     FileWriteFailed(String),
@@ -79,6 +85,8 @@ impl AppError {
             AppError::FolderDialogOpen => "folder_dialog_open",
             AppError::ProjectFolderMissing(_) => "project_folder_missing",
             AppError::ProjectFolderForbidden(_) => "project_folder_forbidden",
+            AppError::TrustRequired(_) => "trust_required",
+            AppError::TrustChanged(_) => "trust_changed",
             AppError::FileWriteFailed(_) => "file_write_failed",
         }
     }
@@ -122,6 +130,20 @@ mod tests {
     }
 
     #[test]
+    fn the_trust_errors_serialize_with_only_a_kind_and_a_message() {
+        let value = serde_json::to_value(AppError::TrustRequired(7)).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "kind": "trust_required",
+                "message": "the project folder settings need to be trusted first: project 7"
+            })
+        );
+        let value = serde_json::to_value(AppError::TrustChanged(7)).unwrap();
+        assert_eq!(value["kind"], "trust_changed");
+    }
+
+    #[test]
     fn logged_returns_the_same_error() {
         let err = AppError::Internal("boom".into()).logged();
         assert_eq!(err.kind(), "internal");
@@ -161,6 +183,8 @@ mod tests {
             AppError::ProjectFolderForbidden(1).kind(),
             "project_folder_forbidden"
         );
+        assert_eq!(AppError::TrustRequired(1).kind(), "trust_required");
+        assert_eq!(AppError::TrustChanged(1).kind(), "trust_changed");
         assert_eq!(
             AppError::FileWriteFailed(String::new()).kind(),
             "file_write_failed"

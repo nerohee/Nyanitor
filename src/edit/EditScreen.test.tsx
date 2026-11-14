@@ -80,12 +80,12 @@ function valueGroup(label: "모델" | "수준") {
 }
 
 function choose(label: "모델" | "수준", value: string) {
-  fireEvent.click(valueGroup(label).querySelector(`input[value="${value}"]`) as HTMLInputElement);
+  fireEvent.click(valueGroup(label).querySelector(`button[role="radio"][value="${value}"]`) as HTMLButtonElement);
 }
 
 /** 지금 고른 값 (없으면 null) */
 function chosen(label: "모델" | "수준"): string | null {
-  return (valueGroup(label).querySelector("input:checked") as HTMLInputElement | null)?.value ?? null;
+  return (valueGroup(label).querySelector('button[aria-checked="true"]') as HTMLButtonElement | null)?.value ?? null;
 }
 
 function applyBar() {
@@ -132,6 +132,24 @@ describe("틀 · 목록", () => {
     expect(within(ui).getByText("값 바꿈")).toBeInTheDocument();
     expect(within(ui).getByText("덧붙임")).toBeInTheDocument();
     expect(within(list).getByText("번역", { selector: ".ed-item__name" }).closest("button")!).toHaveTextContent("내가 만듦");
+  });
+
+  it("목록 묶음은 이름 붙은 영역이 아니라 묶음이고 제목은 h1 다음 h2 — 오케스트레이터를 골라도 영역 이름이 겹치지 않는다 (D-55)", async () => {
+    await mount();
+    const list = screen.getByRole("navigation", { name: "에이전트 · 스킬 목록" });
+    expect(within(list).queryAllByRole("region")).toHaveLength(0);
+    for (const group of ["오케스트레이터", "에이전트", "스킬"]) {
+      const head = within(list).getByRole("heading", { name: new RegExp(`^${group}`) });
+      expect(head.tagName).toBe("H2");
+      expect(within(list).getByRole("group", { name: new RegExp(`^${group}`) })).toBeInTheDocument();
+    }
+    // 오케스트레이터 상세 — 제목이 묶음 이름과 같아도 영역 이름은 하나씩
+    await pick("오케스트레이터");
+    const names = screen.getAllByRole("region").map((el) => el.getAttribute("aria-label") ?? document.getElementById(el.getAttribute("aria-labelledby") ?? "")?.textContent ?? "");
+    expect(new Set(names).size).toBe(names.length);
+    const levels = screen.getAllByRole("heading").map((h) => Number(h.tagName.slice(1)));
+    expect(levels[0]).toBe(1);
+    levels.forEach((level, at) => expect(at === 0 || level <= levels[at - 1]! + 1).toBe(true));
   });
 
   it("찾기 칸은 이름 · 파일로 거른다 — 없으면 안내", async () => {
@@ -329,6 +347,61 @@ describe("상세 — 통째로 바꾸기 · 내가 만든 것", () => {
       expect(within(list).queryByText("번역", { selector: ".ed-item__name" })).not.toBeInTheDocument();
     }, WAIT);
     await waitFor(() => expect(within(applyBar()).getByText(/^적용 안 한 것 \d개$/)).toBeInTheDocument(), WAIT);
+  });
+
+  it("내가 만든 것의 모델을 바꾸면 파일은 새로 읽혀도 포커스는 같은 칸에 남는다 (D-55)", async () => {
+    await mount();
+    await pick("번역");
+    const opus = valueGroup("모델").querySelector('button[value="opus"]') as HTMLButtonElement;
+    opus.focus();
+    fireEvent.click(opus);
+    // 앞머리가 바뀐 파일이 편집 칸에 새로 보인다 (새로 읽음)
+    await waitFor(() => expect(valueOf(screen.getByRole("textbox", { name: "파일 전체" }))).toContain("model: opus"), WAIT);
+    await waitFor(() => expect(document.activeElement).toBe(valueGroup("모델").querySelector('button[value="opus"]')), WAIT);
+    expect(document.activeElement).toHaveAttribute("aria-checked", "true");
+    expect(chosen("모델")).toBe("opus");
+  });
+
+  it("모델 줄 — 화살표 · Home · End 는 칸만 옮기고 저장하지 않는다 · Tab 한 칸 (D-55)", async () => {
+    await mount();
+    await pick("화면 구현");
+    const save = vi.spyOn(ipc, "customValuesSave");
+    const group = valueGroup("모델");
+    const radios = within(group).getAllByRole("radio");
+    expect(radios.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    expect(radios.filter((r) => r.getAttribute("aria-checked") === "true")).toHaveLength(1);
+    const before = chosen("모델");
+    radios[0]!.focus();
+    fireEvent.keyDown(radios[0]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(radios[1]);
+    expect(radios[1]!.tabIndex).toBe(0);
+    expect(radios[0]!.tabIndex).toBe(-1);
+    fireEvent.keyDown(radios[1]!, { key: "End" });
+    expect(document.activeElement).toBe(radios[radios.length - 1]);
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(radios[0]);
+    fireEvent.keyDown(radios[0]!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(radios[radios.length - 1]);
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toBe(radios[0]);
+    expect(save).not.toHaveBeenCalled();
+    expect(chosen("모델")).toBe(before);
+  });
+
+  it("모델 줄 — 클릭 · Enter · Space(단추의 누름)는 저장한다", async () => {
+    await mount();
+    await pick("화면 구현");
+    const save = vi.spyOn(ipc, "customValuesSave");
+    choose("모델", "opus");
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), WAIT);
+    await waitFor(() => expect(chosen("모델")).toBe("opus"), WAIT);
+    // 단추에서 Enter · Space 를 누르면 브라우저가 click 을 보낸다 — 키 처리는 그것을 가로채지 않는다
+    const sonnet = valueGroup("모델").querySelector('button[value="sonnet"]') as HTMLButtonElement;
+    const enter = fireEvent.keyDown(sonnet, { key: "Enter" });
+    const space = fireEvent.keyDown(sonnet, { key: " " });
+    expect(enter && space).toBe(true);
+    fireEvent.click(sonnet);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2), WAIT);
   });
 });
 

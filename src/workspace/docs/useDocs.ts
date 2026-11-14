@@ -1,6 +1,7 @@
 // 프로젝트 문서(`docs/` 의 .md) 읽기 — 읽기 전용 (D-49). 탭이 보일 때 목록을 읽고 몇 초마다 다시 읽는다. 연 문서의 `modified` 가 바뀌면 그 문서를 다시 읽는다.
 // 프로젝트마다 하나 (프로젝트가 바뀌면 화면이 새로 만든다 — `key`). 목록 · 문서를 읽는 사이 다른 요청이 끼면 늦게 온 것은 버린다.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isWindowShown, subscribeWindowShown } from "../../components/useWindowShown";
 import { ipc } from "../../lib/ipc";
 import type { AppErrorKind, DocFile, DocsListing, RequirementsProblem } from "../../lib/ipc-types";
 import { errorKind } from "../errors";
@@ -131,19 +132,18 @@ export function useDocs(projectId: number, visible: boolean): DocsApi {
   useEffect(() => {
     if (!visible) return;
     void poll();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void poll();
-    };
     const onFocus = () => void poll();
     const tick = () => {
-      if (document.visibilityState === "visible") void poll();
+      if (isWindowShown()) void poll();
     };
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
+    const unsubscribe = subscribeWindowShown((shown) => {
+      if (shown) void poll();
+    });
     const id = window.setInterval(tick, DOCS_CHECK_MS);
     return () => {
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
+      unsubscribe();
       window.clearInterval(id);
     };
   }, [visible, poll]);

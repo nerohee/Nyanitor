@@ -2,6 +2,7 @@
 // 실제 에이전트 상태와 묶는 것은 P5: `useFakeIntents` 대신 실제 `Intents` 를 `useHouseSchedule` 에 넣으면 된다.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CAT_IDS, type CatId } from "../cat/catalog";
+import { isWindowShown, subscribeWindowShown } from "../useWindowShown";
 import {
   assignSpots,
   FAKE_PLANS,
@@ -39,12 +40,11 @@ function reducedSnapshot(): boolean {
 }
 
 function subscribeHidden(onChange: () => void): () => void {
-  document.addEventListener("visibilitychange", onChange);
-  return () => document.removeEventListener("visibilitychange", onChange);
+  return subscribeWindowShown(() => onChange());
 }
 
 function hiddenSnapshot(): boolean {
-  return document.visibilityState === "hidden";
+  return !isWindowShown();
 }
 
 export interface SceneMotion {

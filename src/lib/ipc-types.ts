@@ -19,7 +19,9 @@ export type AppErrorKind =
   | "folder_dialog_open"
   | "file_write_failed"
   | "project_folder_missing"
-  | "project_folder_forbidden";
+  | "project_folder_forbidden"
+  | "trust_required"
+  | "trust_changed";
 
 const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "invalid_input",
@@ -39,6 +41,8 @@ const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "file_write_failed",
   "project_folder_missing",
   "project_folder_forbidden",
+  "trust_required",
+  "trust_changed",
 ];
 
 export class AppError extends Error {
@@ -81,12 +85,13 @@ export interface ClaudeStatus {
  * 시작 요청 (P6-02). **등록된 프로젝트 번호뿐이다** (D-47) — 폴더 경로 · 모델 · 수준 · 실행 파일 · 인자를 고르는 칸은 없다.
  * 폴더는 Rust 가 번호로 찾고(없어졌거나 고를 수 없는 폴더면 `project_folder_missing` · `project_folder_forbidden`),
  * 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다.
+ * 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 사용자가 아직 확인하지 않았으면 시작 직전에 `trust_required` 로 거절한다 (이어 하기도 같다, D-54).
  */
 export interface StartRequest {
   projectId: number;
   /** 이 프로젝트의 마지막 세션을 이어 한다 */
   resume?: boolean;
-  /** `ANTHROPIC_API_KEY` 를 CLI 에 넘긴다 (기본 안 넘김 — D-19) */
+  /** `ANTHROPIC_API_KEY` 를 CLI 에 넘긴다 (기본 안 넘김 — D-19). 출시 빌드는 이 값을 무시하고 언제나 안 넘긴다 (개발 빌드에서만 개발용 화면이 쓴다) */
   useApiKey?: boolean;
 }
 
@@ -399,7 +404,7 @@ export interface ProjectUsage {
   projectId: number;
   /** 오늘(이 PC 의 자정부터) 이 프로젝트에서 쓴 합 */
   today: UsageSum;
-  /** 지금까지 쓴 합 */
+  /** 보관 기간(90일) 안에서 쓴 합 — 더 오래된 줄은 지운다 (`usage::prune`) */
   total: UsageSum;
 }
 
@@ -1074,6 +1079,90 @@ export interface DocText {
 /** `project_doc_read` — 경로 모양이 틀리면 결과가 아니라 `invalid_input` 오류. 실제 경로가 `docsDir` 밖이면 `unreadable` + `outside_folder` */
 export type DocRead = ({ state: "ok" } & DocText) | { state: "absent" } | { state: "unreadable"; reason: RequirementsProblem };
 
+// ───────────────────────── 프로젝트 폴더 신뢰 (P10-03, D-54) — `src-tauri/src/projects/trust.rs` 와 같이 맞춘다 ─────────────────────────
+// 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 사용자가 확인하기 전에는 세션을 시작하지 않는다 (`claude_session_start` 가 `trust_required` 로 거절).
+// 요약의 글은 앞 200자(잘렸으면 끝에 `…`)이고 목록은 50개까지(나머지는 `more`) — 화면이 그대로 보인다. `env` 는 이름만 있다 (값은 오지 않는다).
+
+/** 목록 하나 — 50개까지, 한도를 넘어 싣지 않은 개수는 `more` */
+export interface TrustList<T> {
+  items: T[];
+  more: number;
+}
+
+/** 훅 하나 — 이벤트 이름 · 매처(없으면 null) · 종류(`command` · `http` · `prompt` · `agent`) · 실행할 글(명령 · 주소 · 프롬프트)의 앞부분 */
+export interface TrustHookEntry {
+  event: string;
+  matcher: string | null;
+  kind: string;
+  text: string;
+}
+
+/** 설정 키 하나와 그 값(글이면 앞부분, 아니면 JSON 글의 앞부분) */
+export interface TrustKeyEntry {
+  key: string;
+  value: string;
+}
+
+/** MCP 서버 하나 — 이름 · 실행 명령(+인자) 또는 주소의 앞부분 */
+export interface TrustMcpEntry {
+  name: string;
+  target: string;
+}
+
+/** 파일을 읽을 수 없는 이유 — 읽을 수 없는 파일은 확인이 필요한 것으로 본다. `link`: 링크 · 정션(따라가지 않음) · `too_large`: 1MiB 넘음 · `read_failed`: 읽기 실패(권한 등) · `not_a_file`: 파일이 아님 · `invalid_json` · `not_object`: JSON 이 아니거나 객체가 아님 */
+export type TrustUnreadableReason = "link" | "too_large" | "read_failed" | "not_a_file" | "invalid_json" | "not_object";
+
+/**
+ * 파일이 어느 폴더의 것인가 — `project`: 프로젝트 폴더 · `repo_root`: 프로젝트가 속한 git 저장소의 맨 위 폴더 · `main_checkout`: (프로젝트가 git worktree 면) 본 저장소의 맨 위 폴더.
+ * CLI 는 프로젝트가 저장소의 하위 폴더이면 맨 위의 `.claude/settings.local.json` 도 읽는다 — 그래서 프로젝트 폴더 **밖**의 파일이 요약에 오를 수 있다.
+ */
+export type TrustScope = "project" | "repo_root" | "main_checkout";
+
+/** 파일 하나에서 찾은 위험한 내용 (찾은 것이 없는 파일은 요약에 오르지 않는다) */
+export interface TrustFile {
+  /** 어느 폴더의 파일인가. `project` 가 아니면 프로젝트 폴더 밖 파일 — `.claude/settings.local.json` 뿐이다 */
+  scope: TrustScope;
+  /** `scope` 가 `project` 가 아닐 때 그 폴더의 실제 경로 (`project` 면 null) */
+  folder: string | null;
+  /** 그 폴더 안 보이는 경로 — `.claude/settings.json` · `.claude/settings.local.json` · `.mcp.json` */
+  path: string;
+  unreadable: TrustUnreadableReason | null;
+  /** 훅 (모든 이벤트) */
+  hooks: TrustList<TrustHookEntry>;
+  /** 명령을 실행하는 설정 키 (`statusLine` · `apiKeyHelper` · `awsAuthRefresh` 등) */
+  commands: TrustList<TrustKeyEntry>;
+  /** `permissions.allow` 규칙 */
+  allow: TrustList<string>;
+  /** 권한 모드 (`permissions.defaultMode` · 최상위 `defaultMode`) — 있는 것만 (최대 둘) */
+  permissionModes: TrustKeyEntry[];
+  /** `permissions.additionalDirectories` */
+  additionalDirectories: TrustList<string>;
+  /** MCP 서버 (`.mcp.json` · 설정의 `mcpServers`) */
+  mcpServers: TrustList<TrustMcpEntry>;
+  /** 켠 플러그인 이름 */
+  plugins: TrustList<string>;
+  /** 플러그인 마켓 — 이름과 출처 */
+  marketplaces: TrustList<TrustKeyEntry>;
+  /** 그 밖에 권한 · 격리 · MCP 허용을 넓히는 키 (`enableAllProjectMcpServers` · `sandbox.excludedCommands` 등) */
+  switches: TrustList<TrustKeyEntry>;
+  /** 환경 변수 **이름** (값은 보내지 않는다) */
+  envNames: TrustList<string>;
+  /** 있기는 한데 기대한 모양이 아니라 내용을 알 수 없는 위험한 키 이름 */
+  oddKeys: string[];
+}
+
+/** 확인 화면이 보일 요약 — 찾은 것이 있는 파일만 */
+export interface TrustSummary {
+  files: TrustFile[];
+}
+
+/** `project_trust_check` — `required: true` 면 사용자가 확인하기 전에 세션을 시작할 수 없다. `hash` 는 지금 폴더 설정의 해시이고, 확인하면 `project_trust_grant` 에 그대로 돌려준다 */
+export interface TrustCheck {
+  required: boolean;
+  hash: string;
+  summary: TrustSummary;
+}
+
 /** `src-tauri/src/claude/commands.rs` 의 `SESSION_EVENT` */
 export const CLAUDE_SESSION_EVENT = "claude:session";
 
@@ -1087,6 +1176,14 @@ export type WindowShownReason = (typeof WINDOW_SHOWN_REASONS)[number];
 /** `WINDOW_SHOWN_EVENT` 의 내용 (`src-tauri/src/tray.rs` 의 `WindowShown`) */
 export interface WindowShownEvent {
   reason: WindowShownReason;
+}
+
+/** `src-tauri/src/window.rs` 의 `WINDOW_VISIBILITY_EVENT` — 창이 트레이로 숨거나 최소화되어 화면(웹뷰)이 숨겨졌다 · 다시 보인다 (D-55). 바뀔 때만 오고, 앱이 처음 뜰 때는 오지 않는다 (처음은 보임) */
+export const WINDOW_VISIBILITY_EVENT = "app:window-visibility";
+
+/** `WINDOW_VISIBILITY_EVENT` 의 내용 (`src-tauri/src/window.rs` 의 `WindowVisibility`) — `visible: false` 면 웹뷰가 숨겨져 `document.visibilityState` 도 `hidden` 이다 */
+export interface WindowVisibilityEvent {
+  visible: boolean;
 }
 
 function isAppErrorKind(value: unknown): value is AppErrorKind {

@@ -223,6 +223,9 @@ describe("프로젝트 목록", () => {
     expect(within(dialog).getByRole("button", { name: "저장" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "목록에서 빼기…" })).toBeDisabled();
     expect(within(dialog).getByRole("radio", { name: /web-full/ })).toBeDisabled();
+    // 이름 칸이 꺼져 있으니 포커스는 대화상자 안의 켜진 첫 칸(닫기 단추)으로
+    expect(within(dialog).getByRole("button", { name: "닫기" })).toHaveFocus();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 
   it("DB 를 못 쓰면 목록 자리에 한 줄 + 다시 읽기", async () => {

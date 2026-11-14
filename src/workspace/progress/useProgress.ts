@@ -3,6 +3,7 @@
 // 읽기 실패(`error`)와 형식을 못 읽음(결과 안의 `unreadable`)은 다르다 — 앞은 이 훅의 상태, 뒤는 `read.plan` · `read.handoff` 에 있다.
 // 앱이 켜져 있는 동안 보드가 바뀌면 요약 로그에 보탤 줄(`boardLog`)도 만든다 (메모리만, 처음 읽은 것에서는 만들지 않는다).
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isWindowShown, subscribeWindowShown } from "../../components/useWindowShown";
 import { ipc } from "../../lib/ipc";
 import type { AppErrorKind, ProgressRead } from "../../lib/ipc-types";
 import { errorKind } from "../errors";
@@ -78,19 +79,18 @@ export function useProgress(projectId: number, visible: boolean): ProgressApi {
   useEffect(() => {
     if (!visible) return;
     void check();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void check();
-    };
     const onFocus = () => void check();
     const tick = () => {
-      if (document.visibilityState === "visible") void check();
+      if (isWindowShown()) void check();
     };
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
+    const unsubscribe = subscribeWindowShown((shown) => {
+      if (shown) void check();
+    });
     const id = window.setInterval(tick, PROGRESS_CHECK_MS);
     return () => {
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
+      unsubscribe();
       window.clearInterval(id);
     };
   }, [visible, check]);

@@ -37,3 +37,11 @@ dist-ssr
 /art/
 scripts/cat-art/.venv/
 __pycache__/
+
+# E2E 용 Edge WebDriver (P10, 이 PC 의 WebView2 판에 맞춰 받음 — 저장소에 넣지 않는다)
+/msedgedriver.exe
+
+# 비밀값 파일 (그림 생성 키 등) — 저장소에 넣지 않는다 (P10-01, D-54)
+.env
+.env.*
+!.env.example

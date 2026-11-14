@@ -7,6 +7,7 @@
 //! - `requirements` — 폴더 바로 아래 `requirements.md` 하나의 읽기 · 쓰기 · 바깥 변경 확인
 //! - `docs` — `docsDir` 아래 `.md` 의 읽기 전용 목록 · 읽기 (P7-01, D-49)
 //! - `progress` — 하네스 문서(단계 표 · 이어 하기 메모 · 지시서 진행률) 읽기 (P7-01, D-22 · D-49)
+//! - `trust` — 폴더 신뢰: 폴더의 Claude Code 설정(훅 · 허용 규칙 · MCP 등)을 요약 · 해시하고, 확인하기 전에는 세션을 시작하지 못하게 한다 (P10-03, D-54)
 //! - `commands` — Tauri 명령 (얇게)
 //!
 //! **화면은 경로 글자를 보내지 않는다.** 폴더는 Rust 가 대화상자로 받아 들고 있다가(`ProjectsState::picked`) "추가" 때 그것만 등록하고,
@@ -18,6 +19,7 @@ pub mod folder;
 pub mod progress;
 pub mod requirements;
 pub mod store;
+pub mod trust;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,10 +27,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::claude::session::SessionManager;
-use crate::claude::store::{import_legacy_for_project, project_key};
+use crate::claude::store::{forget_legacy_entries, import_legacy_for_project, project_key};
 use crate::db::{AppDb, DbStatus};
 use crate::error::AppError;
 use crate::harness::locate::strip_verbatim;
@@ -473,7 +476,21 @@ pub fn remove(
 ) -> Result<(), AppError> {
     // 끝난 세션의 마지막 기록(세션 끝 알림 등)이 큐에 남아 있을 수 있다 — 지우기 전에 쓰이게 한다 (잠금 밖에서)
     sessions.flush_history(REMOVE_FLUSH_WAIT);
-    sessions.while_project_idle(id, || db.write(|conn| store::remove(conn, id)))?;
+    sessions.while_project_idle(id, || {
+        // DB 를 쓸 수 있는지 먼저 본다 — 못 쓰는데 옛 파일의 항목만 지우는 일이 없게
+        db.write(|_| Ok(()))?;
+        let key: String = db.read(|conn| {
+            conn.query_row("SELECT path_key FROM projects WHERE id = ?1", [id], |row| {
+                row.get(0)
+            })
+            .optional()?
+            .ok_or(AppError::ProjectNotFound(id))
+        })?;
+        // 옛 세션 ID 파일(`claude-sessions.json` · `.imported*`)의 이 폴더 항목도 지운다 — 남기면 같은 폴더를 다시 등록할 때 옛 세션 ID 가 "이어 하기" 로 되살아난다 (D-48).
+        // 못 지우면 프로젝트도 빼지 않고 알린다 (다시 시도할 수 있게).
+        forget_legacy_entries(&state.inner.app_data, &key)?;
+        db.write(|conn| store::remove(conn, id))
+    })?;
     lock(&state.inner.versions).remove(&id);
     Ok(())
 }
@@ -587,12 +604,13 @@ mod tests {
     }
 
     struct Fixture {
-        _dir: TempDir,
         root: PathBuf,
         db: AppDb,
         sessions: SessionManager,
         state: ProjectsState,
         env: Env,
+        /// 맨 끝 칸 — 필드는 적은 순서대로 버려지므로 DB · 세션 관리자가 먼저 닫힌 뒤에 폴더를 지운다 (열린 DB 파일이 있으면 Windows 는 지우지 못한다)
+        _dir: TempDir,
     }
 
     impl Fixture {
@@ -612,12 +630,12 @@ mod tests {
             };
             let sessions = idle_sessions(&db);
             Self {
-                _dir: dir,
                 root,
                 db,
                 sessions,
                 state,
                 env,
+                _dir: dir,
             }
         }
 
@@ -1346,6 +1364,77 @@ mod tests {
                 .join(format!("{LEGACY_FILE}.imported"))
                 .exists()
         );
+    }
+
+    #[test]
+    fn removing_a_project_and_registering_it_again_does_not_bring_back_its_old_session_id() {
+        // D-48 "빼면 기록도 지운다" — 뺀 프로젝트의 옛 세션 ID 가 `.imported*` 에서 "이어 하기" 로 돌아오지 않는다
+        let fx = Fixture::new("proj-legacy-removed");
+        let folder = fx.folder("old-project");
+        let other = fx.folder("other-project");
+        let (id_a, id_b) = (
+            "00000000-0000-4000-8000-0000000000a1",
+            "00000000-0000-4000-8000-0000000000b2",
+        );
+        let body = format!(
+            r#"{{"version":1,"projects":{{{}:{{"sessionId":"{id_a}","updatedAt":1700000000}},{}:{{"sessionId":"{id_b}","updatedAt":1700000500}}}}}}"#,
+            serde_json::to_string(&project_key(&folder)).unwrap(),
+            serde_json::to_string(&project_key(&other)).unwrap(),
+        );
+        let renamed = fx.data_dir().join(format!("{LEGACY_FILE}.imported"));
+        fs::write(&renamed, &body).unwrap();
+        let entry = fx.add(&folder);
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, entry.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_a),
+            "처음 등록하면 가져온다"
+        );
+
+        remove(&fx.db, &fx.state, &fx.sessions, entry.id).unwrap();
+        // 같은 폴더를 다시 등록해도 이어 하기 세션 ID 가 없다
+        let again = fx.add(&folder);
+        assert_ne!(again.id, entry.id);
+        assert_eq!(
+            fx.db.read(|conn| last_for_project(conn, again.id)).unwrap(),
+            None
+        );
+        // 다른 폴더의 항목은 그대로라 그 폴더를 등록하면 가져온다
+        let other_entry = fx.add(&other);
+        assert_eq!(
+            fx.db
+                .read(|conn| last_for_project(conn, other_entry.id))
+                .unwrap()
+                .as_deref(),
+            Some(id_b)
+        );
+    }
+
+    #[test]
+    fn a_project_whose_old_session_file_cannot_be_rewritten_is_not_removed() {
+        let fx = Fixture::new("proj-legacy-remove-fails");
+        let folder = fx.folder("p");
+        let entry = fx.add(&folder);
+        let renamed = fx.data_dir().join(format!("{LEGACY_FILE}.imported"));
+        fs::write(
+            &renamed,
+            format!(
+                r#"{{"version":1,"projects":{{{}:{{"sessionId":"00000000-0000-4000-8000-0000000000a1","updatedAt":1}}}}}}"#,
+                serde_json::to_string(&project_key(&folder)).unwrap()
+            ),
+        )
+        .unwrap();
+        // 임시 파일 자리에 폴더가 있어 다시 쓸 수 없다
+        fs::create_dir(fx.data_dir().join(format!("{LEGACY_FILE}.imported.tmp"))).unwrap();
+        let err = remove(&fx.db, &fx.state, &fx.sessions, entry.id).unwrap_err();
+        assert_eq!(err.kind(), "file_write_failed");
+        // 프로젝트는 그대로 남아 있어 다시 시도할 수 있다
+        assert_eq!(fx.list().projects.len(), 1);
+        fs::remove_dir(fx.data_dir().join(format!("{LEGACY_FILE}.imported.tmp"))).unwrap();
+        remove(&fx.db, &fx.state, &fx.sessions, entry.id).unwrap();
+        assert!(fx.list().projects.is_empty());
     }
 
     #[test]

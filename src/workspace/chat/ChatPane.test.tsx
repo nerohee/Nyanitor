@@ -163,6 +163,70 @@ describe("카드에 답하기 (키보드)", () => {
     expect(within(last[0]!).queryByText(/남은 요청/)).not.toBeInTheDocument();
   });
 
+  it("카드에 답한 뒤 포커스 — 다음 기다리는 카드로, 마지막이면 입력줄로 (D-55)", async () => {
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("권한3 해 줘");
+    await screen.findByRole("button", { name: "기다리는 카드로 (3)" });
+    const waiting = () => screen.getAllByRole("article", { name: "권한 요청" }).filter((el) => el.getAttribute("data-pending") === "true");
+    for (const left of [2, 1]) {
+      const allow = within(waiting()[0]!).getByRole("button", { name: "이번만 허용" });
+      allow.focus();
+      fireEvent.click(allow);
+      await waitFor(() => expect(screen.getByRole("button", { name: `기다리는 카드로 (${left})` })).toBeInTheDocument());
+      await waitFor(() => expect(document.activeElement).toBe(waiting()[0]));
+    }
+    const allow = within(waiting()[0]!).getByRole("button", { name: "이번만 허용" });
+    allow.focus();
+    fireEvent.click(allow);
+    await waitFor(() => expect(waiting()).toHaveLength(0));
+    await waitFor(() => expect(document.activeElement).toBe(input()));
+  });
+
+  it("기다리는 카드가 있으면 채팅 안의 첫 Tab 은 카드로 — 한 번만, 새 카드가 오면 다시 (2026-11-14 고객)", async () => {
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("권한3 해 줘");
+    await screen.findByRole("button", { name: "기다리는 카드로 (3)" });
+    const first = () => screen.getAllByRole("article", { name: "권한 요청" }).find((el) => el.getAttribute("data-pending-card") === "true")!;
+    input().focus();
+    // 입력줄에서 Tab → 기다리는 카드 (기본 이동은 막는다)
+    expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(first());
+    // 다시 입력줄로 와서 Tab → 이번엔 보통 순서 (채팅에 갇히지 않게)
+    input().focus();
+    expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(input());
+    // Shift+Tab 은 건드리지 않는다
+    expect(fireEvent.keyDown(input(), { key: "Tab", shiftKey: true })).toBe(true);
+    // 포커스가 채팅 밖으로 나갔다가 Tab 으로 들어오면 다시 카드부터
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+    fireEvent.keyDown(outside, { key: "Tab" });
+    input().focus();
+    expect(document.activeElement).toBe(first());
+    // 마우스로 누른 것(바로 앞 Tab 이 없음)은 그대로
+    outside.focus();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    input().focus();
+    expect(document.activeElement).toBe(input());
+    outside.remove();
+  });
+
+  it("카드에 답해도 포커스가 카드 밖(입력줄)에 있었다면 옮기지 않는다", async () => {
+    await mount(1);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("권한3 해 줘");
+    await screen.findByRole("button", { name: "기다리는 카드로 (3)" });
+    const other = screen.getByRole("button", { name: "세션 끝내기" });
+    other.focus();
+    const allow = within(screen.getAllByRole("article", { name: "권한 요청" })[0]!).getByRole("button", { name: "이번만 허용" });
+    fireEvent.click(allow);
+    await waitFor(() => expect(screen.getByRole("button", { name: "기다리는 카드로 (2)" })).toBeInTheDocument());
+    expect(document.activeElement).toBe(other);
+  });
+
   it("권한 — 항상 허용 · 다르게 하라고 말하기(중단 줄 + 말이 새 메시지로)", async () => {
     await mount(1);
     await screen.findByText("요구사항을 쓰고 시작해요");
@@ -614,5 +678,124 @@ describe("목록", () => {
     expect(screen.getByText("file4.md")).toBeInTheDocument();
     // 모델 · 수준을 못 받았으면(null) "기본"
     expect(screen.getByText("기본", { selector: ".wc-head__chip--mono" })).toBeInTheDocument();
+  });
+});
+
+describe("폴더 설정 확인 (D-54)", () => {
+  const trustDialog = () => screen.findByRole("dialog", { name: "이 폴더의 설정을 확인해 주세요" });
+
+  it("확인이 필요한 폴더로 시작하면 확인 화면 — 저장소 맨 위 파일까지 보이고, 제목에 포커스", async () => {
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("안녕");
+    const dialog = await trustDialog();
+    expect(within(dialog).getByRole("heading", { level: 2 })).toHaveFocus();
+    expect(within(dialog).getByText(/Claude Code 가 시작할 때 따르는 설정이 있어요/)).toBeInTheDocument();
+    expect(within(dialog).getByText(".claude/settings.json")).toBeInTheDocument();
+    expect(within(dialog).getByText(".mcp.json")).toBeInTheDocument();
+    expect(within(dialog).getByText(".claude/settings.local.json")).toBeInTheDocument();
+    expect(within(dialog).getByText("프로젝트 밖 · 저장소 맨 위 (C:\\dev\\bakery)")).toBeInTheDocument();
+    // 세션은 아직 시작하지 않았다
+    expect(useSessionStore.getState().session).toBeNull();
+  });
+
+  it("「믿고 시작」 → 믿는다고 적고 다시 시작 — 말이 가고 세션이 돈다, 확인 화면은 닫히고 입력줄로 포커스", async () => {
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("안녕");
+    const dialog = await trustDialog();
+    await within(dialog).findByText(".mcp.json");
+    fireEvent.click(within(dialog).getByRole("button", { name: "믿고 시작" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(useSessionStore.getState().session?.projectId).toBe(4));
+    expect(await screen.findByText("안녕")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("「취소」 → 시작하지 않는다 — 오류 줄 없이, 쓴 글은 그대로, 포커스는 입력줄", async () => {
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    input().focus();
+    await say("안녕");
+    const dialog = await trustDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(useSessionStore.getState().session).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(input()).toHaveValue("안녕");
+    expect(input()).toHaveFocus();
+  });
+
+  it("Esc 도 취소 — 시작 단추로 연 것은 그 단추로 돌아온다", async () => {
+    fakeProjects.handlers.project_update({ id: 4, patch: { skill: "/desktop-app" } });
+    await mount(4);
+    const start = await screen.findByRole("button", { name: "/desktop-app requirements.md 로 시작" });
+    start.focus();
+    fireEvent.click(start);
+    await trustDialog();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(useSessionStore.getState().session).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "/desktop-app requirements.md 로 시작" })).toHaveFocus());
+  });
+
+  it("보는 사이 폴더 설정이 바뀌면 — 바뀌었다는 띠와 함께 새 내용을 다시 읽는다 (아직 시작하지 않음)", async () => {
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("안녕");
+    const dialog = await trustDialog();
+    await within(dialog).findByText(".mcp.json");
+    fakeProjects.changeTrustedSettings();
+    fireEvent.click(within(dialog).getByRole("button", { name: "믿고 시작" }));
+    expect(await screen.findByText(/확인하는 사이 바뀌었어요/)).toBeInTheDocument();
+    expect(useSessionStore.getState().session).toBeNull();
+    // 새 내용을 믿으면 시작
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("button", { name: "믿고 시작" })).toBeEnabled());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "믿고 시작" }));
+    await waitFor(() => expect(useSessionStore.getState().session?.projectId).toBe(4));
+  });
+
+  it("내용을 읽지 못하면 확인 화면 없이 지금 오류 표시대로 한 줄", async () => {
+    vi.spyOn(ipc, "projectTrustCheck").mockRejectedValue(new AppError("project_folder_missing", "x"));
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("안녕");
+    expect(await screen.findByRole("alert")).toHaveTextContent("프로젝트 폴더를 찾을 수 없어요.");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("믿는다고 적다가 다른 오류가 나면 확인 화면을 닫고 오류 한 줄", async () => {
+    vi.spyOn(ipc, "projectTrustGrant").mockRejectedValue(new AppError("db_unavailable", "x"));
+    fakeProjects.handlers.project_update({ id: 4, patch: { skill: "/desktop-app" } });
+    await mount(4);
+    fireEvent.click(await screen.findByRole("button", { name: "/desktop-app requirements.md 로 시작" }));
+    const dialog = await trustDialog();
+    await within(dialog).findByText(".mcp.json");
+    fireEvent.click(within(dialog).getByRole("button", { name: "믿고 시작" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(useSessionStore.getState().session).toBeNull();
+  });
+
+  it("이어 하기로 시작해도 같은 흐름", async () => {
+    reset("full");
+    await mount(4);
+    await waitFor(() => expect(useSessionStore.getState().chats[4]?.load).toBe("ready"));
+    await say("이어서");
+    const dialog = await trustDialog();
+    expect(within(dialog).getByText(".claude/settings.json")).toBeInTheDocument();
+    await within(dialog).findByText(".mcp.json");
+    fireEvent.click(within(dialog).getByRole("button", { name: "믿고 시작" }));
+    await waitFor(() => expect(useSessionStore.getState().session?.projectId).toBe(4));
+  });
+
+  it("확인할 폴더 설정이 없으면(?trust=none) 확인 화면 없이 바로 시작", async () => {
+    fakeProjects.reset({ trust: "none" });
+    await mount(4);
+    await screen.findByText("요구사항을 쓰고 시작해요");
+    await say("안녕");
+    await waitFor(() => expect(useSessionStore.getState().session?.projectId).toBe(4));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

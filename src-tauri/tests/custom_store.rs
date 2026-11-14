@@ -995,6 +995,11 @@ fn a_new_item_with_a_bad_shape_is_an_invalid_input_error() {
         ("agent", "a/b", "x", None, None),
         ("agent", "..", "x", None, None),
         ("agent", "", "x", None, None),
+        // 윈도 장치 이름 — 스킬 `nul` 은 만들 때 알 수 없는 오류였다
+        ("agent", "con", "x", None, None),
+        ("skill", "nul", "x", None, None),
+        ("skill", "com1", "x", None, None),
+        ("skill", "lpt9", "x", None, None),
         ("agent", "x", "", None, None),
         ("agent", "x", "   ", None, None),
         ("agent", "x", "두 줄\n입니다", None, None),

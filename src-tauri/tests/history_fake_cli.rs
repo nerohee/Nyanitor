@@ -808,14 +808,14 @@ fn count(h: &Harness, table: &str, project_id: i64) -> i64 {
 fn removing_a_project_removes_its_sessions_history_and_chure_but_not_the_folder_or_other_projects()
 {
     let mut h = Harness::new("hist-remove");
-    // 다른 프로젝트의 기록 (직접 넣는다)
+    // 다른 프로젝트의 기록 (직접 넣는다). 사용량 줄의 시각은 지금 — 90일보다 오래된 줄은 턴이 끝날 때 정리된다 (P10-07)
     h.db.write(|conn| {
         conn.execute_batch(
             "INSERT INTO projects (id, path, path_key, name, created_at, last_opened_at) VALUES (2, 'x', 'x', 'x', 1, 1);
              INSERT INTO sessions (project_id, session_id, first_seen_at, last_seen_at) VALUES (2, '00000000-0000-4000-8000-000000000009', 1, 1);
              INSERT INTO chat_items (project_id, run_id, at, kind, body) VALUES (2, 1, 1, 'text', '{\"type\":\"text\",\"text\":\"keep\"}');
              INSERT INTO usage_turns (project_id, run_id, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd, outcome)
-               VALUES (2, 1, 1, 1, 1, 0, 0, 0.1, 'success');",
+               VALUES (2, 1, CAST(strftime('%s', 'now') AS INTEGER), 1, 1, 0, 0, 0.1, 'success');",
         )?;
         Ok(())
     })

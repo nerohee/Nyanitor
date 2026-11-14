@@ -201,7 +201,7 @@ export default function Workspace({ projectId, onSelect, onGo, openNew = false, 
     <div className="ws" data-testid="workspace" data-skin="3" data-time={time}>
       <AppNav current="workspace" onGo={go} />
       <main className="ws-stage">
-        <h1 className="ws-sr">{t("variant.nav.workspace")}</h1>
+        <h1 className="ws-sr" tabIndex={-1}>{t("variant.nav.workspace")}</h1>
         <PendingAnnouncer />
         {/* 뒤로 물러난 장면 — 같은 마당이 종이 뒤에 비친다 */}
         <HouseScene className="ws-backdrop" time={time} placements={[]} />

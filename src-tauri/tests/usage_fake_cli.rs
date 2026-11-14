@@ -512,3 +512,38 @@ fn the_state_serializes_for_the_screen_in_both_shapes() {
         json!({ "state": "unavailable", "reason": "no_claude" })
     );
 }
+
+// ───────────────────────────── CLI 작업 폴더 (P10-08, D-54) ─────────────────────────────
+
+#[test]
+fn the_usage_session_runs_in_the_work_folder_and_planted_settings_are_removed() {
+    let root = unique_dir("usage-workdir");
+    let work = root.join("cli-work");
+    fs::create_dir_all(work.join(".claude")).unwrap();
+    fs::write(work.join(".claude").join("settings.json"), "{\"hooks\":{}}").unwrap();
+    let dump = root.join("cwd.txt");
+    let cmd = fake(&root, "usage", &[], None);
+    let command = cmd
+        .command
+        .clone()
+        .with_work_dir(&work)
+        .with_extra_env("NYANITOR_FAKE_CWD_DUMP", dump.as_os_str());
+    reading(read_with(Some(&command), false, &config()));
+    // `--version`이 아니라 세션(`-p`)을 띄운 프로세스가 마지막으로 적었다
+    assert_eq!(sessions_started(&cmd), 1);
+    let seen = fs::canonicalize(fs::read_to_string(&dump).unwrap().trim()).unwrap();
+    assert_eq!(seen, fs::canonicalize(&work).unwrap());
+    assert!(!work.join(".claude").exists(), "심은 설정이 남았다");
+}
+
+#[test]
+fn a_usage_read_whose_work_folder_cannot_be_made_starts_no_session() {
+    let root = unique_dir("usage-workdir-blocked");
+    let blocker = root.join("file");
+    fs::write(&blocker, b"x").unwrap();
+    let cmd = fake(&root, "usage", &[], None);
+    let command = cmd.command.clone().with_work_dir(blocker.join("cli-work"));
+    let result = read_with(Some(&command), false, &config());
+    assert_eq!(unavailable(result), UnavailableReason::Failed);
+    assert_eq!(sessions_started(&cmd), 0);
+}

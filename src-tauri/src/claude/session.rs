@@ -39,6 +39,7 @@ use super::store;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::history::{self, Limits, LiveRequests, LiveRun, RecordCtx, Recorder};
+use crate::projects::trust::TrustBaseline;
 
 /// 한 줄의 최대 길이 (줄바꿈 제외) — 정상 출력(수십 KB)보다 훨씬 크다. 넘으면 그 줄은 버리고 원본 로그에 알린다 (메모리 보호).
 const MAX_LINE_BYTES: usize = 16 << 20;
@@ -161,6 +162,8 @@ struct Session {
     project_dir: PathBuf,
     /// `--resume` 으로 시작했다면 그 세션 ID
     resume_id: Option<String>,
+    /// 폴더 신뢰 확인을 통과해 시작했다면 그때의 기준 — 끝날 때 `permissions.allow` 말고는 같을 때만 새 해시를 적는다 (`projects::trust::remember_after_session`)
+    trust: Option<TrustBaseline>,
     /// 쓰기 스레드로 가는 줄. `None` = stdin 을 닫았다.
     writer: Mutex<Option<Sender<String>>>,
     pending: Mutex<Vec<(String, PendingRequest)>>,
@@ -482,7 +485,9 @@ impl SessionManager {
 
         let command = command.keep_api_key(plan.use_api_key);
         // 시작 전 버전 확인 (`system/init` 은 첫 메시지 뒤에야 온다). 잠금 밖에서 한다.
-        let cli_version = discover::read_version(&command)?;
+        // CLI 를 못 돌렸으면 기억한 찾기 결과(`discover::status_here`)도 낡은 것이다 (D-55)
+        let cli_version =
+            discover::read_version(&command).inspect_err(|_| discover::forget_status())?;
 
         let args = build_args(model, effort, resume_id.as_deref());
         // 여기부터 자리 잠금 — 끝내기가 그 사이 들어왔으면 띄우지 않는다. 띄우기 · 등록은 짧다.
@@ -500,6 +505,7 @@ impl SessionManager {
             .stderr(Stdio::piped());
         let mut child = process.spawn().map_err(|err| {
             if err.kind() == io::ErrorKind::NotFound {
+                discover::forget_status();
                 AppError::ClaudeNotFound
             } else {
                 AppError::Internal(format!("could not start claude: {err}"))
@@ -525,6 +531,7 @@ impl SessionManager {
             project_id: plan.project_id,
             project_dir: project_dir.to_path_buf(),
             resume_id: resume_id.clone(),
+            trust: plan.trust.clone(),
             writer: Mutex::new(Some(tx)),
             pending: Mutex::new(Vec::new()),
             flags: Mutex::new(Flags::default()),
@@ -1230,6 +1237,10 @@ fn apply(session: &Session, shared: &Shared, interpretation: Interpretation) {
             if let SessionEvent::TurnStarted { api_key_source, .. } = event {
                 flags.api_key_source.clone_from(api_key_source);
             }
+            // 인증 오류로 끝난 턴이면 기억한 "로그인됨" 을 버린다 (D-55)
+            if let SessionEvent::TurnEnded(summary) = event {
+                discover::forget_status_after_auth_error(summary.api_error_status);
+            }
         }
         if turn_started {
             flags.busy = true;
@@ -1381,6 +1392,17 @@ fn wait_and_finish(mut child: Child, session: &Session, shared: &Shared, done: &
 /// 강제로 꺼도 신호가 안 와서 `stop` 이 먼저 끝냈는데 프로세스가 뒤늦게 끝난 경우).
 /// `died` 는 끝내기가 실패한 경우 — 앱이 끝내라고 했어도 정상 종료로 치지 않는다.
 fn announce_end(session: &Session, shared: &Shared, code: Option<i32>, died: bool) {
+    // 폴더 설정의 해시를 다시 적는다 — 세션 중 「항상 허용」이 `settings.local.json` 의 `allow` 에 쓴 규칙 때문에 다음 시작에 또 묻지 않게 (D-54).
+    // 시작 때와 `allow` 말고도 다르면(세션 중 훅 · MCP 등이 생김) 적지 않아 다음 시작에 다시 묻는다.
+    // 끝났다는 표시(`exit`)보다 **먼저** 해서, 끝을 본 화면이 바로 다시 시작해도 이 해시를 본다. 두 번 불려도 같은 일이라 해롭지 않다.
+    if let Some(baseline) = &session.trust {
+        crate::projects::trust::remember_after_session(
+            &shared.db,
+            session.project_id,
+            &session.project_dir,
+            baseline,
+        );
+    }
     let (stop_requested, forced, mid_turn, stderr_tail) = {
         let flags = lock(&session.flags);
         (

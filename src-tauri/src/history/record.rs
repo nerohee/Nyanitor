@@ -4,7 +4,7 @@
 //!
 //! | 이벤트 | 저장 | 비고 |
 //! |---|---|---|
-//! | `session_started` · `session_ended` | 예 | 세션 시작 · 끝 (끝은 `stderrTail` 포함) |
+//! | `session_started` · `session_ended` | 예 | 세션 시작 · 끝. 끝의 `stderrTail`(CLI 가 마지막에 찍은 오류 글 — 훅 · MCP · 인증 오류에 키 · 토큰이 찍힐 수 있다)은 **비워서** 저장한다 (D-48 의 실패 결과 글과 같은 이유 · P10-07). 화면으로 가는 실시간 이벤트는 글을 가진다 |
 //! | `user_message` · `text` | 예 | 사용자 메시지 · 오케스트레이터 글 (긴 글은 자름) |
 //! | `tool_use` | 예 | 도구 사용 요약 (이미 짧은 요약) |
 //! | `tool_result` | 오류만 | 성공한 결과는 저장하지 않는다 (원문 · 요약 모두). 실패한 결과도 **글(`summary`)은 비워서** 저장한다 — "실패함" 표시와 `toolUseId` 만 (D-48). 화면으로 가는 실시간 이벤트는 글을 가진다 |
@@ -168,6 +168,11 @@ pub fn draft(event: &SessionEvent, limits: &Limits) -> Option<Draft> {
             // 칸은 빈 글로 남긴다 (기록을 읽는 화면이 실시간 이벤트와 같은 모양으로 읽는다). 뺀 것은 잘린 것이 아니다.
             value["summary"] = Value::String(String::new());
         }
+        SessionEvent::SessionEnded { .. } => {
+            // CLI 가 마지막에 찍은 오류 글에는 비밀값(훅 · MCP · 인증 오류의 키 · 토큰)이 들어 있을 수 있다 — 저장하지 않는다 (D-48 과 같은 이유).
+            // 칸은 빈 목록으로 남긴다 (기록을 읽는 화면은 빈 목록이면 오류 글 없이 그린다). 뺀 것은 잘린 것이 아니다.
+            value["stderrTail"] = Value::Array(Vec::new());
+        }
         SessionEvent::PermissionRequest(_) => {
             // 도구 입력(쓸 파일 내용 · 바꾸는 글)은 저장하지 않는다 — 비밀값이 들어 있을 수 있다 (2026-10-29 고객).
             // 다시 그릴 때는 명령 · 파일 경로 · 설명 · 항상 허용 규칙으로 충분하다.
@@ -283,6 +288,36 @@ mod tests {
             depth: 1,
             at_ms: 1,
         }
+    }
+
+    #[test]
+    fn a_session_end_is_stored_without_the_stderr_text_but_keeps_the_rest() {
+        let event = SessionEvent::SessionEnded {
+            ended: EndKind::Died,
+            exit_code: Some(1),
+            forced: false,
+            mid_turn: true,
+            stderr_tail: vec![
+                "hook failed: ANTHROPIC_AUTH_TOKEN=sk-ant-secret".into(),
+                "No conversation found with session ID".into(),
+            ],
+        };
+        let draft = draft(&event, &limits()).unwrap();
+        assert!(!draft.body.contains("sk-ant-secret"), "{}", draft.body);
+        assert!(!draft.body.contains("No conversation"), "{}", draft.body);
+        let stored = parsed(&draft);
+        assert_eq!(stored["stderrTail"], json!([]), "칸은 빈 목록으로 남는다");
+        assert_eq!(stored["type"], "session_ended");
+        assert_eq!(stored["ended"], "died");
+        assert_eq!(stored["exitCode"], 1);
+        assert_eq!(stored["midTurn"], true);
+        assert!(!draft.truncated, "뺀 것은 잘린 것이 아니다");
+        // 화면으로 가는 이벤트 자체는 그대로 글을 가진다
+        assert!(
+            serde_json::to_string(&event)
+                .unwrap()
+                .contains("sk-ant-secret")
+        );
     }
 
     #[test]

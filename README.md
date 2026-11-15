@@ -18,22 +18,42 @@
 
 ## 쓰기 전에 필요한 것
 
-- Windows 10 · 11 (macOS · Linux 설치본은 준비 중)
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI — 설치하고 터미널에서 한 번 로그인해 두세요
+- Windows 10 · 11, macOS (Apple Silicon · Intel), Linux (x86_64)
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI — 설치해 두세요. 로그인은 앱에서 안내합니다 (터미널에서 미리 해 둬도 됩니다)
 - git
 
 ## 설치
 
-출시 전이라 아직 설치본이 없습니다. 출시되면 [Releases](https://github.com/nerohee/Nyanitor/releases) 에 올라갑니다.
+[Releases](https://github.com/nerohee/Nyanitor/releases) 에서 내 OS 에 맞는 파일을 받습니다. 아직 첫 출시 전이라 올라간 판이 없습니다.
 
-설치본에는 코드 서명이 없습니다. 그래서 처음 실행할 때 Windows 의 "Windows의 PC 보호" 창이 뜰 수 있습니다. 「추가 정보」 → 「실행」을 누르면 됩니다.
+| OS | 받을 파일 | 설치 |
+|---|---|---|
+| Windows | `Nyanitor_<판>_x64-setup.exe` | 실행해서 설치 |
+| macOS (Apple Silicon) | `Nyanitor_<판>_aarch64.dmg` | 열어서 `Nyanitor` 를 응용 프로그램 폴더로 끌기 |
+| macOS (Intel) | `Nyanitor_<판>_x64.dmg` | 위와 같음 |
+| Linux | `Nyanitor_<판>_amd64.AppImage` (권장) 또는 `.deb` | 아래 참고 |
+
+설치본에는 코드 서명이 없습니다. 그래서 처음 열 때 OS 가 한 번 막습니다.
+
+- **Windows** — "Windows의 PC 보호" 창이 뜨면 「추가 정보」 → 「실행」.
+- **macOS** — 처음 열 때 "확인되지 않은 개발자" 라며 열리지 않으면, 「시스템 설정」 → 「개인정보 보호 및 보안」 아래쪽의 「그래도 열기」를 누릅니다. 터미널에 익숙하면 `xattr -dr com.apple.quarantine /Applications/Nyanitor.app` 도 됩니다.
+- **Linux (AppImage)** — 실행 권한을 주고 엽니다: `chmod +x Nyanitor_*.AppImage` → `./Nyanitor_*.AppImage`. Ubuntu 22.04 이후에서 FUSE 오류가 나면 `sudo apt install libfuse2` (24.04 는 `libfuse2t64`).
+- **Linux (.deb)** — `sudo apt install ./Nyanitor_<판>_amd64.deb`. deb 로 설치하면 앱 안 업데이트가 되지 않아, 새 판은 Releases 에서 다시 받습니다.
+
+### 업데이트
+
+앱이 켜질 때 새 판이 있는지 확인하고, 있으면 고양이 집의 상태 카드에 알려 줍니다. 「바뀐 점 보기」 → 「설치하고 다시 시작」. 업데이트 파일은 서명을 확인한 뒤에만 설치합니다 (OS 코드 서명과는 별개).
+
+### Claude Code 로그인
+
+로그인이 안 돼 있으면 작업 공간의 「로그인」 단추가 Anthropic 의 로그인 흐름을 엽니다 — Windows 는 새 콘솔 창, macOS 는 터미널 앱. Linux 는 터미널에 붙여 넣을 명령을 보여 줍니다. 앱은 로그인 정보를 읽거나 저장하지 않습니다.
 
 ## 데이터와 개인 정보
 
 | 무엇 | 어디에 | 앱을 지우면 |
 |---|---|---|
-| 프로젝트 목록 · 채팅 기록 · 사용량 · 폴더 신뢰 기록 | `%APPDATA%\io.github.nerohee.nyanitor\` (SQLite) | 남음. 제거할 때 「앱 데이터 지우기」를 고르면 지워짐 |
-| 로그 · 화면 캐시 | `%LOCALAPPDATA%\io.github.nerohee.nyanitor\` | 위와 같음 |
+| 프로젝트 목록 · 채팅 기록 · 사용량 · 폴더 신뢰 기록 (SQLite) | Windows `%APPDATA%\io.github.nerohee.nyanitor\` · macOS `~/Library/Application Support/io.github.nerohee.nyanitor/` · Linux `~/.local/share/io.github.nerohee.nyanitor/` | 남음. Windows 는 제거할 때 「앱 데이터 지우기」를 고르면 지워짐, macOS · Linux 는 폴더를 직접 지움 |
+| 로그 · 화면 캐시 | Windows `%LOCALAPPDATA%\io.github.nerohee.nyanitor\` · macOS `~/Library/Logs/io.github.nerohee.nyanitor/` · `~/Library/Caches/` · Linux `~/.local/share/io.github.nerohee.nyanitor/` · `~/.cache/` | 위와 같음 |
 | 하네스 원본 · 내 수정 · 백업 | `~/.claude-harness/` | 남음 — 앱 없이 터미널에서도 쓰는 곳 |
 | 설치된 하네스 · Claude Code 설정 | `~/.claude/` | 남음 |
 

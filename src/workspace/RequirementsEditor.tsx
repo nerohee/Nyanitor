@@ -1,7 +1,7 @@
 // 요구사항 편집기 — 그 프로젝트 폴더의 requirements.md (D-11). 시제품 `variants/shared/editor.tsx` 의 모양에 실제 읽기 · 저장을 이은 것.
 // 쓰기(CodeMirror 6) ↔ 미리보기 전환, 저장 표시, 바깥에서 바뀌었을 때의 충돌 띠, 없음 · 읽을 수 없음. 데이터 쪽은 `useRequirements`.
 // 단축키: `Ctrl+S` 바로 저장, `Ctrl+Shift+E` 쓰기 ↔ 미리보기 (Mac 은 ⌘). Ctrl+Shift+V 는 일반 "서식 없이 붙여넣기" 라 쓰지 않는다 (Shift 가 붙어 Mac 의 Ctrl+E 줄 끝 이동과도 겹치지 않는다).
-import { useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
 import { t, tf, type TextKey } from "../i18n/ko";
 import type { RequirementsProblem } from "../lib/ipc-types";
 import { Icon } from "../variants/shared/icons";
@@ -92,8 +92,9 @@ export function RequirementsEditor({ projectId, onConflict, guardRef }: Props) {
   const gone = conflict?.version === null;
   const { overwrite } = api;
 
-  // 저장을 멈춘 동안만 작업 공간에 알린다 — 떠날 때 물을 수 있게
-  useEffect(() => {
+  // 저장을 멈춘 동안만 작업 공간에 알린다 — 떠날 때 물을 수 있게.
+  // 충돌 띠가 그려지는 같은 순간(레이아웃 효과)에 넘긴다 — `useEffect` 면 띠가 보인 뒤 효과가 돌기 전의 클릭이 묻지 않고 떠났다 (느린 CI 에서 시험이 깜빡임, P11)
+  useLayoutEffect(() => {
     if (!guardRef) return;
     guardRef.current = conflict ? { keepMine: overwrite } : null;
     return () => {

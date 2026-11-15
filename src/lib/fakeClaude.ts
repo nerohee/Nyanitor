@@ -5,6 +5,7 @@
 //  · 허용 / 항상 허용 / 거부 / 다르게 말하기 / 질문 답 / 중단 / 끝내기 / 이어 하기
 //  · 주소 쿼리 `?workers=one|two|background|permission` (P7-02) — 메시지를 보내면 작업자(서브에이전트) 시작 · 하는 일 · 끝 이벤트가 흐른다 (`fakeWorkers.ts`).
 //    중단 · 끝내기는 일하는 작업자를 `stopped` 로 끝낸다 (진짜 세션 관리자와 같다)
+//  · 주소 쿼리 `?login=copy` (P11-05, D-59) — 「로그인 창 열기」 가 Linux 처럼 창을 띄우지 않고 붙여 넣을 명령을 돌려준다 (기본은 `opened` — Windows · macOS)
 // 문구는 `ko.ts` 의 `lab.fake.*` (D-08).
 import { t } from "../i18n/ko";
 import { fakeCustom } from "./fakeCustom";
@@ -23,6 +24,7 @@ import {
   type ClaudeResponse,
   type ClaudeSessionState,
   type ClaudeStatus,
+  type LoginLaunch,
   type PermissionRequestInfo,
   type QuestionRequestInfo,
   type RawLogEntry,
@@ -86,6 +88,21 @@ function plannerChoice(mode: FakePlannerMode): { model: string | null; effort: s
   return { model: "opus", effort: "high", warnings: [] };
 }
 
+/**
+ * 가짜 로그인 창 (`claude_open_login`) 결과. 주소 쿼리 `?login=`:
+ *  opened (기본, Windows · macOS 처럼 창이 열림) · copy (Linux 처럼 붙여 넣을 명령을 돌려줌)
+ */
+export type FakeLoginMode = "opened" | "copy";
+const LOGIN_MODES: readonly FakeLoginMode[] = ["opened", "copy"];
+
+export function parseFakeLoginQuery(search: string): FakeLoginMode {
+  const value = new URLSearchParams(search).get("login");
+  return LOGIN_MODES.find((mode) => mode === value) ?? "opened";
+}
+
+/** 진짜 Linux 가 돌려주는 모양의 글 (sh 작은따옴표로 감싼 절대 경로 + `auth login`) */
+const FAKE_LOGIN_COMMAND = "'/home/fake/.local/bin/claude' auth login";
+
 /** 턴 하나의 토큰 · 비용 — 츄르 요약(`fakeHistory.ts`)이 같은 값으로 "지금 세션" 을 센다 */
 const EMPTY_USAGE = { ...FAKE_TURN_USAGE };
 
@@ -123,6 +140,9 @@ export function createFakeClaude() {
   const workers = new Map<string, WorkerStartedEvent>();
   /** 작업자 도구 호출 ID 를 만드는 번호 — `reset` 해도 되돌리지 않는다 (앞 시나리오의 남은 타이머가 새 작업자를 건드리지 않게) */
   let workerSeq = 0;
+  /** 시험이 정한 로그인 창 결과. 없으면 부를 때마다 주소 쿼리를 읽는다 */
+  let loginOverride: FakeLoginMode | null = null;
+  const loginMode = (): FakeLoginMode => loginOverride ?? parseFakeLoginQuery(typeof window === "undefined" ? "" : window.location.search);
   const plannerMode = (): FakePlannerMode => plannerOverride ?? parseFakePlannerQuery(typeof window === "undefined" ? "" : window.location.search);
   const pending = new Map<string, PendingFake>();
   let counter = 0;
@@ -393,7 +413,7 @@ export function createFakeClaude() {
       otherBilling: [],
       problem: null,
     }),
-    claude_open_login: () => undefined,
+    claude_open_login: (): LoginLaunch => (loginMode() === "copy" ? { kind: "copy", command: FAKE_LOGIN_COMMAND } : { kind: "opened" }),
     claude_session_start: (args): StartInfo => {
       const request = args.request as StartRequest | undefined;
       // 진짜처럼 번호만 받는다 (경로 · 모델 · 수준 칸이 없다). 번호가 아니면 거절 — Rust 의 `deny_unknown_fields` + 정수 해석과 같은 쪽
@@ -565,9 +585,10 @@ export function createFakeClaude() {
     liveRun(): { projectId: number; sessionId: string | null; turns: number } | null {
       return session ? { projectId: session.projectId, sessionId: session.turns > 0 ? session.sessionId : null, turns: session.finishedTurns } : null;
     },
-    /** 시험용: 모든 상태를 처음으로 (`planner` · `workers` 를 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다. `pace` 는 작업자 시나리오의 한 걸음 길이) */
-    reset(next?: { planner?: FakePlannerMode; workers?: FakeWorkersMode; pace?: number }) {
+    /** 시험용: 모든 상태를 처음으로 (`planner` · `workers` · `login` 을 주면 쿼리 대신 그 값, 없으면 다시 쿼리를 읽는다. `pace` 는 작업자 시나리오의 한 걸음 길이) */
+    reset(next?: { planner?: FakePlannerMode; workers?: FakeWorkersMode; login?: FakeLoginMode; pace?: number }) {
       plannerOverride = next?.planner ?? null;
+      loginOverride = next?.login ?? null;
       workersOverride = next?.workers ?? null;
       workerPace = next?.pace ?? DEFAULT_WORKER_PACE_MS;
       workers.clear();

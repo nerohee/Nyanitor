@@ -15,7 +15,7 @@ use tauri_plugin_log::log;
 
 use super::KNOWN_CLI_VERSION;
 use super::exec::{self, ClaudeCommand};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use super::workdir;
 use crate::error::AppError;
 
@@ -413,9 +413,165 @@ fn system_cmd_exe(system_root: Option<&OsStr>) -> PathBuf {
     root.join("System32").join("cmd.exe")
 }
 
-/// 로그인 안 됨 → `claude auth login` 을 새 터미널 창으로 띄운다. 로그인 흐름은 Anthropic 것이고 앱은 만들지 않는다 (D-19).
+/// 로그인 창을 띄운 결과 (D-59) — 화면이 이 값으로 다음 안내를 정한다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LoginLaunch {
+    /// 새 창(Windows 콘솔 · macOS 터미널 앱)에서 `claude auth login` 이 돌고 있다
+    Opened,
+    /// 창을 띄우지 않았다 (Linux — 터미널 앱이 제각각이다). 사용자가 터미널에 붙여 넣을 명령 한 줄
+    Copy { command: String },
+}
+
+/// sh 작은따옴표 글 — 안의 `'` 는 `'\''` (따옴표를 닫고, 이스케이프한 따옴표 하나, 다시 연다).
+/// 작은따옴표 안에서는 `$` · 역따옴표 · `\` · `;` 모두 글자 그대로라 다른 명령으로 읽히지 않는다.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn sh_single_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// sh 로 `claude auth login` 을 돌리는 명령 한 줄 — `'<claude 경로>' auth login`.
+/// 경로에 제어 문자(줄바꿈 포함)가 있거나 UTF-8 이 아니면 거절한다 (명령 글에 그대로 못 담고, 다른 줄 · 다른 글자가 될 수 있다).
+/// `PATH` 의 `claude` 와 같아도 짧게 줄이지 않고 찾은 절대 경로를 쓴다 — 사용자 터미널의 `PATH` 는 앱의 것과 다를 수 있어서,
+/// 줄이면 앱이 확인한 것과 다른 `claude` 가 돌 수 있다.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn login_shell_command(program: &Path) -> Result<String, AppError> {
+    let text = program
+        .to_str()
+        .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+        .ok_or_else(|| {
+            AppError::InvalidInput(
+                "claude path has characters that cannot be passed to the login window".into(),
+            )
+        })?;
+    Ok(format!("{} auth login", sh_single_quote(text)))
+}
+
+/// macOS 터미널 앱이 여는 `.command` 파일 내용 — `exec` 로 `claude` 가 셸을 대신해서 끝나면 창의 프로세스도 끝난다.
+/// 경로는 `login_shell_command` 가 작은따옴표로 감싼다 (AppleScript `do script` 글에 경로를 끼우지 않는 이유).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn login_script(program: &Path) -> Result<String, AppError> {
+    Ok(format!(
+        "#!/bin/sh\nexec {}\n",
+        login_shell_command(program)?
+    ))
+}
+
+/// 터미널 앱에 열어 줄 `.command` 파일 이름 (앱 전용 작업 폴더 안, 매번 같은 이름으로 덮어쓴다)
+#[cfg(unix)]
+const LOGIN_SCRIPT_NAME: &str = "nyanitor-login.command";
+
+/// 유닉스에서 절대 경로만 받는다 (이름만 · 상대 경로는 `exec` 가 `PATH` · 현재 폴더에서 찾는다). `locate` 는 언제나 절대 경로를 준다.
+#[cfg(unix)]
+fn require_absolute(program: &Path) -> Result<(), AppError> {
+    if program.is_absolute() {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(
+            "claude path is not an absolute path".into(),
+        ))
+    }
+}
+
+/// `.command` 파일을 `dir` 에 쓴다 (실행 권한 0700 — 만든 사용자만). 쓴 파일 경로를 돌려준다.
+/// - 폴더를 다른 사용자도 쓸 수 있으면(`/tmp` 처럼) 거절한다 — 남이 파일을 바꿔치기해 이 사용자 이름으로 돌릴 수 있다.
+/// - 임시 이름으로 새로 만들어(`create_new` — 이미 있는 파일 · 링크를 따라가지 않는다) 쓴 뒤 이름을 바꿔 덮는다.
+///   그래서 두 번 눌러도 터미널이 읽는 순간에 파일이 없거나 반쯤 쓰인 때가 없다. 링크가 있던 자리는 링크만 바뀐다.
+/// - 경로가 거절되면(`login_script`) 디스크에는 아무것도 쓰지 않는다.
+#[cfg(unix)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn write_login_script(dir: &Path, program: &Path) -> Result<PathBuf, AppError> {
+    use std::fs;
+    use std::io::{ErrorKind, Write};
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    static WRITING: Mutex<()> = Mutex::new(());
+
+    let write_failed =
+        |e: std::io::Error| AppError::Internal(format!("could not write the login script: {e}"));
+    require_absolute(program)?;
+    let text = login_script(program)?;
+    let meta = fs::metadata(dir).map_err(write_failed)?;
+    if !meta.is_dir() || meta.permissions().mode() & 0o022 != 0 {
+        return Err(AppError::Internal(
+            "the login script folder is writable by other users".into(),
+        ));
+    }
+    let _turn = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
+    let target = dir.join(LOGIN_SCRIPT_NAME);
+    let staging = dir.join(format!("{LOGIN_SCRIPT_NAME}.tmp"));
+    match fs::remove_file(&staging) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(write_failed(e)),
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o700)
+        .open(&staging)
+        .map_err(write_failed)?;
+    let written = file
+        .set_permissions(fs::Permissions::from_mode(0o700)) // umask 가 깎았어도 0700
+        .and_then(|()| file.write_all(text.as_bytes()))
+        .and_then(|()| file.flush());
+    drop(file);
+    if let Err(e) = written.and_then(|()| fs::rename(&staging, &target)) {
+        let _ = fs::remove_file(&staging);
+        return Err(write_failed(e));
+    }
+    Ok(target)
+}
+
+/// `open` 이 끝나기를 기다리는 최대 시간 (`open -a` 는 터미널 앱을 띄우고 바로 돌아온다)
+#[cfg(target_os = "macos")]
+const OPEN_WAIT: Duration = Duration::from_secs(10);
+
+/// macOS: `.command` 파일을 앱 전용 작업 폴더에 쓰고 `/usr/bin/open -a Terminal <파일>` 로 연다.
+#[cfg(target_os = "macos")]
+fn open_in_terminal(program: &Path) -> Result<(), AppError> {
+    use std::process::{Command, Stdio};
+    require_absolute(program)?;
+    let work_dir = workdir::for_spawn(None)
+        .map_err(|e| AppError::Internal(format!("could not prepare the CLI work folder: {e}")))?;
+    let script = write_login_script(&work_dir, program)?;
+    // `open` 은 PATH 에서 찾지 않고 시스템의 것을 쓴다. 환경은 Windows 쪽과 같이 정리해서 넘긴다
+    // (터미널 앱 안의 `claude` 는 `open` 의 환경이 아니라 터미널 앱의 로그인 셸 환경으로 돈다).
+    let mut command = Command::new("/usr/bin/open");
+    command
+        .arg("-a")
+        .arg("Terminal")
+        .arg(&script)
+        .env_clear()
+        .envs(exec::clean_env(std::env::vars_os(), false))
+        .current_dir(&work_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = command
+        .spawn()
+        .map_err(|e| AppError::Internal(format!("could not open the login window: {e}")))?;
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(child.wait());
+    });
+    match finished.recv_timeout(OPEN_WAIT) {
+        Ok(Ok(status)) if !status.success() => Err(AppError::Internal(format!(
+            "the terminal app could not be opened (open exited with {:?})",
+            status.code()
+        ))),
+        Ok(Err(e)) => Err(AppError::Internal(format!(
+            "could not open the login window: {e}"
+        ))),
+        // 끝났거나, 시간 안에 안 끝났다 (스레드가 거두어 간다) — 띄워진 것으로 본다
+        _ => Ok(()),
+    }
+}
+
+/// 로그인 안 됨 → `claude auth login` 을 돌린다. 로그인 흐름은 Anthropic 것이고 앱은 만들지 않는다 (D-19, D-59).
+/// Windows: 새 콘솔 창 · macOS: 터미널 앱 (`LoginLaunch::Opened`), Linux: 띄우지 않고 붙여 넣을 명령을 돌려준다 (`LoginLaunch::Copy`).
 /// 끝난 뒤 화면이 `status` 를 다시 불러 확인한다.
-pub fn open_login_window(program: &Path) -> Result<(), AppError> {
+pub fn open_login_window(program: &Path) -> Result<LoginLaunch, AppError> {
     // 로그인하면 상태가 바뀐다 — 기억한 "로그인됨/안 됨" 을 버린다 (창을 못 띄워도 버린다: 사용자는 다른 길로 로그인할 수 있다)
     forget_status();
     #[cfg(windows)]
@@ -449,14 +605,19 @@ pub fn open_login_window(program: &Path) -> Result<(), AppError> {
         std::thread::spawn(move || {
             let _ = child.wait();
         });
-        Ok(())
+        Ok(LoginLaunch::Opened)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = program;
-        Err(AppError::Internal(
-            "opening the login window is only supported on Windows for now".into(),
-        ))
+        open_in_terminal(program)?;
+        Ok(LoginLaunch::Opened)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        require_absolute(program)?;
+        Ok(LoginLaunch::Copy {
+            command: login_shell_command(program)?,
+        })
     }
 }
 
@@ -1371,10 +1532,306 @@ mod cache_tests {
         forget_status_after_auth_error(Some(403));
         STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
         assert_eq!(count.load(Ordering::SeqCst), 3);
-        // 로그인 창을 띄우려는 것도 버린다. 창은 실제로 띄우지 않는다 — `%` 가 든 경로는 창을 띄우기 전에 거절되고 (Windows), 다른 OS 는 아직 못 띄운다.
-        assert!(open_login_window(Path::new(r"C:\a%b\claude.exe")).is_err());
+        // 로그인 창을 띄우려는 것도 버린다. 창은 실제로 띄우지 않는다 — 제어 문자가 든 경로는 세 OS 모두 창을 띄우기 전에 거절된다 (macOS 는 파일도 쓰기 전).
+        assert!(open_login_window(Path::new("/a\nb/claude")).is_err());
         STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
         assert_eq!(count.load(Ordering::SeqCst), 4);
+        // Linux 는 창을 띄우지 않고 명령 글만 돌려주므로 실제로 불러도 부작용이 없다 (같은 기억을 쓰므로 이 시험 안에서)
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            assert_eq!(
+                open_login_window(Path::new("/opt/my tools/claude")).unwrap(),
+                LoginLaunch::Copy {
+                    command: "'/opt/my tools/claude' auth login".into()
+                }
+            );
+            STATUS_CACHE.status(Some(&cmd), counted(&count, &status));
+            assert_eq!(count.load(Ordering::SeqCst), 5);
+        }
         STATUS_CACHE.forget();
+    }
+}
+
+/// P11-05 — macOS · Linux 로그인 (D-59). 글 만들기 · 거절은 OS 와 상관없는 순수 함수라 Windows 에서도 돈다.
+/// 파일 쓰기 · 실제 sh 로 읽어 보는 시험은 유닉스(macOS · Linux CI)에서만 돈다.
+/// 주의: `open_login_window` 는 부르지 않는다 — 앱 전체 찾기 기억(`STATUS_CACHE`)을 버려 다른 시험을 흔든다 (`cache_tests` 한 곳만 부른다).
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+
+    #[test]
+    fn single_quotes_wrap_plain_text_spaces_and_korean() {
+        assert_eq!(sh_single_quote("claude"), "'claude'");
+        assert_eq!(
+            sh_single_quote("/opt/my tools/claude"),
+            "'/opt/my tools/claude'"
+        );
+        assert_eq!(
+            sh_single_quote("/홈/내 도구/claude"),
+            "'/홈/내 도구/claude'"
+        );
+        assert_eq!(sh_single_quote(""), "''");
+    }
+
+    #[test]
+    fn a_single_quote_inside_is_closed_escaped_and_reopened() {
+        assert_eq!(sh_single_quote("it's"), r"'it'\''s'");
+        assert_eq!(sh_single_quote("'"), r"''\'''");
+        assert_eq!(sh_single_quote("''"), r"''\'''\'''");
+        assert_eq!(
+            sh_single_quote("/a/'; rm -rf ~; echo '/claude"),
+            r"'/a/'\''; rm -rf ~; echo '\''/claude'"
+        );
+    }
+
+    #[test]
+    fn shell_characters_stay_inside_the_quotes_unchanged() {
+        for text in [
+            "a$b", "a`b`", "a$(b)", "a\\b", "a\"b", "a;b", "a&b|c", "a*?[x]", "a#b", "a!b", "a%b",
+        ] {
+            assert_eq!(sh_single_quote(text), format!("'{text}'"), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_login_command_is_the_quoted_path_then_auth_login() {
+        assert_eq!(
+            login_shell_command(Path::new("/usr/local/bin/claude")).unwrap(),
+            "'/usr/local/bin/claude' auth login"
+        );
+        assert_eq!(
+            login_shell_command(Path::new("/Users/내 이름/.local/bin/claude")).unwrap(),
+            "'/Users/내 이름/.local/bin/claude' auth login"
+        );
+        assert_eq!(
+            login_shell_command(Path::new("/Users/o'neil/claude")).unwrap(),
+            r"'/Users/o'\''neil/claude' auth login"
+        );
+        // PATH 의 claude 와 같아도 줄이지 않는다 — 받은 경로를 그대로 감싼다
+        assert_eq!(
+            login_shell_command(Path::new("claude")).unwrap(),
+            "'claude' auth login"
+        );
+    }
+
+    #[test]
+    fn paths_with_control_characters_or_nothing_are_refused() {
+        for bad in [
+            "/a\nb/claude",
+            "/a\rb/claude",
+            "/a\tb/claude",
+            "/a\0b/claude",
+            "/a\u{1b}[31mb/claude",
+            "/a\u{7f}b/claude",
+            "/a\u{85}b/claude",
+            "/claude\n",
+            "/claude\r\n",
+            "",
+        ] {
+            let err = login_shell_command(Path::new(bad)).unwrap_err();
+            assert_eq!(err.kind(), "invalid_input", "{bad:?}");
+            assert!(login_script(Path::new(bad)).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_refusal_does_not_echo_the_path() {
+        let err = login_shell_command(Path::new("/secret-user/\n/claude")).unwrap_err();
+        assert!(!err.to_string().contains("secret-user"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_is_not_utf8_is_refused_not_changed() {
+        use std::os::unix::ffi::OsStrExt;
+        let odd = Path::new(OsStr::from_bytes(b"/opt/\xff\xfe/claude"));
+        assert_eq!(
+            login_shell_command(odd).unwrap_err().kind(),
+            "invalid_input"
+        );
+    }
+
+    #[test]
+    fn the_script_is_a_shebang_and_one_exec_line() {
+        let script = login_script(Path::new("/Applications/Claude Code/claude")).unwrap();
+        assert_eq!(
+            script,
+            "#!/bin/sh\nexec '/Applications/Claude Code/claude' auth login\n"
+        );
+        let hostile = login_script(Path::new("/a/'; touch /tmp/pwned; echo '/claude")).unwrap();
+        assert_eq!(hostile.lines().count(), 2);
+        assert!(hostile.starts_with("#!/bin/sh\nexec '"));
+        assert!(hostile.ends_with(" auth login\n"));
+    }
+
+    #[test]
+    fn the_launch_result_has_the_documented_json_shape() {
+        assert_eq!(
+            serde_json::to_value(LoginLaunch::Opened).unwrap(),
+            serde_json::json!({ "kind": "opened" })
+        );
+        assert_eq!(
+            serde_json::to_value(LoginLaunch::Copy {
+                command: "'/x/claude' auth login".into()
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "copy", "command": "'/x/claude' auth login" })
+        );
+    }
+
+    /// 진짜 sh 가 그 글을 한 낱말로 읽는가 (따옴표 · 역슬래시 · 달러 · 명령 끼워 넣기)
+    #[cfg(unix)]
+    #[test]
+    fn a_real_sh_reads_the_quoted_text_back_as_one_unchanged_word() {
+        use std::process::Command;
+        for text in [
+            "plain",
+            "with space",
+            "it's",
+            "'",
+            "a'b'c",
+            "$HOME",
+            "`id`",
+            "$(id)",
+            "a;echo hacked",
+            "a\\b\\",
+            "\"quoted\"",
+            "*",
+            "한글 경로 ('x')",
+        ] {
+            let out = Command::new("/bin/sh")
+                .arg("-c")
+                .arg(format!("printf %s {}", sh_single_quote(text)))
+                .output()
+                .unwrap();
+            assert_eq!(String::from_utf8_lossy(&out.stdout), text, "{text}");
+        }
+    }
+
+    #[cfg(unix)]
+    mod unix_files {
+        use super::super::super::test_util::TempDir;
+        use super::*;
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        /// 이 사용자만 쓰는 폴더 (umask 와 상관없이 0700)
+        fn private_dir(name: &str) -> TempDir {
+            let dir = TempDir::new(name);
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+            dir
+        }
+
+        fn names(dir: &Path) -> Vec<String> {
+            let mut names: Vec<String> = fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        }
+
+        #[test]
+        fn the_script_is_written_executable_for_the_owner_only() {
+            let dir = private_dir("login-script");
+            let path = write_login_script(&dir, Path::new("/opt/claude")).unwrap();
+            assert_eq!(path, dir.join(LOGIN_SCRIPT_NAME));
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                "#!/bin/sh\nexec '/opt/claude' auth login\n"
+            );
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            // 임시 파일이 남지 않는다
+            assert_eq!(names(&dir), [LOGIN_SCRIPT_NAME]);
+        }
+
+        #[test]
+        fn writing_again_replaces_the_file_and_leaves_nothing_behind() {
+            let dir = private_dir("login-script-again");
+            write_login_script(&dir, Path::new("/opt/one/claude")).unwrap();
+            // 낡은 임시 파일이 남아 있어도 (앞 쓰기가 끊겼다) 새로 쓴다
+            fs::write(dir.join(format!("{LOGIN_SCRIPT_NAME}.tmp")), "stale").unwrap();
+            let path = write_login_script(&dir, Path::new("/opt/two/claude")).unwrap();
+            let text = fs::read_to_string(&path).unwrap();
+            assert!(text.contains("'/opt/two/claude'"), "{text}");
+            assert_eq!(names(&dir), [LOGIN_SCRIPT_NAME]);
+        }
+
+        #[test]
+        fn a_link_in_the_place_of_the_script_is_replaced_not_followed() {
+            let dir = private_dir("login-script-link");
+            let elsewhere = TempDir::new("login-script-elsewhere");
+            let victim = elsewhere.join("victim.txt");
+            fs::write(&victim, "do not touch").unwrap();
+            std::os::unix::fs::symlink(&victim, dir.join(LOGIN_SCRIPT_NAME)).unwrap();
+            // 임시 이름 자리의 링크도 따라가지 않는다
+            let staging = dir.join(format!("{LOGIN_SCRIPT_NAME}.tmp"));
+            std::os::unix::fs::symlink(&victim, staging).unwrap();
+            write_login_script(&dir, Path::new("/opt/claude")).unwrap();
+            assert_eq!(fs::read_to_string(&victim).unwrap(), "do not touch");
+            let target = dir.join(LOGIN_SCRIPT_NAME);
+            let meta = fs::symlink_metadata(&target).unwrap();
+            assert!(!meta.file_type().is_symlink());
+            assert!(fs::read_to_string(&target).unwrap().contains("auth login"));
+        }
+
+        #[test]
+        fn a_folder_other_users_can_write_is_refused_and_nothing_is_written() {
+            let dir = TempDir::new("login-script-shared");
+            for mode in [0o777, 0o770, 0o707] {
+                fs::set_permissions(dir.path(), fs::Permissions::from_mode(mode)).unwrap();
+                let err = write_login_script(&dir, Path::new("/opt/claude")).unwrap_err();
+                assert_eq!(err.kind(), "internal", "{mode:o}");
+                assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
+            }
+            // 읽기만 열려 있는 것은 괜찮다
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(write_login_script(&dir, Path::new("/opt/claude")).is_ok());
+        }
+
+        #[test]
+        fn a_refused_path_writes_nothing() {
+            let dir = private_dir("login-script-refused");
+            for bad in ["/a\nb/claude", "relative/claude", "claude"] {
+                assert!(write_login_script(&dir, Path::new(bad)).is_err(), "{bad:?}");
+            }
+            assert!(names(&dir).is_empty());
+        }
+
+        #[test]
+        fn a_missing_folder_is_an_error() {
+            let root = private_dir("login-script-missing");
+            let err = write_login_script(&root.join("nope"), Path::new("/opt/claude")).unwrap_err();
+            assert_eq!(err.kind(), "internal");
+        }
+
+        /// 가짜 `claude` 를 이름이 고약한 폴더에 두고, 쓴 `.command` 를 그대로 실행해 받은 인자를 본다 (터미널 앱이 하는 것과 같다)
+        #[test]
+        fn the_written_script_runs_the_program_at_a_hostile_path_with_auth_login() {
+            use std::process::Command;
+            let root = private_dir("login-script-run");
+            let hostile = root.join("a b'c$d;e\"f 한글");
+            fs::create_dir(&hostile).unwrap();
+            let fake = hostile.join("claude");
+            fs::write(&fake, "#!/bin/sh\nprintf 'ARGS:%s|%s' \"$1\" \"$2\"\n").unwrap();
+            fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+            let script = write_login_script(&root, &fake).unwrap();
+            // 다른 시험이 같은 때 프로세스를 띄우면 방금 쓴 파일이 잠깐 "사용 중"(ETXTBSY) 일 수 있다 — 그때만 다시 해 본다
+            let mut tries = 0;
+            let out = loop {
+                match Command::new(&script).output() {
+                    Err(e) if e.raw_os_error() == Some(26) && tries < 20 => {
+                        tries += 1;
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                    other => break other.unwrap(),
+                }
+            };
+            assert!(out.status.success(), "{out:?}");
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "ARGS:auth|login");
+        }
     }
 }

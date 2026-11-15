@@ -1,6 +1,6 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeClaude } from "./fakeClaude";
+import { fakeClaude, parseFakeLoginQuery } from "./fakeClaude";
 import { fakeProjects } from "./fakeProjects";
 import {
   AppError,
@@ -66,6 +66,14 @@ describe("ipc — Claude 연결 명령 (Tauri 안)", () => {
       ["claude_discover", {}],
       ["claude_open_login", {}],
     ]);
+  });
+
+  it("로그인 창 결과는 Rust 가 준 모양 그대로 받는다 (opened · copy)", async () => {
+    const results = [{ kind: "opened" }, { kind: "copy", command: "'/home/me/.local/bin/claude' auth login" }];
+    let next = 0;
+    mockIPC(() => results[next++]);
+    expect(await ipc.claudeOpenLogin()).toEqual({ kind: "opened" });
+    expect(await ipc.claudeOpenLogin()).toEqual({ kind: "copy", command: "'/home/me/.local/bin/claude' auth login" });
   });
 
   it("새 오류 종류도 AppError 로 받는다", async () => {
@@ -243,6 +251,25 @@ describe("ipc — Claude 연결 (브라우저 가짜 모드)", () => {
   it("찾기는 가짜 결과를 돌려준다", async () => {
     const status = await ipc.claudeDiscover();
     expect(status).toMatchObject({ found: true, loggedIn: true, versionMatches: true, apiKeyPresent: false });
+  });
+
+  it("로그인 창은 기본으로 열림(opened), ?login=copy 면 Linux 처럼 붙여 넣을 명령을 돌려준다", async () => {
+    expect(await ipc.claudeOpenLogin()).toEqual({ kind: "opened" });
+    fakeClaude.reset({ login: "copy" });
+    const launch = await ipc.claudeOpenLogin();
+    expect(launch).toEqual({ kind: "copy", command: "'/home/fake/.local/bin/claude' auth login" });
+    fakeClaude.reset({ login: "opened" });
+    expect(await ipc.claudeOpenLogin()).toEqual({ kind: "opened" });
+    // 시험이 정한 값을 거두면 다시 주소 쿼리를 읽는다 (여기서는 쿼리가 없다)
+    fakeClaude.reset();
+    expect(await ipc.claudeOpenLogin()).toEqual({ kind: "opened" });
+  });
+
+  it("?login= 쿼리: 모르는 값 · 없음은 opened", () => {
+    expect(parseFakeLoginQuery("?login=copy")).toBe("copy");
+    expect(parseFakeLoginQuery("?login=opened")).toBe("opened");
+    expect(parseFakeLoginQuery("?login=bogus")).toBe("opened");
+    expect(parseFakeLoginQuery("")).toBe("opened");
   });
 
   it("번호가 아닌 값으로 시작하면 invalid_input, 돌아가는 중에 또 시작하면 session_running", async () => {

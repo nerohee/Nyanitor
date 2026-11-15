@@ -404,12 +404,47 @@ describe("준비 안 됨", () => {
 
   it("로그인 안 됨이면 한 줄 + 로그인 단추(claudeOpenLogin)", async () => {
     vi.spyOn(ipc, "claudeDiscover").mockResolvedValue(status({ loggedIn: false }));
-    const login = vi.spyOn(ipc, "claudeOpenLogin").mockResolvedValue(undefined);
+    const login = vi.spyOn(ipc, "claudeOpenLogin").mockResolvedValue({ kind: "opened" });
     await mount(1);
     expect(await screen.findByText("Claude Code 에 로그인되어 있지 않아요.")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "보낼 말" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "로그인" }));
     expect(login).toHaveBeenCalledTimes(1);
+  });
+
+  it("Linux — 로그인 창 대신 붙여 넣을 명령과 복사 단추 (D-59)", async () => {
+    vi.spyOn(ipc, "claudeDiscover").mockResolvedValue(status({ loggedIn: false }));
+    vi.spyOn(ipc, "claudeOpenLogin").mockResolvedValue({ kind: "copy", command: "'/home/me/.local/bin/claude' auth login" });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await mount(1);
+    expect(screen.queryByText("'/home/me/.local/bin/claude' auth login")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "로그인" }));
+    expect(await screen.findByText("'/home/me/.local/bin/claude' auth login")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "명령 복사" }));
+    expect(writeText).toHaveBeenCalledWith("'/home/me/.local/bin/claude' auth login");
+    expect(await screen.findByRole("button", { name: "복사했어요" })).toBeInTheDocument();
+  });
+
+  it("Linux — 복사를 못 하면 알리고 명령은 그대로 보인다", async () => {
+    vi.spyOn(ipc, "claudeDiscover").mockResolvedValue(status({ loggedIn: false }));
+    vi.spyOn(ipc, "claudeOpenLogin").mockResolvedValue({ kind: "copy", command: "'/x/claude' auth login" });
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) }, configurable: true });
+    await mount(1);
+    fireEvent.click(await screen.findByRole("button", { name: "로그인" }));
+    fireEvent.click(await screen.findByRole("button", { name: "명령 복사" }));
+    expect(await screen.findByText("복사하지 못했어요. 명령을 직접 골라 복사해 주세요.")).toBeInTheDocument();
+    expect(screen.getByText("'/x/claude' auth login")).toBeInTheDocument();
+  });
+
+  it("Linux — 클립보드 자체가 없어도 알린다 (WebKitGTK)", async () => {
+    vi.spyOn(ipc, "claudeDiscover").mockResolvedValue(status({ loggedIn: false }));
+    vi.spyOn(ipc, "claudeOpenLogin").mockResolvedValue({ kind: "copy", command: "'/x/claude' auth login" });
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    await mount(1);
+    fireEvent.click(await screen.findByRole("button", { name: "로그인" }));
+    fireEvent.click(await screen.findByRole("button", { name: "명령 복사" }));
+    expect(await screen.findByText("복사하지 못했어요. 명령을 직접 골라 복사해 주세요.")).toBeInTheDocument();
   });
 
   it("확인 자체를 못 했거나 로그인 여부를 모르면 막지 않는다", async () => {

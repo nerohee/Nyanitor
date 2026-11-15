@@ -41,6 +41,7 @@ import {
   type DocsList,
   type GitResult,
   type HarnessStatus,
+  type LoginLaunch,
   type ProjectAddRequest,
   type ProjectEntry,
   type ProjectList,
@@ -164,8 +165,9 @@ export const ipc = {
 
   /** claude 찾기 · 버전 · 로그인 상태 · API 키 있음 */
   claudeDiscover: () => call<ClaudeStatus>("claude_discover"),
-  /** `claude auth login` 을 새 터미널 창으로 띄운다 (로그인은 Anthropic 의 흐름 — 앱은 로그인 화면을 만들지 않는다) */
-  claudeOpenLogin: () => call<void>("claude_open_login"),
+  /** `claude auth login` 을 돌린다 (로그인은 Anthropic 의 흐름 — 앱은 로그인 화면을 만들지 않는다). Windows · macOS 는 새 터미널 창을 띄우고 `{ kind: "opened" }`,
+   *  Linux 는 띄우지 않고 터미널에 붙여 넣을 명령을 `{ kind: "copy", command }` 로 돌려준다 (D-59) */
+  claudeOpenLogin: () => call<LoginLaunch>("claude_open_login"),
   /** 세션 시작 — **등록된 프로젝트 번호로만** (D-47). 폴더는 Rust 가 번호로 찾고, 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다. 돌려주는 `model` · `effort` 가 실제로 쓴 값. 폴더 설정(훅 · 허용 규칙 · MCP 등)을 아직 확인하지 않았으면 `trust_required` — 프로세스를 띄우지 않는다 (`projectTrustCheck` · `projectTrustGrant`, D-54) */
   claudeSessionStart: (request: StartRequest) => call<StartInfo>("claude_session_start", { request }),
   claudeSessionSend: (text: string) => call<void>("claude_session_send", { text }),

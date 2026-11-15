@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_log::log;
 
-use super::discover::{self, ClaudeStatus};
+use super::discover::{self, ClaudeStatus, LoginLaunch};
 use super::events::{
     RawLogEntry, Response, SessionEvent, SessionState, StartInfo, StartRequest, StopInfo,
 };
@@ -62,7 +62,7 @@ pub async fn claude_discover() -> Result<ClaudeStatus, AppError> {
 }
 
 #[tauri::command]
-pub async fn claude_open_login() -> Result<(), AppError> {
+pub async fn claude_open_login() -> Result<LoginLaunch, AppError> {
     blocking(|| {
         let program = discover::locate_here(None).ok_or(AppError::ClaudeNotFound)?;
         discover::open_login_window(&program)

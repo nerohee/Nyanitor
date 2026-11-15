@@ -1305,6 +1305,28 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+/* Linux 로그인 — 터미널에 붙여 넣을 명령 (D-59). 블록 한 줄을 다 쓴다 */
+.wc-block__command {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.wc-block__hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.wc-block__code {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: var(--wobble);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .wc-block .wc-stop {
   position: static;
   width: 100%;

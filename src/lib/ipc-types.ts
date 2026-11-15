@@ -84,6 +84,13 @@ export interface ClaudeStatus {
 }
 
 /**
+ * 로그인 창 띄우기 결과 (`claude_open_login`, D-59) — `src-tauri/src/claude/discover.rs` 의 `LoginLaunch` 와 같이 맞춘다.
+ * `opened` — 새 창(Windows 콘솔 · macOS 터미널 앱)에서 `claude auth login` 이 돌고 있다.
+ * `copy` — 창을 띄우지 않았다 (Linux). `command` 는 사용자가 터미널에 붙여 넣을 한 줄이다 (sh 글: 경로는 작은따옴표로 감싸 있다).
+ */
+export type LoginLaunch = { kind: "opened" } | { kind: "copy"; command: string };
+
+/**
  * 시작 요청 (P6-02). **등록된 프로젝트 번호뿐이다** (D-47) — 폴더 경로 · 모델 · 수준 · 실행 파일 · 인자를 고르는 칸은 없다.
  * 폴더는 Rust 가 번호로 찾고(없어졌거나 고를 수 없는 폴더면 `project_folder_missing` · `project_folder_forbidden`),
  * 모델 · 수준은 Rust 가 하네스 `planner` 설정에서 읽는다.

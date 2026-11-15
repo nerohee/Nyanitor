@@ -85,6 +85,8 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
   const root = useRef<HTMLDivElement>(null);
   const [action, setAction] = useState<null | "starting" | "swapping" | "ending">(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Linux — 로그인 창을 띄우지 않고 터미널에 붙여 넣을 명령을 받았다 (D-59). 복사했으면 `copied` */
+  const [loginCommand, setLoginCommand] = useState<{ command: string; copied: boolean } | null>(null);
   const [confirm, setConfirm] = useState<null | "end" | "swap">(null);
 
   const isHere = session?.projectId === project.id;
@@ -316,13 +318,45 @@ export function ChatPane({ project, projects, onGoProject, focusCard = 0, onCard
           {t("ws.chat.notLoggedIn")}
         </p>
         <div className="wc-block__actions">
-          <button type="button" className="ws-btn ws-btn--primary" onClick={() => void ipc.claudeOpenLogin().catch((raw: unknown) => setActionError(chatErrorText(raw)))}>
+          <button
+            type="button"
+            className="ws-btn ws-btn--primary"
+            onClick={() =>
+              void ipc.claudeOpenLogin().then(
+                (launch) => setLoginCommand(launch.kind === "copy" ? { command: launch.command, copied: false } : null),
+                (raw: unknown) => setActionError(chatErrorText(raw)),
+              )
+            }
+          >
             {t("ws.chat.login")}
           </button>
           <button type="button" className="ws-btn" onClick={recheck}>
             {t("ws.chat.recheck")}
           </button>
         </div>
+        {loginCommand && (
+          <div className="wc-block__command">
+            <p className="wc-block__hint">{t("ws.chat.loginPaste")}</p>
+            <code className="wc-block__code">{loginCommand.command}</code>
+            <button
+              type="button"
+              className="ws-btn"
+              onClick={() => {
+                const failed = () => setActionError(t("ws.chat.loginCopyFailed"));
+                // Linux WebKitGTK 는 클립보드가 없을 수 있다 — 그때도 안내를 보인다 (명령은 직접 고를 수 있다, P11-06)
+                const clipboard = navigator.clipboard as Clipboard | undefined;
+                if (!clipboard) return failed();
+                try {
+                  void clipboard.writeText(loginCommand.command).then(() => setLoginCommand({ ...loginCommand, copied: true }), failed);
+                } catch {
+                  failed();
+                }
+              }}
+            >
+              {t(loginCommand.copied ? "ws.chat.loginCopied" : "ws.chat.loginCopy")}
+            </button>
+          </div>
+        )}
       </div>
     );
   } else {

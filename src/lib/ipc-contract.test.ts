@@ -11,6 +11,7 @@ import customLabelsRs from "../../src-tauri/src/custom/labels.rs?raw";
 import customModelRs from "../../src-tauri/src/custom/model.rs?raw";
 import customValuesRs from "../../src-tauri/src/custom/values.rs?raw";
 import customWriteRs from "../../src-tauri/src/custom/write.rs?raw";
+import discoverRs from "../../src-tauri/src/claude/discover.rs?raw";
 import errorRs from "../../src-tauri/src/error.rs?raw";
 import eventsRs from "../../src-tauri/src/claude/events.rs?raw";
 import harnessBackupsRs from "../../src-tauri/src/harness/backups.rs?raw";
@@ -99,6 +100,7 @@ import {
   type HarnessRepoStatus,
   type HarnessStatus,
   type HarnessUnreadable,
+  type LoginLaunch,
   type ProjectAddRequest,
   type ProjectDbMode,
   type ProjectEntry,
@@ -275,6 +277,8 @@ const TS_RESPONSE_KINDS: Record<ClaudeResponse["kind"], true> = {
   tell: true,
   answer: true,
 };
+
+const TS_LOGIN_LAUNCH_KINDS: Record<LoginLaunch["kind"], true> = { opened: true, copy: true };
 
 const TS_OUTCOMES: Record<TurnOutcome, true> = { success: true, interrupted: true, error: true, limit: true };
 const TS_SCOPES: Record<AlwaysScope, true> = { suggested: true, folder: true, file: true };
@@ -1155,6 +1159,22 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     // 읽기만 한다 — 스킬 파일을 쓰거나 지우는 코드가 없다
     const production = skillsRs.slice(0, skillsRs.indexOf("#[cfg(test)]"));
     expect(production).not.toMatch(/fs::(write|remove_|create_dir|rename|copy|File::create|OpenOptions)/);
+  });
+
+  it("로그인 창 결과 (D-59): discover.rs 의 LoginLaunch 와 ipc-types 의 LoginLaunch 가 같고, 명령은 화면에서 아무 값도 받지 않는다", async () => {
+    expect(sorted(Object.keys(TS_LOGIN_LAUNCH_KINDS))).toEqual(sorted(rustVariants(discoverRs, "LoginLaunch").map(snake)));
+    // 묶음 이름 · 칸 이름이 화면의 타입과 같다 (`{ kind: "copy", command }`)
+    expect(discoverRs).toMatch(/#\[serde\(tag = "kind", rename_all = "snake_case"\)\]\s+pub enum LoginLaunch \{/);
+    expect(discoverRs).toContain("Copy { command: String },");
+    const copy: LoginLaunch = { kind: "copy", command: "x" };
+    expect(Object.keys(copy)).toEqual(["kind", "command"]);
+    // 명령: 받는 값이 없다 (경로 · 명령 글을 화면이 정하는 길이 없다 — 실행 파일은 Rust 가 찾는다)
+    const commandsRs = (await import("../../src-tauri/src/claude/commands.rs?raw")).default;
+    const match = /#\[tauri::command\]\s+pub async fn claude_open_login\(([^)]*)\) -> Result<LoginLaunch, AppError>/.exec(commandsRs);
+    expect(match, "claude_open_login 의 모양").not.toBeNull();
+    expect((match?.[1] as string).trim()).toBe("");
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('claudeOpenLogin: () => call<LoginLaunch>("claude_open_login"),');
   });
 
   it("화면이 듣는 이벤트 이름은 commands.rs 와 같다", async () => {

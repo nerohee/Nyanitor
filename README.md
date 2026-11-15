@@ -91,4 +91,8 @@ npm run tauri build
 
 ## 라이선스
 
-출시 전에 정합니다.
+- 코드 — [MIT](LICENSE)
+- 고양이 · 집 그림과 앱 · 트레이 아이콘 — [CC BY-NC 4.0](LICENSE-ART.md) (비상업 · 출처 표시)
+- Jua 글꼴 — [SIL Open Font License](src/assets/fonts/jua/OFL.txt)
+
+Nyanitor 는 개인 프로젝트이며 Anthropic 과 관계가 없고, Anthropic 이 만들거나 보증한 앱이 아닙니다. Claude 와 Claude Code 는 Anthropic 의 상표입니다.

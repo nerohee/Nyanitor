@@ -12,6 +12,8 @@ import { t } from "../i18n/ko";
 import { useProjects } from "../workspace/useProjects";
 import { HomeCatInfo } from "./HomeCatInfo";
 import { HomeProjects } from "./HomeProjects";
+import { AppUpdateDialog } from "./AppUpdateDialog";
+import { AppUpdateLine } from "./AppUpdateLine";
 import { ReadyLine, UsageBlock } from "./StatusCard";
 import { agentKeyOf, useAgents, type AgentsState } from "./useAgents";
 import { mineLabel, useMine } from "../lib/mine";
@@ -20,6 +22,7 @@ import { useAppChurros } from "./useAppChurros";
 import { useHomeWork, workedText } from "./useHomeWork";
 import { cardElements, useBlockedSpots } from "./useBlockedSpots";
 import { useReadiness } from "./useReadiness";
+import { useAppUpdate } from "./useAppUpdate";
 import { useUsage } from "./useUsage";
 import "./home.css";
 
@@ -78,6 +81,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, on
   const readiness = useReadiness(agents.status === "ready" && agents.list.state === "ok");
   const usage = useUsage();
   const churros = useAppChurros();
+  const appUpdate = useAppUpdate();
   const projects = useProjects();
   const [bubbleLayer, setBubbleLayer] = useState<HTMLDivElement | null>(null);
   const note = agentsNote(agents);
@@ -134,7 +138,10 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, on
               </p>
             )}
             <UsageBlock {...usage} now={now} churros={churros} onRefresh={usage.refresh} />
+            <AppUpdateLine update={appUpdate} />
           </aside>
+          {/* 대화상자는 카드 밖에 — 카드가 기울어져(transform) 있어 안에 두면 화면 전체를 덮지 못한다 */}
+          {appUpdate.dialogOpen && <AppUpdateDialog update={appUpdate} />}
 
           {/* 아래 판 — 최근 프로젝트 몇 개 + 새 프로젝트 단추 (크기 · 자리는 시제품과 같다) */}
           <HomeProjects

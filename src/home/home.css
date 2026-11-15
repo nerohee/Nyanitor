@@ -336,6 +336,102 @@ body:has(.home) {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+/* ── 앱 새 판 줄 (P11-02) — 카드 맨 아래. 어느 상태든 "제목 한 줄 + 작은 글과 단추 한 줄" 이라 높이가 그대로다 ── */
+.hm-update {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hm-1);
+  padding-top: var(--hm-3);
+  border-top: var(--ui-line-w) dashed var(--color-border);
+}
+.hm-update__title {
+  display: flex;
+  align-items: center;
+  gap: var(--hm-2);
+  min-width: 0;
+  margin: 0;
+}
+.hm-update__title > .icon {
+  box-sizing: border-box;
+  flex: none;
+  width: max(16px, calc(22px * var(--hm-s)));
+  height: max(16px, calc(22px * var(--hm-s)));
+  padding: 3px;
+  border: var(--ui-line-w) solid var(--ui-line);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--ui-line);
+}
+.hm-update[data-tone="new"] .hm-update__title > .icon {
+  background: var(--accent);
+}
+.hm-update[data-tone="warn"] .hm-update__title > .icon {
+  background: var(--ui-1);
+}
+.hm-update__title strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-round);
+  font-size: var(--hm-text-round);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-update__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hm-2);
+}
+.hm-update__detail {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-update .hm-btn {
+  flex: none;
+}
+
+/* 새 판 대화상자 (틀 · 단추는 workspace.css 의 ws-dlg · ws-btn) */
+.hm-udlg__date {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.hm-udlg__body {
+  min-height: 0;
+}
+.hm-udlg__notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(320px, 50vh);
+  overflow: auto;
+}
+.hm-udlg__lead,
+.hm-udlg__more {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.hm-udlg__more {
+  color: var(--color-text-muted);
+}
+.hm-udlg__url {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.hm-udlg__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 /* 하네스 없음 · 목록 못 읽음 안내 */
 .hm-note {
   margin: 0;

@@ -1,7 +1,7 @@
 # 고양이 · 집 그림 — 출처 · 프롬프트 · 라이선스
 
 > Images in `src/assets/cats/` and `src/assets/house/` are AI-generated with the OpenAI Images API.
-> The prompts used are in `prompts.json` in this folder. License: to be decided before release.
+> The prompts used are in `prompts.json` in this folder. License: CC BY-NC 4.0 (see `LICENSE-ART.md` at the repository root).
 
 Nyanitor 의 고양이 · 집 그림은 **AI 로 생성** 했다. 이 폴더가 그 출처 기록이다.
 
@@ -23,6 +23,7 @@ Nyanitor 의 고양이 · 집 그림은 **AI 로 생성** 했다. 이 폴더가 
 | `cats` | | | | | |
 | `objects` | | | | | |
 | `backgrounds` | | | | | |
+| `v2-icon` | OpenAI 이미지 API · `gpt-image-2.5-sunburst-2026-09-08` | medium | 2026-11-15 | 이 커밋의 `prompts.json` | 앱 아이콘 (D-57) — 둥근 네모 후보를 고름, 원본 `src-tauri/icons/app-icon-1024.png` → `npx tauri icon` |
 
 - 맞춘 그림이 들어가는 곳: `src/assets/cats/<고양이 id>/` · `src/assets/house/`. 그 폴더에도 "AI 생성 (OpenAI, 날짜), 프롬프트는 `scripts/cat-art/`" 한 줄을 둔다 (그림을 붙이는 작업에서).
 - 원본(`art/raw/`)과 장부(`art/raw/ledger.jsonl`)는 저장소에 넣지 않는다.

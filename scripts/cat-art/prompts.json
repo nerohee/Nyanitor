@@ -30,7 +30,8 @@
     "ref-with-wheel-1": "scripts/cat-art/refs/with-wheel-1-danchu.webp",
     "ref-with-wheel-2": "scripts/cat-art/refs/with-wheel-2-danchu.webp",
     "danchu-wheel-1-v1": "scripts/cat-art/refs/with-wheel-1-danchu.webp",
-    "danchu-wheel-2-v1": "scripts/cat-art/refs/with-wheel-2-danchu.webp"
+    "danchu-wheel-2-v1": "scripts/cat-art/refs/with-wheel-2-danchu.webp",
+    "ref-mukmul-sit": "src/assets/cats/mukmul/sit.webp"
   },
   "items": [
     {
@@ -2148,6 +2149,28 @@
       "canvas": "512x512",
       "size_like": "v2-nabi-groom",
       "final": "src/assets/cats/gureum/groom.webp"
+    },
+    {
+      "id": "icon-v2-mukmul-circle",
+      "group": "v2-icon",
+      "prompt": "App icon for a desktop app, in the same drawing style as the reference image (flat soft warm colors, even warm dark-brown outline, no gradients, no texture, no 3D, no glossy highlights). A single flat round tile fills almost the whole image (a small even margin around it): a soft warm cream circle with the same warm dark-brown outline. Centered on the tile, the cat's head with both ears, large, taking about 75% of the circle's width; the ear tips may overlap the circle's outline slightly. Keep the cat's design exactly as in the reference: solid soft charcoal-black fur with no white, small round plain flat yellow eyes with no pupils and no highlights set wide apart and fairly low, fairly large upright triangle ears with slightly rounded tips and pink inside, a small fluffy tuft at each cheek, a tiny nose with a tiny 'w'-shaped mouth, two short whiskers on each cheek, no blush, no eyebrows. Only the head and ears, front view, no body, calm content expression. Make it read clearly at 32 pixels: big simple shapes, no small details, one even warm dark-brown outline a little thicker than in the reference (about 3% of the image width), the same weight everywhere. Outside the circle the background is transparent. No text, no letters, no logos, no shadow, no frame.",
+      "refs": [
+        "ref-mukmul-sit"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/v2/icon/circle.png"
+    },
+    {
+      "id": "icon-v2-mukmul-squircle",
+      "group": "v2-icon",
+      "prompt": "App icon for a desktop app, in the same drawing style as the reference image (flat soft warm colors, even warm dark-brown outline, no gradients, no texture, no 3D, no glossy highlights). A single flat rounded-square tile (corners rounded like a modern app icon) fills almost the whole image with a small even margin: soft muted sage-green tile with the same warm dark-brown outline. The cat's head with both ears sits centered and large, taking about 80% of the tile's width, the chin near the lower edge. Keep the cat's design exactly as in the reference: solid soft charcoal-black fur with no white, small round plain flat yellow eyes with no pupils and no highlights set wide apart and fairly low, fairly large upright triangle ears with slightly rounded tips and pink inside, a small fluffy tuft at each cheek, a tiny nose with a tiny 'w'-shaped mouth, two short whiskers on each cheek, no blush, no eyebrows. Only the head and ears, front view, no body, calm content expression. Make it read clearly at 32 pixels: big simple shapes, no small details, one even warm dark-brown outline a little thicker than in the reference (about 3% of the image width), the same weight everywhere. Outside the tile the background is transparent. No text, no letters, no logos, no shadow, no frame.",
+      "refs": [
+        "ref-mukmul-sit"
+      ],
+      "size": "1024x1024",
+      "background": "transparent",
+      "out": "art/raw/v2/icon/squircle.png"
     }
   ]
 }

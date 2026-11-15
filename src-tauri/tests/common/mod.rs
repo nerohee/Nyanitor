@@ -22,22 +22,27 @@ use serde_json::Value;
 pub const WAIT: Duration = Duration::from_secs(30);
 
 /// 가짜 CLI 실행 파일. `cargo test` 가 예제도 만든다 (`[[example]] fake_claude`).
+/// 시험 실행 파일의 위쪽 폴더를 차례로 올라가며 `examples/<이름>` 을 찾는다 — 옛 짜임새(`target/debug/deps/<시험>`)와
+/// 새 cargo 의 짜임새(`target/debug/build/<패키지>/<해시>/out/<시험>`, 2026-11 CI 의 Rust 1.100) 모두 `target/debug/examples/` 에 닿는다.
 pub fn fake_exe() -> PathBuf {
-    let mut dir = std::env::current_exe().expect("current exe");
-    dir.pop(); // deps
-    dir.pop(); // debug
+    let test_exe = std::env::current_exe().expect("current exe");
     let name = if cfg!(windows) {
         "fake_claude.exe"
     } else {
         "fake_claude"
     };
-    let exe = dir.join("examples").join(name);
-    assert!(
-        exe.exists(),
-        "fake claude not built at {} — run `cargo test` (builds examples) or `cargo build --example fake_claude`",
-        exe.display()
-    );
-    exe
+    let found = test_exe
+        .ancestors()
+        .skip(1)
+        .map(|dir| dir.join("examples").join(name))
+        .find(|exe| exe.is_file());
+    match found {
+        Some(exe) => exe,
+        None => panic!(
+            "fake claude not found in any examples/ folder above {} — run `cargo test` (builds examples) or `cargo build --example fake_claude`",
+            test_exe.display()
+        ),
+    }
 }
 
 pub fn fixtures_dir() -> PathBuf {

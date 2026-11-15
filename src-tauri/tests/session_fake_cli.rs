@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use nyanitor_lib::claude::events::{AnswerValue, EndKind, Response, SessionEvent, TurnOutcome};
+#[cfg(windows)]
 use nyanitor_lib::claude::exec::ClaudeCommand;
 use nyanitor_lib::claude::store;
 use nyanitor_lib::db::{AppDb, DB_FILE};

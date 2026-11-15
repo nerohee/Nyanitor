@@ -122,10 +122,13 @@ impl FakeCmd {
     }
 
     /// 가짜 CLI 가 받은 인자와 stdin 줄 (`{"argv":[..]}` · `{"stdin":"<줄>"}`).
+    /// 줄바꿈으로 끝난 줄만 읽는다 — 가짜 CLI 가 아직 쓰는 중인 마지막 줄(덜 끝난 JSON)은 건너뛴다 (느린 기계에서의 깜빡임, P11-04).
     pub fn log_entries(&self) -> Vec<Value> {
         fs::read_to_string(&self.log)
             .unwrap_or_default()
-            .lines()
+            .split_inclusive('\n')
+            .filter(|l| l.ends_with('\n'))
+            .map(|l| l.trim_end_matches(['\r', '\n']))
             .filter(|l| !l.is_empty())
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()

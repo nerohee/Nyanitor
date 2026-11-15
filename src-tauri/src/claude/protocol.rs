@@ -11,6 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
+use crate::harness::locate::strip_verbatim;
+
 use super::events::{
     AlwaysRule, AlwaysScope, PermissionRequestInfo, QuestionInfo, QuestionOption,
     QuestionRequestInfo, SessionEvent, TokenUsage, TurnOutcome, TurnSummary, WorkerOutcome,
@@ -94,6 +96,9 @@ pub struct Interpretation {
 #[derive(Debug)]
 pub struct Interpreter {
     project_dir: String,
+    /// 프로젝트 폴더의 실제 경로 (링크를 푼 것, 세션 시작 때 한 번) — 등록한 경로와 글자가 다를 때만 있다.
+    /// CLI 는 실제 경로로 파일 경로를 낸다 (macOS 의 `/var/…` 는 `/private/var/…` 링크). 규칙 좁히기가 둘 다 프로젝트로 알아본다.
+    project_real: Option<String>,
     baseline_cost: f64,
     last_rate_status: Option<String>,
     /// 지금 일하는 작업자들 (시작한 차례) — 끝이 오면 빠진다
@@ -123,14 +128,22 @@ fn system_clock_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 실제 경로 글 (`\\?\` 는 뗀다). 못 구하면 `None` — 그러면 등록한 경로만 쓴다.
+fn real_dir_text(dir: &Path) -> Option<String> {
+    let real = std::fs::canonicalize(dir).ok()?;
+    Some(strip_verbatim(&real).display().to_string())
+}
+
 impl Interpreter {
     pub fn new(project_dir: &Path) -> Self {
         Self::with_clock(project_dir, system_clock_ms)
     }
 
     pub fn with_clock(project_dir: &Path, clock: fn() -> u64) -> Self {
+        let project_text = project_dir.display().to_string();
         Self {
-            project_dir: project_dir.display().to_string(),
+            project_real: real_dir_text(project_dir).filter(|real| *real != project_text),
+            project_dir: project_text,
             baseline_cost: 0.0,
             last_rate_status: None,
             workers: Vec::new(),
@@ -424,7 +437,10 @@ impl Interpreter {
             .and_then(Value::as_array)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let always = always_rule(&self.project_dir, &tool, &input, suggestions)
+        let projects: Vec<&str> = std::iter::once(self.project_dir.as_str())
+            .chain(self.project_real.as_deref())
+            .collect();
+        let always = always_rule_in(&projects, &tool, &input, suggestions)
             // 파일 하나 규칙은 이름이 폴더면 그 폴더 아래 전부를 여는 규칙이 된다 — 있는 폴더를 가리키면 만들지 않는다.
             .filter(|(info, _)| {
                 info.scope != AlwaysScope::File || !target_path(&input).is_some_and(names_a_folder)
@@ -858,13 +874,23 @@ pub fn always_rule(
     input: &Value,
     suggestions: &[Value],
 ) -> Option<(AlwaysRule, Value)> {
+    always_rule_in(&[project_dir], tool, input, suggestions)
+}
+
+/// `always_rule` — 프로젝트 폴더를 여러 글로 받는다 (등록한 경로와 그 실제 경로). 파일이 어느 쪽 안이든 규칙 내용은 같다.
+pub fn always_rule_in(
+    project_dirs: &[&str],
+    tool: &str,
+    input: &Value,
+    suggestions: &[Value],
+) -> Option<(AlwaysRule, Value)> {
     if let Some(found) = suggested_rule(tool, suggestions) {
         return Some(found);
     }
     if !FILE_EDIT_TOOLS.contains(&tool) {
         return None;
     }
-    let (content, scope, folder) = folder_rule(project_dir, target_path(input)?)?;
+    let (content, scope, folder) = folder_rule(project_dirs, target_path(input)?)?;
     let value = json!({
         "type": "addRules",
         "rules": [{ "toolName": "Edit", "ruleContent": content }],
@@ -1291,15 +1317,18 @@ fn risky(name: &str) -> bool {
 
 /// 프로젝트 안 파일에 대한 규칙 내용. 프로젝트 맨 위 파일은 그 파일 하나(`/이름`), 아니면 그 파일이 든 폴더(`/폴더/**`).
 /// 프로젝트 밖 · 폴더 모양 경로 · 규칙 글자가 든 이름 · 설정 · 훅 폴더 아래이면 `None`.
-fn folder_rule(project_dir: &str, file: &str) -> Option<(String, AlwaysScope, Option<String>)> {
+fn folder_rule(project_dirs: &[&str], file: &str) -> Option<(String, AlwaysScope, Option<String>)> {
     if ends_like_a_folder(file) {
         return None;
     }
-    let project = path_parts(project_dir)?;
     let file = path_parts(file)?;
-    if file.len() <= project.len() || !project.iter().zip(&file).all(|(p, f)| same_part(p, f)) {
-        return None;
-    }
+    // 글로 읽히지 않는 프로젝트 글은 건너뛴다. 어느 쪽 프로젝트 안이든 안쪽 칸들은 같다.
+    let project = project_dirs
+        .iter()
+        .filter_map(|dir| path_parts(dir))
+        .find(|project| {
+            file.len() > project.len() && project.iter().zip(&file).all(|(p, f)| same_part(p, f))
+        })?;
     let inside = &file[project.len()..];
     if inside.iter().any(|part| is_protected_name(part)) {
         return None;
@@ -1956,12 +1985,12 @@ mod tests {
     #[test]
     fn folder_rules_narrow_to_the_files_folder() {
         let (content, scope, folder) =
-            folder_rule("C:\\dev\\app", "C:\\dev\\app\\src\\lib\\a.ts").unwrap();
+            folder_rule(&["C:\\dev\\app"], "C:\\dev\\app\\src\\lib\\a.ts").unwrap();
         assert_eq!(content, "/src/lib/**");
         assert_eq!(scope, AlwaysScope::Folder);
         assert_eq!(folder.as_deref(), Some("src/lib"));
         let (content, scope, folder) =
-            folder_rule("C:\\dev\\app", "C:\\dev\\app\\README.md").unwrap();
+            folder_rule(&["C:\\dev\\app"], "C:\\dev\\app\\README.md").unwrap();
         assert_eq!(content, "/README.md");
         assert_eq!(scope, AlwaysScope::File);
         assert_eq!(folder, None);
@@ -1976,7 +2005,7 @@ mod tests {
             "D:\\dev\\app\\a.ts",
             "relative\\a.ts",
         ] {
-            assert_eq!(folder_rule("C:\\dev\\app", file), None, "{file}");
+            assert_eq!(folder_rule(&["C:\\dev\\app"], file), None, "{file}");
         }
     }
 
@@ -1989,25 +2018,26 @@ mod tests {
             "C:\\dev\\app\\{a,b}\\x.ts",
             "C:\\dev\\app\\trail \\x.ts",
         ] {
-            assert_eq!(folder_rule("C:\\dev\\app", file), None, "{file}");
+            assert_eq!(folder_rule(&["C:\\dev\\app"], file), None, "{file}");
         }
     }
 
     #[test]
     fn folder_rules_handle_slashes_and_verbatim_paths() {
-        let (content, ..) = folder_rule("C:/dev/app/", "C:/dev/app/src/a.ts").unwrap();
-        assert_eq!(content, "/src/**");
-        let (content, ..) = folder_rule("C:\\dev\\app", "\\\\?\\C:\\dev\\app\\src\\a.ts").unwrap();
+        let (content, ..) = folder_rule(&["C:/dev/app/"], "C:/dev/app/src/a.ts").unwrap();
         assert_eq!(content, "/src/**");
         let (content, ..) =
-            folder_rule("C:\\dev\\app", "C:\\dev\\app\\src\\..\\lib\\a.ts").unwrap();
+            folder_rule(&["C:\\dev\\app"], "\\\\?\\C:\\dev\\app\\src\\a.ts").unwrap();
+        assert_eq!(content, "/src/**");
+        let (content, ..) =
+            folder_rule(&["C:\\dev\\app"], "C:\\dev\\app\\src\\..\\lib\\a.ts").unwrap();
         assert_eq!(content, "/lib/**");
     }
 
     #[cfg(windows)]
     #[test]
     fn folder_rules_compare_case_insensitively_on_windows_and_keep_the_files_case() {
-        let (content, ..) = folder_rule("c:\\DEV\\App", "C:\\dev\\app\\Src\\a.ts").unwrap();
+        let (content, ..) = folder_rule(&["c:\\DEV\\App"], "C:\\dev\\app\\Src\\a.ts").unwrap();
         assert_eq!(content, "/Src/**");
     }
 
@@ -3906,5 +3936,139 @@ mod suggested_rule_guard_tests {
         let rule = info.always_rule.as_ref().unwrap();
         assert_eq!(rule.rule, "Edit(/src/**)");
         assert_eq!(rule.scope, AlwaysScope::Folder);
+    }
+}
+
+/// P11-04 — 프로젝트 폴더가 링크를 낀 경로로 등록됐을 때 (macOS 의 `/var/…` → `/private/var/…`) 규칙 좁히기.
+/// CLI 는 실제 경로로 파일 경로를 낸다. 등록한 경로만 보면 "프로젝트 밖" 으로 보여 "항상 허용" 단추가 사라진다.
+#[cfg(test)]
+mod real_path_tests {
+    use super::*;
+    use crate::claude::test_util::TempDir;
+    use crate::custom::test_support::make_dir_link;
+
+    fn write_request(file: &str) -> Value {
+        json!({
+            "type": "control_request", "request_id": "r1",
+            "request": { "subtype": "can_use_tool", "tool_name": "Write", "input": { "file_path": file } }
+        })
+    }
+
+    fn card_rule(interp: &mut Interpreter, file: &str) -> Option<String> {
+        let out = interp.handle(&write_request(file));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!("expected a permission card for {file}");
+        };
+        info.always_rule.as_ref().map(|rule| rule.rule.clone())
+    }
+
+    #[test]
+    fn a_file_under_the_real_path_of_a_linked_project_gets_the_same_folder_rule() {
+        let both = ["/var/x/p", "/private/var/x/p"];
+        let (content, scope, folder) = folder_rule(&both, "/private/var/x/p/sub/a.txt").unwrap();
+        assert_eq!(content, "/sub/**");
+        assert_eq!(scope, AlwaysScope::Folder);
+        assert_eq!(folder.as_deref(), Some("sub"));
+        // 등록한 경로 쪽 파일도 같은 규칙
+        let (same, ..) = folder_rule(&both, "/var/x/p/sub/a.txt").unwrap();
+        assert_eq!(same, content);
+        // 프로젝트 맨 위 파일은 그 파일 하나
+        let (top, scope, _) = folder_rule(&both, "/private/var/x/p/a.txt").unwrap();
+        assert_eq!((top.as_str(), scope), ("/a.txt", AlwaysScope::File));
+        // 실제 경로를 모르면 (한 글뿐) 예전 그대로 — 단추가 없다
+        assert_eq!(
+            folder_rule(&["/var/x/p"], "/private/var/x/p/sub/a.txt"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_real_path_does_not_widen_what_counts_as_inside_the_project() {
+        let both = ["/var/x/p", "/private/var/x/p"];
+        for outside in [
+            "/private/var/x/other/a.txt",
+            "/private/var/x/p-evil/sub/a.txt",
+            "/private/var/x/a.txt",
+            "/private/var/x/p/../q/a.txt",
+            "/private/var/x/p",
+            "/etc/passwd",
+        ] {
+            assert_eq!(folder_rule(&both, outside), None, "{outside}");
+        }
+        // 보호 이름 · 규칙 글자 검사는 그대로
+        assert_eq!(folder_rule(&both, "/private/var/x/p/.git/config"), None);
+        assert_eq!(folder_rule(&both, "/private/var/x/p/a[1]/b.txt"), None);
+    }
+
+    #[test]
+    fn windows_verbatim_real_paths_are_recognised_too() {
+        let both = [r"C:\dev\link\app", r"C:\dev\real\app"];
+        let (content, ..) = folder_rule(&both, r"\\?\C:\dev\real\app\src\a.ts").unwrap();
+        assert_eq!(content, "/src/**");
+        let (content, ..) = folder_rule(&both, r"C:\dev\real\app\src\a.ts").unwrap();
+        assert_eq!(content, "/src/**");
+        // 프로젝트 글로 읽히지 않는 것(상대 경로)은 건너뛰고 다른 쪽으로
+        let (content, ..) =
+            folder_rule(&["app", r"C:\dev\real\app"], r"C:\dev\real\app\src\a.ts").unwrap();
+        assert_eq!(content, "/src/**");
+    }
+
+    #[test]
+    fn the_interpreter_uses_the_real_path_it_was_given_at_start() {
+        let mut interp = Interpreter::new(Path::new("/var/x/p"));
+        // 없는 폴더라 실제 경로를 못 구했다 → 등록한 경로만
+        assert_eq!(interp.project_real, None);
+        assert_eq!(card_rule(&mut interp, "/private/var/x/p/sub/a.txt"), None);
+        interp.project_real = Some("/private/var/x/p".into());
+        assert_eq!(
+            card_rule(&mut interp, "/private/var/x/p/sub/a.txt").as_deref(),
+            Some("Edit(/sub/**)")
+        );
+        assert_eq!(card_rule(&mut interp, "/private/var/x/q/a.txt"), None);
+        // 카드의 작업 폴더 글은 등록한 경로 그대로
+        let out = interp.handle(&write_request("/private/var/x/p/a.txt"));
+        let Some(SessionEvent::PermissionRequest(info)) = out.events.first() else {
+            panic!()
+        };
+        assert_eq!(info.cwd, "/var/x/p");
+    }
+
+    #[test]
+    fn real_dir_text_is_the_resolved_folder_without_the_verbatim_prefix_and_none_when_missing() {
+        let root = TempDir::new("proto-real");
+        let text = real_dir_text(&root).unwrap();
+        assert!(!text.starts_with(r"\\?\"), "{text}");
+        assert!(Path::new(&text).is_dir());
+        assert_eq!(real_dir_text(&root.join("missing")), None);
+    }
+
+    /// 링크(Windows 는 정션, 그 밖은 심볼릭 링크)로 등록한 프로젝트 — 실제로 디스크에서 실제 경로를 푼다.
+    #[test]
+    fn a_project_registered_through_a_link_gets_its_folder_rule_from_the_real_files_path() {
+        let root = TempDir::new("proto-link");
+        let real = root.join("real-app");
+        std::fs::create_dir_all(real.join("src")).unwrap();
+        let link = root.join("link-app");
+        if !make_dir_link(&link, &real) {
+            return; // 이 PC 는 링크를 만들 수 없다
+        }
+        let mut interp = Interpreter::new(&link);
+        assert!(interp.project_real.is_some(), "the link was not resolved");
+        let real_file = std::fs::canonicalize(real.join("src"))
+            .map(|dir| strip_verbatim(&dir).join("a.ts"))
+            .unwrap();
+        assert_eq!(
+            card_rule(&mut interp, &real_file.display().to_string()).as_deref(),
+            Some("Edit(/src/**)")
+        );
+        // 링크 쪽 경로로 낸 파일도 같은 규칙
+        let linked_file = link.join("src").join("a.ts");
+        assert_eq!(
+            card_rule(&mut interp, &linked_file.display().to_string()).as_deref(),
+            Some("Edit(/src/**)")
+        );
+        // 프로젝트 밖은 여전히 없다
+        let outside = root.join("elsewhere").join("a.ts");
+        assert_eq!(card_rule(&mut interp, &outside.display().to_string()), None);
     }
 }

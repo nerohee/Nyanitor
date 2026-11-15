@@ -13,6 +13,7 @@ use nyanitor_lib::claude::events::{AnswerValue, EndKind, Response, SessionEvent,
 use nyanitor_lib::claude::exec::ClaudeCommand;
 use nyanitor_lib::claude::store;
 use nyanitor_lib::db::{AppDb, DB_FILE};
+use nyanitor_lib::harness::locate::strip_verbatim;
 use serde_json::{Value, json};
 
 const SESSION_ID: &str = "00000000-0000-4000-8000-000000000001";
@@ -138,7 +139,16 @@ fn the_working_folder_of_the_cli_is_the_project_folder() {
     });
     assert_eq!(info.cwd, h.project.display().to_string());
     let path = info.path.unwrap();
-    assert!(path.starts_with(&h.project.display().to_string()), "{path}");
+    // 가짜 CLI 가 내는 경로는 자기 실제 작업 폴더 기준이다 (실제 CLI 도 `process.cwd()` 기준). macOS 의 임시 폴더 `/var/…` 는
+    // `/private/var/…` 링크라 등록한 경로와 글자가 다르다 — 등록한 경로 또는 그 실제 경로로 시작하면 이 프로젝트 안이다.
+    let registered = h.project.display().to_string();
+    let real = strip_verbatim(&fs::canonicalize(&h.project).unwrap())
+        .display()
+        .to_string();
+    assert!(
+        path.starts_with(&registered) || path.starts_with(&real),
+        "{path} is not under {registered} or {real}"
+    );
 }
 
 #[test]
@@ -353,6 +363,35 @@ fn always_allow_for_write_is_narrowed_to_the_files_folder() {
         body["updatedPermissions"][0]["destination"],
         "localSettings"
     );
+}
+
+/// P11-04 — 프로젝트를 링크 경로로 등록해도 (macOS 의 `/var/…` → `/private/var/…` 처럼) 단추가 사라지지 않는다.
+/// macOS · Linux 에서는 가짜 CLI 의 작업 폴더가 링크를 푼 실제 경로라 파일 경로가 실제 경로로 온다 (실제 CLI 도 그렇다).
+/// Windows 는 작업 폴더가 링크 경로 그대로라 같은 글로 오지만, 실제 경로 쪽은 `protocol` 의 단위 시험이 정션으로 확인한다.
+#[test]
+fn always_allow_still_narrows_to_the_files_folder_when_the_project_is_registered_through_a_link() {
+    let mut h = Harness::new("always-link");
+    let link = h.root.join("project-link");
+    if !make_dir_link(&link, &h.project) {
+        return; // 이 PC 는 링크를 만들 수 없다
+    }
+    let cmd = h.fake("permission-scope.first", &[]);
+    let mut plan = h.plan();
+    plan.project_dir = link.clone();
+    h.manager.start(plan, cmd.command.clone()).unwrap();
+    h.manager.send_message("write sub/a.txt").unwrap();
+    let info = h.wait_for("permission", |e| match e {
+        SessionEvent::PermissionRequest(p) => Some(p.clone()),
+        _ => None,
+    });
+    // 카드의 작업 폴더는 등록한 (링크) 경로 그대로
+    assert_eq!(info.cwd, link.display().to_string());
+    let rule = info
+        .always_rule
+        .as_ref()
+        .expect("a rule for a file inside the linked project");
+    assert_eq!(rule.rule, "Edit(/sub/**)");
+    h.manager.stop().unwrap();
 }
 
 #[test]

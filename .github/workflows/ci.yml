@@ -38,7 +38,7 @@ jobs:
       - run: npx tsc --noEmit -p e2e/tsconfig.json
       - run: npx eslint .
       - run: npx vitest run
-      - run: node --test scripts/set-version.test.mjs scripts/release-notes.test.mjs
+      - run: node --test scripts/set-version.test.mjs scripts/release-notes.test.mjs scripts/updater-manifest.test.mjs
 
   # Rust 쪽 — 세 OS 모두. 한 OS 가 실패해도 나머지는 끝까지 돈다.
   rust:

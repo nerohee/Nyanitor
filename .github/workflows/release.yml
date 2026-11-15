@@ -1,0 +1,134 @@
+# 출시 빌드 — 태그 `v<판>` 을 올리면 세 OS 설치본 · 업데이트 파일(latest.json · .sig)을 만들어
+# **초안(draft) 릴리스**에 올린다. 공개는 사람이 초안을 보고 한다.
+# 수동 실행은 릴리스 없이 설치본을 이 실행의 artifact 로만 남긴다 (시험용).
+#
+# 서명 키(TAURI_SIGNING_PRIVATE_KEY · TAURI_SIGNING_PRIVATE_KEY_PASSWORD)는 저장소 Secrets 에서
+# 이 파일의 build 작업에서만 쓴다. pull_request 로는 돌지 않으니 포크 PR 은 키에 닿을 수 없다.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: 태그와 판 번호 확인
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: 태그 = v + package.json 판 (네 파일이 모두 그 판인지까지)
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            case "$TAG" in
+              v*) ;;
+              *) echo "태그 이름이 v 로 시작하지 않는다: $TAG" >&2; exit 1 ;;
+            esac
+            VERSION="${TAG#v}"
+          else
+            # 수동 실행 — 태그가 없으니 package.json 판과 나머지 파일이 같은지만 본다.
+            VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          fi
+          node scripts/set-version.mjs --check "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: CHANGELOG.md 에서 이 판의 바뀐 점 (릴리스 본문 · latest.json notes = 앱 「바뀐 점」)
+        id: notes
+        run: |
+          set -euo pipefail
+          node scripts/release-notes.mjs "$VERSION" > notes.md
+          DELIM="NOTES_$(openssl rand -hex 16)"
+          {
+            echo "notes<<$DELIM"
+            cat notes.md
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 빌드 (${{ matrix.name }})
+    needs: verify
+    # 릴리스(초안)를 만들고 파일을 올리는 작업만 쓰기 권한.
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # latest.json 은 작업마다 "읽고 합쳐서 다시 올리는" 방식이고 초안도 처음 한 번만 만들어야 해서,
+      # 동시에 돌면 서로 덮어쓴다 — 하나씩 돌린다.
+      max-parallel: 1
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            target: ''
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            target: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Linux 빌드 의존 설치
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust stable
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          if [ -n "$TARGET" ]; then rustup target add "$TARGET"; fi
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # 태그를 올렸을 때만 릴리스에 올린다. 수동 실행은 tagName 이 비어 릴리스 없이 artifact 만.
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          releaseName: Nyanitor v__VERSION__
+          # CHANGELOG.md 의 그 판 절 — tauri-action 이 latest.json 의 notes 에도 이 값을 쓴다 (초안 본문을 고쳐도 앱에는 안 바뀐다).
+          releaseBody: ${{ needs.verify.outputs.notes }}
+          releaseDraft: true
+          prerelease: false
+          uploadWorkflowArtifacts: ${{ github.event_name != 'push' }}
+          args: --config src-tauri/tauri.ci.conf.json ${{ matrix.target && format('--target {0}', matrix.target) || '' }}

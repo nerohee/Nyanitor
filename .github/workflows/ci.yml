@@ -1,0 +1,80 @@
+# 검사 · 시험 — push(main) · pull request · 수동 실행.
+# Secrets 를 쓰지 않는다. 포크 PR 에서도 그대로 돈다 (읽기 권한만).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 같은 가지에 새로 push 하면 지난 실행은 멈춘다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 화면 쪽 — OS 와 무관하니 한 곳(ubuntu)에서만.
+  web:
+    name: 화면 · 스크립트 (ubuntu)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx tsc --noEmit -p e2e/tsconfig.json
+      - run: npx eslint .
+      - run: npx vitest run
+      - run: node --test scripts/set-version.test.mjs scripts/release-notes.test.mjs
+
+  # Rust 쪽 — 세 OS 모두. 한 OS 가 실패해도 나머지는 끝까지 돈다.
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Linux 빌드 의존 설치
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust stable (clippy · rustfmt)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy --component rustfmt --no-self-update
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # tauri 매크로가 frontendDist(../dist) 가 있어야 컴파일된다.
+      - run: npm run build
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

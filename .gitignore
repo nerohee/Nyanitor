@@ -45,3 +45,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# 업데이트 서명 키 (tauri signer) · 인증서 — 저장소 안에 두지 않는다 (P11-06)
+*.key
+*.key.pub
+*.pfx
+*.p12

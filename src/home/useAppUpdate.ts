@@ -106,7 +106,8 @@ export function useAppUpdate(): AppUpdateState {
       ipc.appUpdateInstall(force).then(
         (result) => {
           if (!alive.current) return;
-          setInstalling(false);
+          // 다시 시작하는 중이면 앱이 꺼질 때까지 "설치 중" 그대로 — 정리에 몇 초 걸리는 동안 설치 단추가 다시 살아나지 않게 (P11-06)
+          if (result.outcome !== "restarting") setInstalling(false);
           apply(result.status);
           if (result.outcome === "warning") setWarning(result.warning);
         },

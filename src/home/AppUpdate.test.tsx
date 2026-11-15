@@ -248,6 +248,11 @@ describe("설치", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog")).toBeTruthy();
     await act(async () => finish({ outcome: "restarting", warning: null, status: { state: "ready", version: "0.2.0" } }));
+    // 다시 시작 결과가 와도 앱이 꺼질 때까지(정리에 몇 초) "다시 시작하는 중" 그대로 — 설치 단추가 다시 살아나지 않는다 (P11-06 5)
+    expect(screen.getByText("설치하고 다시 시작하는 중이에요…")).toBeTruthy();
+    expect(screen.queryByText("받아 두었어요", { exact: false })).toBeNull();
+    const installButton = screen.queryByRole("button", { name: "설치하고 다시 시작" });
+    expect(installButton === null || (installButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("경고가 오면 같은 대화상자에서 고른다 — 「그래도 설치」는 force: true 로 부른다", async () => {

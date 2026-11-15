@@ -89,6 +89,31 @@ fn a_successful_install_makes_one_commit_and_leaves_nothing_unapplied() {
     );
 }
 
+/// P11-04 — GitHub 의 Windows 러너는 `TEMP` 가 `C:\Users\RUNNER~1\...` 짧은 이름이라 하네스 폴더가 짧은 이름으로 설치 스크립트에 간다.
+/// 가짜 스크립트가 환경 변수 글자 수로 접두를 잘라 파일 이름이 `om/agents/...` 로 틀어졌다 (스크립트의 시험 도구 버그 — 앱은 경로를 `canonicalize` 로 비교한다).
+#[cfg(windows)]
+#[test]
+fn an_install_started_through_an_8_3_short_harness_path_sees_the_same_file_names() {
+    let Some(r) = CustomRoot::new_by_short_path("apply-short").map(CustomRoot::with_script) else {
+        eprintln!("skipped: this drive makes no 8.3 short names");
+        return;
+    };
+    let home = r.h.locations.harness_home.display().to_string();
+    assert!(home.contains('~'), "not a short path: {home}");
+    save(&r, "agent:harness-builder-ui", "opus");
+    let result = apply(&r, None);
+    assert_eq!(result.outcome, ApplyOutcome::Applied, "{result:?}");
+    assert_eq!(result.commit, CommitOutcome::Committed);
+    assert_eq!(unapplied_count(&r), 0);
+    assert_eq!(
+        r.script_calls(),
+        [(
+            "install".to_string(),
+            vec!["agents/harness-builder-ui.values.yml".to_string()]
+        )]
+    );
+}
+
 #[test]
 fn applying_with_nothing_unapplied_does_not_install_or_commit() {
     let r = CustomRoot::new("apply-nothing").with_script();

@@ -1005,6 +1005,8 @@ mod edge_tests {
 mod fix_tests {
     use super::*;
 
+    // Windows 에서만 쓰는 경로다 (`open_login_window` 의 Windows 쪽). macOS · Linux 에서는 `\` 가 구분자가 아니라 같은 글이 안 나온다.
+    #[cfg(windows)]
     #[test]
     fn the_login_window_uses_the_system32_cmd_exe_by_absolute_path() {
         assert_eq!(

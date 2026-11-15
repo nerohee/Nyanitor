@@ -513,6 +513,49 @@ impl HarnessRoot {
     }
 }
 
+#[cfg(windows)]
+impl HarnessRoot {
+    /// `new` 와 같되 위치를 8.3 짧은 이름으로 준다. 짧은 이름이 안 만들어지는 드라이브면 `None` (만든 폴더는 지운다).
+    pub fn new_by_short_path(name: &str) -> Option<Self> {
+        let long = fresh_dir(&format!("{name}-with-a-long-folder-name"));
+        let Some(short) = short_path(&long) else {
+            let _ = fs::remove_dir_all(&long);
+            return None;
+        };
+        let locations = Locations {
+            claude_dir: short.join("claude"),
+            harness_home: short.join("hh"),
+            claude_dir_from_env: true,
+            harness_home_from_env: true,
+        };
+        fs::create_dir_all(&locations.claude_dir).unwrap();
+        fs::create_dir_all(&locations.harness_home).unwrap();
+        Some(Self {
+            root: long,
+            locations,
+        })
+    }
+}
+
+/// 있는 폴더의 8.3 짧은 이름 경로 (`cmd` 의 `%~sI`). 짧은 이름이 없으면 (꺼진 드라이브 · 이미 짧음) `None`.
+#[cfg(windows)]
+pub fn short_path(dir: &Path) -> Option<PathBuf> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("cmd")
+        .raw_arg(format!(
+            "/c for %I in (\"{}\") do @echo %~sI",
+            dir.display()
+        ))
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let short = PathBuf::from(text.trim());
+    let looks_short = short
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().contains('~'));
+    (out.status.success() && short.is_dir() && looks_short).then_some(short)
+}
+
 impl Drop for HarnessRoot {
     fn drop(&mut self) {
         remove_dir_patiently(&self.root);
@@ -606,7 +649,21 @@ pub const SOURCE_CONFIG_EXAMPLE: &str = "{\n  \"language\": \"ko\",\n  \"planner
 impl CustomRoot {
     /// 원본이 있는 시험 폴더 (`harness-builder-ui` · `harness-designer` · 스킬 `web-full` · `desktop-app` · 공통 폴더 `agents/_common`)
     pub fn new(name: &str) -> Self {
-        let root = Self::empty(name);
+        Self::empty(name).with_source_files()
+    }
+
+    /// `new` 와 같되 하네스 폴더가 Windows 8.3 짧은 이름(`C:\Users\RUNNER~1\...`) 경로로 들어온다 (GitHub 러너의 `TEMP` 처럼).
+    /// 그 드라이브가 짧은 이름을 만들지 않으면 `None`.
+    #[cfg(windows)]
+    pub fn new_by_short_path(name: &str) -> Option<Self> {
+        let h = HarnessRoot::new_by_short_path(name)?;
+        let source = h.locations.repo_dir();
+        let custom = h.locations.harness_home.join("custom");
+        Some(Self { h, source, custom }.with_source_files())
+    }
+
+    fn with_source_files(self) -> Self {
+        let root = self;
         root.write_source("agents/harness-builder-ui.md", SOURCE_AGENT_UI);
         root.write_source("agents/harness-designer.md", SOURCE_AGENT_DESIGNER);
         root.write_source("agents/_common/rules.md", "공통 규칙\n");

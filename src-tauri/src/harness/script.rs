@@ -688,6 +688,8 @@ mod tests {
         assert_eq!(sh, ["/x/install.sh", "--json"]);
     }
 
+    // Windows 에서만 쓰는 경로다 (`interpreter` 의 Windows 쪽). macOS · Linux 에서는 `\` 가 구분자가 아니라 같은 글이 안 나온다.
+    #[cfg(windows)]
     #[test]
     fn powershell_is_taken_from_system32_not_from_path() {
         assert_eq!(

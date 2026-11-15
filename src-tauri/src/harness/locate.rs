@@ -537,7 +537,9 @@ mod tests {
         let claude = home.join(".claude");
         fs::create_dir_all(&claude).unwrap();
         assert!(is_default_location(&claude, Some(home.path()), ".claude"));
-        // `..` 를 거치거나 끝에 구분자가 붙어도 같은 폴더
+        // `..` 를 거치거나 끝에 구분자가 붙어도 같은 폴더. 거쳐 가는 `x` 는 있어야 한다 — macOS · Linux 는 없는 폴더의 `..` 를
+        // 운영체제가 풀지 못해 (`canonicalize` 실패 → 글자 비교) 같은 폴더로 보지 않는다. Windows 는 `..` 를 글자로 먼저 접는다.
+        fs::create_dir_all(home.join("x")).unwrap();
         assert!(is_default_location(
             &home.join("x").join("..").join(".claude"),
             Some(home.path()),

@@ -62,13 +62,24 @@ pub fn project_key(dir: &Path) -> String {
         };
         key.to_lowercase()
     } else {
-        let trimmed = text.trim_end_matches('/');
-        if trimmed.is_empty() {
-            "/".to_string()
-        } else {
-            trimmed.to_string()
-        }
+        unix_key(text)
     }
+}
+
+/// macOS · Linux 의 키 — 겹친 `/` · 안쪽 `.` · 끝 `/` 는 같은 폴더다 (Windows 와 같게). `..` 는 링크를 지나면 다른 곳이라 글자로 접지 않는다.
+/// 대소문자는 그대로 둔다 (대소문자를 가리는 볼륨도 있다 — 대화상자가 돌려주는 실제 철자를 쓴다).
+fn unix_key(text: &str) -> String {
+    if !text.starts_with('/') {
+        // 절대 경로가 아닌 것은 등록되지 않는다 — 옛 동작 그대로
+        let trimmed = text.trim_end_matches('/');
+        return if trimmed.is_empty() { "/" } else { trimmed }.to_string();
+    }
+    let joined = text
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/{joined}")
 }
 
 /// 세션 ID 로 쓸 수 있는 모양인가 — UUID(`8-4-4-4-12` 의 16진수)만. `--resume <ID>` 인자로 들어가므로 엄격하게:
@@ -999,6 +1010,30 @@ mod tests {
             assert_eq!(project_key(Path::new("/home/a/")), "/home/a");
             assert_eq!(project_key(Path::new("/")), "/");
         }
+    }
+
+    #[test]
+    fn unix_keys_unify_repeated_separators_inner_dots_and_trailing_separators_but_not_dotdot() {
+        let key = unix_key("/home/a/proj");
+        assert_eq!(key, "/home/a/proj");
+        for same in [
+            "/home/a/proj/",
+            "/home//a/proj",
+            "/home/a/./proj",
+            "/home/a/proj/.",
+            "//home/a/proj//",
+        ] {
+            assert_eq!(unix_key(same), key, "{same}");
+        }
+        assert_eq!(unix_key("/"), "/");
+        assert_eq!(unix_key("//"), "/");
+        assert_eq!(unix_key("/."), "/");
+        // 대소문자 · `..` 는 글자 그대로 (다른 키)
+        assert_ne!(unix_key("/home/A/proj"), key);
+        assert_ne!(unix_key("/home/a/x/../proj"), key);
+        // 절대 경로가 아닌 글은 옛 동작 그대로
+        assert_eq!(unix_key("a/b/"), "a/b");
+        assert_eq!(unix_key(""), "/");
     }
 
     #[cfg(windows)]

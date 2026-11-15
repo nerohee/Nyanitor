@@ -14,8 +14,11 @@ $seen = @()
 foreach ($sub in 'agents', 'skills') {
     $dir = Join-Path $custom $sub
     if (Test-Path -LiteralPath $dir) {
+        # Cut the prefix by the folder's own FullName, never by the length of the env var text: Get-ChildItem returns the long (expanded)
+        # form even when CLAUDE_HARNESS_HOME came in as an 8.3 short path (C:\Users\RUNNER~1\...), as on the GitHub windows runner.
+        $base = (Get-Item -LiteralPath $custom -Force).FullName.TrimEnd('\')
         foreach ($f in (Get-ChildItem -LiteralPath $dir -Recurse -File -Force)) {
-            $seen += $f.FullName.Substring($custom.Length + 1).Replace('\', '/')
+            $seen += $f.FullName.Substring($base.Length + 1).Replace('\', '/')
         }
     }
 }

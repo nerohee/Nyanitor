@@ -633,7 +633,12 @@ mod tests {
             other => panic!("{other:?}"),
         }
         // 설정 값이 상대 경로의 보통 이름이 아니면 (받는 쪽에서 한 번 더 확인)
-        for bad in ["", "..", "../docs", "/etc", "C:\\x", "a/../../b", "."] {
+        let mut bad_values = vec!["", "..", "../docs", "/etc", "a/../../b", "."];
+        // `C:\x` 는 Windows 에서만 드라이브 경로다 — macOS · Linux 에서는 프로젝트 안의 평범한 이름 하나 (아래에서 따로)
+        if cfg!(windows) {
+            bad_values.push("C:\\x");
+        }
+        for bad in bad_values {
             assert_eq!(
                 list_in(&dir, bad, &Limits::DEFAULT),
                 ListResult::Unreadable(problem(Problem::OutsideFolder)),
@@ -644,6 +649,10 @@ mod tests {
                 unreadable(Problem::OutsideFolder),
                 "{bad:?}"
             );
+        }
+        if !cfg!(windows) {
+            // 백슬래시가 든 이름은 프로젝트 안의 (없는) 폴더 이름일 뿐이다 — 밖이 아니다
+            assert_eq!(list_in(&dir, "C:\\x", &Limits::DEFAULT), ListResult::Absent);
         }
     }
 

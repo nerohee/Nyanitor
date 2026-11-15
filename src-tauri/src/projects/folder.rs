@@ -463,14 +463,22 @@ mod tests {
             r#""../outside""#,
             r#""a/../../b""#,
             r#""/abs""#,
-            r#""C:\\abs""#,
-            r#""\\\\server\\share""#,
             "5",
             "null",
             r#"["x"]"#,
         ] {
             fs::write(dir.join(LOCAL_FILE), format!(r#"{{"docsDir":{value}}}"#)).unwrap();
             assert_eq!(docs_dir_in(&dir), "docs", "{value}");
+        }
+        // 드라이브 · 네트워크 공유 모양은 Windows 에서만 절대 경로다. macOS · Linux 에서는 `\` 가 든 평범한 한 칸짜리 이름이라
+        // 프로젝트 안의 폴더 이름으로 쓸 수 있다 (프로젝트 밖으로 나가지 못하는 것은 같다 — `docs::locate` 가 다시 막는다).
+        for (value, name) in [
+            (r#""C:\\abs""#, r"C:\abs"),
+            (r#""\\\\server\\share""#, r"\\server\share"),
+        ] {
+            fs::write(dir.join(LOCAL_FILE), format!(r#"{{"docsDir":{value}}}"#)).unwrap();
+            let expected = if cfg!(windows) { "docs" } else { name };
+            assert_eq!(docs_dir_in(&dir), expected, "{value}");
         }
         // 깨진 설정은 예시로 대신하지 않는다
         fs::write(dir.join(EXAMPLE_FILE), r#"{"docsDir":"example-docs"}"#).unwrap();

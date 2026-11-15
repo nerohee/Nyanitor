@@ -1174,8 +1174,17 @@ fn closing_the_job_handle_kills_the_whole_tree_like_an_app_crash_would() {
 
 #[test]
 fn a_slow_replay_delivers_events_one_by_one_in_order() {
+    // 가짜 CLI 는 줄마다 `DELAY` 만큼 쉰다: 시작 줄 → (쉼) → 글 → (쉼) → 한도 → (쉼) → 결과.
+    // 느린 기계(CI 러너)에서는 이쪽이 이벤트를 늦게 알아챈다 — 그래서 "첫 이벤트를 본 때부터 끝까지가 몇 ms 이상" 처럼 늦게 본 만큼 줄어드는
+    // 기준은 빠듯하게 잡지 않는다. 늦게 보는 일은 시간을 줄일 수만 있고 늘릴 수는 없으므로:
+    //  ① 보내기 전부터 끝까지는 쉼 셋 이상 (늦게 봐도 줄지 않는 확실한 아래 한계 — 앱이 재생을 끝까지 기다렸다는 뜻)
+    //  ② 첫 이벤트를 본 뒤 끝까지는 쉼 하나 이상 (첫 이벤트가 끝과 함께 한꺼번에 오지 않았다는 뜻 — 늦게 보는 여유는 쉼 둘)
+    const DELAY_MS: u64 = 200;
+    let delay = Duration::from_millis(DELAY_MS);
     let mut h = Harness::new("slow");
-    let cmd = h.fake("start", &[]).env("NYANITOR_FAKE_DELAY_MS", "120");
+    let cmd = h
+        .fake("start", &[])
+        .env("NYANITOR_FAKE_DELAY_MS", DELAY_MS.to_string());
     h.start(&cmd).unwrap();
     let t0 = Instant::now();
     h.manager.send_message("pong").unwrap();
@@ -1184,9 +1193,15 @@ fn a_slow_replay_delivers_events_one_by_one_in_order() {
     });
     let first_at = t0.elapsed();
     h.wait_for("turn end", turn_outcome);
+    let end_at = t0.elapsed();
+    // (운영체제의 쉼이 몇 ms 일찍 풀릴 수 있어 50ms 여유)
     assert!(
-        t0.elapsed() - first_at >= Duration::from_millis(240),
-        "events were spread out"
+        end_at >= delay * 3 - Duration::from_millis(50),
+        "the replay was not slow: {end_at:?} from send to the end"
+    );
+    assert!(
+        end_at - first_at >= delay,
+        "events were not spread out: first seen at {first_at:?}, the end at {end_at:?}"
     );
     let kinds = h.kinds();
     let order: Vec<_> = kinds

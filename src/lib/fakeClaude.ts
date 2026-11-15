@@ -14,6 +14,7 @@ import { fakeHouse } from "./fakeHouse";
 import { fakeProgress } from "./fakeProgress";
 import { fakeProjects } from "./fakeProjects";
 import { fakeSkills } from "./fakeSkills";
+import { fakeUpdate } from "./fakeUpdate";
 import { FAKE_WORKERS, type FakeWorkerSpec, type FakeWorkersMode, parseFakeWorkersQuery, workerRefOf } from "./fakeWorkers";
 import {
   AppError,
@@ -583,6 +584,8 @@ export function createFakeClaude() {
 }
 
 export const fakeClaude = createFakeClaude();
+// 앱 업데이트 가짜 (`fakeUpdate.ts`) — `ipc.onAppUpdate` 가 브라우저에서 이 모듈로 이벤트를 듣는다
+export { fakeUpdate };
 // 프로젝트 빼기(`fakeProjects.ts`)가 "그 프로젝트의 세션이 돌고 있나" 를 물을 수 있게 이어 준다 (진짜 `projects::remove` → `SessionManager::while_project_idle`)
 fakeProjects.bindSession(() => fakeClaude.liveRun()?.projectId ?? null);
 
@@ -598,6 +601,7 @@ export async function fakeCall(command: string, args: Record<string, unknown>): 
     ...fakeProjects.handlers,
     ...fakeProgress.handlers,
     ...fakeSkills.handlers,
+    ...fakeUpdate.handlers,
   };
   const handler = handlers[command];
   if (!handler) {

@@ -64,6 +64,9 @@ pub enum AppError {
     /// 파일을 쓰지 못했다 (디스크 · 권한 · 다른 프로그램이 쥐고 있음). 옛 파일은 그대로 남는다.
     #[error("could not write the file: {0}")]
     FileWriteFailed(String),
+    /// 앱 업데이트 확인 · 받기 · 설치가 이미 진행 중이다 (한 번에 하나, P11-01).
+    #[error("an app update task is already in progress")]
+    UpdateBusy,
 }
 
 impl AppError {
@@ -88,6 +91,7 @@ impl AppError {
             AppError::TrustRequired(_) => "trust_required",
             AppError::TrustChanged(_) => "trust_changed",
             AppError::FileWriteFailed(_) => "file_write_failed",
+            AppError::UpdateBusy => "update_busy",
         }
     }
 }
@@ -189,5 +193,6 @@ mod tests {
             AppError::FileWriteFailed(String::new()).kind(),
             "file_write_failed"
         );
+        assert_eq!(AppError::UpdateBusy.kind(), "update_busy");
     }
 }

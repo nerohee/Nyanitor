@@ -14,6 +14,7 @@ pub mod projects;
 pub mod skills;
 pub mod strings;
 pub mod tray;
+pub mod update;
 pub mod usage;
 pub mod window;
 
@@ -54,6 +55,23 @@ fn log_plugin() -> tauri_plugin_log::Builder {
     builder
 }
 
+/// 앱이 끝날 때 돌고 있는 세션을 정리한다 (stdin 닫기 → 안 끝나면 프로세스 트리 강제 종료).
+/// 앱이 이 정리에 닿지 못하고 죽어도 Windows 는 Job Object 가, macOS · Linux 는 자식마다 붙은 감시 프로세스가 자식을 끈다 (`claude/process_tree.rs`).
+/// `RunEvent::Exit` 에서 부르고, Windows 의 앱 업데이트는 설치 프로그램을 띄우며 `RunEvent::Exit` 없이 끝내므로 그 직전에도 부른다 (`update::commands`).
+pub fn exit_cleanup<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    // 하네스 작업(설치 · 되돌리기 · 받기)이 도는 중에 끝나면 다음 실행이 알 수 있게 표시를 남긴다 (`harness/interrupted.rs`, D-54).
+    // 세션을 정리하기 전에 — 표시는 끝내는 순간의 하네스 상태를 본다.
+    if let (Some(state), Ok(dir)) = (
+        app.try_state::<harness::HarnessState>(),
+        app.path().app_data_dir(),
+    ) {
+        harness::interrupted::note_exit(&dir, &state, history::usage::now_secs());
+    }
+    if let Some(manager) = app.try_state::<claude::session::SessionManager>() {
+        manager.shutdown();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut context = tauri::generate_context!();
@@ -90,6 +108,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // OS 알림 — Rust 에서만 띄운다 (`attention`). 화면 권한(`capabilities/`)에는 notification 을 열지 않는다 (D-50).
         .plugin(tauri_plugin_notification::init())
+        // 앱 업데이트 — Rust 에서만 부른다 (`update`). 화면 권한(`capabilities/`)에는 updater · process 를 열지 않는다 (D-26). 배포 주소 · 공개 키는 `tauri.conf.json` 의 `plugins.updater`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 시험 모드로 떴다는 것 (또는 환경 변수를 무시했다는 것) 을 로그 첫 줄로.
             e2e::announce();
@@ -130,6 +150,8 @@ pub fn run() {
             app.manage(projects::ProjectsState::new(app_data));
             // 창이 숨겨지면 웹뷰도 숨기려고 보임 상태를 기억해 둔다 (`window.rs`, D-55).
             app.manage(window::VisibilityTracker::new());
+            // 앱 업데이트 상태 (확인 · 받기 · 설치는 한 번에 하나, `update/`). 바뀔 때마다 화면에 이벤트를 보낸다.
+            app.manage(update::commands::new_state(app.handle().clone()));
             // 메인 창은 숨긴 채 만들어지고(`tauri.conf.json` 의 `visible: false`), window-state 가
             // 저장된 위치 · 크기로 옮긴 뒤 여기서 보인다 — 기본 위치에 잠깐 떴다가 옮겨지는 깜빡임을 막는다.
             // 보이기 전에 바탕색을 OS 테마에 맞춘다 — 어두운 테마에서 첫 화면이 흰색으로 번쩍이지 않게.
@@ -138,6 +160,8 @@ pub fn run() {
             // 되살리기는 창을 만들 때 끝났으므로(`window::fit_first_window` 설명) 그 뒤 · 보이기 앞이다.
             window::fit_first_window(app.handle());
             tray::show_main_window(app.handle(), tray::ShowCause::Startup);
+            // 창이 보인 잠시 뒤 새 판을 한 번 확인한다 (출시 빌드만, 실패는 로그만 — `update::commands::start_auto_check`).
+            update::commands::start_auto_check(app.handle().clone());
             // 지난번 하네스 일(설치 · 받기) 도중 앱이 꺼졌으면 알림 하나로 알린다 (`harness/interrupted.rs` 의 표시를 읽고 지운다, D-54).
             // 창 · 트레이가 준비된 뒤라 알림이 떠도 앱은 이미 쓸 수 있다. 앱 데이터 폴더를 못 알아내면 알리지 않는다.
             match app.path().app_data_dir() {
@@ -209,24 +233,15 @@ pub fn run() {
             projects::commands::project_trust_grant,
             history::commands::project_chat_history,
             history::commands::app_usage_summary,
+            update::commands::app_update_status,
+            update::commands::app_update_check,
+            update::commands::app_update_install,
         ])
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
-            // 앱이 끝날 때 돌고 있는 세션을 정리한다 (stdin 닫기 → 안 끝나면 프로세스 트리 강제 종료).
-            // 앱이 이 줄에 닿지 못하고 죽어도 Windows 는 Job Object 가, macOS · Linux 는 자식마다 붙은 감시 프로세스가 자식을 끈다 (`claude/process_tree.rs`).
             if let tauri::RunEvent::Exit = event {
-                // 하네스 작업(설치 · 되돌리기 · 받기)이 도는 중에 끝나면 다음 실행이 알 수 있게 표시를 남긴다 (`harness/interrupted.rs`, D-54).
-                // 세션을 정리하기 전에 — 표시는 끝내는 순간의 하네스 상태를 본다.
-                if let (Some(state), Ok(dir)) = (
-                    app.try_state::<harness::HarnessState>(),
-                    app.path().app_data_dir(),
-                ) {
-                    harness::interrupted::note_exit(&dir, &state, history::usage::now_secs());
-                }
-                if let Some(manager) = app.try_state::<claude::session::SessionManager>() {
-                    manager.shutdown();
-                }
+                exit_cleanup(app);
             }
         });
 }

@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  APP_UPDATE_EVENT,
   AppError,
   CLAUDE_SESSION_EVENT,
   WINDOW_SHOWN_EVENT,
@@ -13,6 +14,8 @@ import {
   toAppError,
   type AgentsList,
   type AppInfo,
+  type AppUpdateInstallResult,
+  type AppUpdateStatus,
   type ChatPage,
   type ClaudeEvent,
   type ClaudeResponse,
@@ -141,6 +144,21 @@ async function onWindowVisibility(handler: (event: WindowVisibilityEvent) => voi
   return unlisten;
 }
 
+/**
+ * 앱 업데이트 상태가 바뀔 때마다 듣는다 (`APP_UPDATE_EVENT`): 확인 중 · 새 판 · 받는 중(진행) · 설치 준비 끝 · 실패.
+ * 돌려주는 함수를 부르면 그만 듣는다. 브라우저에서는 가짜 모드가 흉내 낸다 (`fakeUpdate.ts`).
+ */
+async function onAppUpdate(handler: (status: AppUpdateStatus) => void): Promise<() => void> {
+  if (!inTauri()) {
+    const { fakeUpdate } = await loadFake().catch((raw: unknown) => {
+      throw toAppError(raw);
+    });
+    return fakeUpdate.subscribe(handler);
+  }
+  const unlisten: UnlistenFn = await listen<AppUpdateStatus>(APP_UPDATE_EVENT, (event) => handler(event.payload));
+  return unlisten;
+}
+
 export const ipc = {
   appInfo: () => call<AppInfo>("app_info"),
 
@@ -162,6 +180,15 @@ export const ipc = {
   onClaudeEvent,
   onWindowShown,
   onWindowVisibility,
+
+  // 앱 업데이트 (P11-01, D-26). 넘기는 값은 `force` 하나뿐 — 주소 · 키 · 경로를 넘기는 길은 없다 (배포 주소 · 공개 키는 `tauri.conf.json`).
+  /** 지금 상태 읽기 — 화면이 열릴 때 · 이벤트를 놓쳤을 때. 싸다 */
+  appUpdateStatus: () => call<AppUpdateStatus>("app_update_status"),
+  /** 지금 확인 — 확인 중이거나 받는 중이면 `update_busy`, 이미 받아 둔 새 판이 있으면 확인하지 않고 그 상태를 돌려준다. 네트워크 실패는 오류가 아니라 `failed` 상태 (`stage: "check"`) */
+  appUpdateCheck: () => call<AppUpdateStatus>("app_update_check"),
+  /** 새 판 설치 — 받기 진행은 `onAppUpdate` 로 오고, 끝나면 앱이 다시 시작한다. 앱을 끄면 안 되는 일이 있으면 `force: true` 없이는 설치하지 않고 `warning` 결과 (경고를 보인 뒤 사용자가 고르면 `true` 로 다시) */
+  appUpdateInstall: (force = false) => call<AppUpdateInstallResult>("app_update_install", { force }),
+  onAppUpdate,
 
   // 하네스 설치 · 업데이트 (P4-02). 넘기는 값은 백업 번호 하나뿐 — 실행 파일 · 인자 · 경로 · URL 을 넘기는 길은 없다.
   /** 위치 · 원본(개발자 모드) · 받은 원본 · git · Git Bash. 읽기만 한다 */

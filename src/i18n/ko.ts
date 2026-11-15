@@ -1045,6 +1045,7 @@ const ko = {
   "error.project_folder_forbidden": "이 폴더는 이제 프로젝트로 쓸 수 없는 위치예요 (홈 폴더 · 드라이브 맨 위 · Claude · 앱 설정 폴더 등). 목록에서 빼고 다른 폴더를 골라 주세요.",
   "error.trust_required": "이 폴더의 Claude Code 설정(자동 실행 명령 · 허용 규칙 · MCP 등)을 먼저 확인해야 시작할 수 있어요.",
   "error.trust_changed": "확인하는 사이 폴더 설정이 바뀌었어요. 바뀐 내용을 다시 보고 확인해 주세요.",
+  "error.update_busy": "앱 업데이트를 확인하거나 받는 중이에요. 끝나면 다시 눌러 주세요.",
 
   // ── P3 Claude 연결 시험 화면 (개발 빌드 전용, `?lab=session` — 진짜 채팅 화면은 P6) ──
   "lab.open": "Claude 연결 시험 화면 열기 (개발 빌드 전용)",

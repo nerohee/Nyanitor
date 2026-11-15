@@ -21,7 +21,8 @@ export type AppErrorKind =
   | "project_folder_missing"
   | "project_folder_forbidden"
   | "trust_required"
-  | "trust_changed";
+  | "trust_changed"
+  | "update_busy";
 
 const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "invalid_input",
@@ -43,6 +44,7 @@ const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   "project_folder_forbidden",
   "trust_required",
   "trust_changed",
+  "update_busy",
 ];
 
 export class AppError extends Error {
@@ -1184,6 +1186,70 @@ export const WINDOW_VISIBILITY_EVENT = "app:window-visibility";
 /** `WINDOW_VISIBILITY_EVENT` 의 내용 (`src-tauri/src/window.rs` 의 `WindowVisibility`) — `visible: false` 면 웹뷰가 숨겨져 `document.visibilityState` 도 `hidden` 이다 */
 export interface WindowVisibilityEvent {
   visible: boolean;
+}
+
+// ───────────────────────── 앱 업데이트 (P11-01, D-26) — `src-tauri/src/update/` 와 같이 맞춘다 ─────────────────────────
+// GitHub Releases 의 새 판을 Rust 가 확인 · 받기 · 설치한다. 화면은 업데이터 플러그인을 직접 부르지 않는다 (`capabilities/` 에 `updater:*` · `process:*` 없음) —
+// 앱 명령 셋(`appUpdateStatus` · `appUpdateCheck` · `appUpdateInstall`)과 이벤트(`APP_UPDATE_EVENT`)만 쓴다. 넘기는 값은 `force` 하나뿐이다.
+// 확인 · 받기는 한 번에 하나 — 돌고 있을 때 또 부르면 `update_busy`. 상태 때문에 안 되는 일(새 판 없음 · 설치 방식이 안 맞음 · 경고)은 오류가 아니라 결과의 `outcome` 이다.
+
+/** `src-tauri/src/update/mod.rs` 의 `UPDATE_EVENT` — 앱 업데이트 상태가 바뀔 때마다 온다 (내용은 `AppUpdateStatus` 그대로). 받는 중 진행은 0.2초 간격으로 온다 */
+export const APP_UPDATE_EVENT = "app:update";
+
+/** 바뀐 점(릴리스 글)의 최대 글자 수 — `src-tauri/src/update/mod.rs` 의 `NOTES_MAX_CHARS`. 넘으면 Rust 가 잘라서 `notesTruncated` */
+export const APP_UPDATE_NOTES_MAX_CHARS = 4000;
+
+/** 새 판 하나 (`src-tauri/src/update/mod.rs` 의 `ReleaseInfo`) */
+export interface AppUpdateRelease {
+  version: string;
+  /** 릴리스 날짜 `YYYY-MM-DD` (모르면 `null`) */
+  date: string | null;
+  /** 바뀐 점 — GitHub 릴리스 글, 마크다운 그대로 (없으면 `null`) */
+  notes: string | null;
+  /** 글이 길어서 잘랐다 */
+  notesTruncated: boolean;
+}
+
+/** 이 설치 방식으로는 앱이 스스로 설치하지 못하는 까닭 — `not_app_image`: Linux deb 로 설치했다 (업데이터는 AppImage 만 바꾼다. 화면은 "Releases 에서 받기" 를 보인다) */
+export type AppUpdateUnsupportedReason = "not_app_image";
+
+/** 어느 단계에서 실패했나 — 화면이 문구를 고르는 열쇠 */
+export type AppUpdateFailStage = "check" | "download" | "install";
+
+/** 앱 업데이트의 지금 상태 (`src-tauri/src/update/mod.rs` 의 `UpdateStatus`) */
+export type AppUpdateStatus =
+  /** 아직 확인하지 않았다 (앱을 막 열었다. 시작 때 자동 확인은 출시 빌드만, 열린 뒤 10초쯤) */
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "latest" }
+  /** 새 판이 있다 — 사용자가 누르면 받는다 */
+  | { state: "available"; release: AppUpdateRelease }
+  /** 받는 중. `total` 은 서버가 크기를 알려 주지 않으면 `null` */
+  | { state: "downloading"; version: string; received: number; total: number | null }
+  /** 받아서 서명까지 확인했고 설치만 남았다 (경고 때문에 멈췄거나 설치 직전) */
+  | { state: "ready"; version: string }
+  /** 새 판은 있지만 이 설치 방식으로는 설치하지 못한다 */
+  | { state: "unsupported"; reason: AppUpdateUnsupportedReason; release: AppUpdateRelease }
+  /** 확인 · 받기 · 설치가 실패했다. `message` 는 진단용 영어 한 줄 — 사용자에게 그대로 보이지 않는다 (화면은 `stage` 로 문구를 고른다) */
+  | { state: "failed"; stage: AppUpdateFailStage; message: string };
+
+/** 설치하려는데 앱을 끄면 안 되는 일이 있다 — `working` 먹물이 일하는 중 · `harness_fetch` 하네스를 받는 중 · `harness_install` 하네스를 설치 · 되돌리는 중 */
+export type AppUpdateWarning = "working" | "harness_fetch" | "harness_install";
+
+/**
+ * 설치 명령의 결과 — `restarting` 설치를 끝냈고 앱이 다시 시작한다 (Windows 는 설치 프로그램이 앱을 끝내므로 이 결과가 오기 전에 창이 닫힐 수 있다) ·
+ * `warning` 앱을 끄면 안 되는 일이 있어 설치하지 않았다 (`warning` 을 보이고, 사용자가 고르면 `force: true` 로 다시) ·
+ * `no_update` 설치할 새 판이 없다 · `unsupported` 이 설치 방식으로는 설치하지 못한다 · `failed` 받기 · 설치가 실패했다 (`status` 가 `failed`)
+ */
+export type AppUpdateInstallOutcome = "restarting" | "warning" | "no_update" | "unsupported" | "failed";
+
+/** `app_update_install` 의 결과 (`src-tauri/src/update/mod.rs` 의 `InstallResult`) */
+export interface AppUpdateInstallResult {
+  outcome: AppUpdateInstallOutcome;
+  /** `outcome` 이 `warning` 일 때만 */
+  warning: AppUpdateWarning | null;
+  /** 이 명령이 끝난 뒤의 상태 */
+  status: AppUpdateStatus;
 }
 
 function isAppErrorKind(value: unknown): value is AppErrorKind {

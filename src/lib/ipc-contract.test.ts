@@ -32,11 +32,15 @@ import projectsRequirementsRs from "../../src-tauri/src/projects/requirements.rs
 import projectsTrustRs from "../../src-tauri/src/projects/trust.rs?raw";
 import skillsRs from "../../src-tauri/src/skills/mod.rs?raw";
 import trayRs from "../../src-tauri/src/tray.rs?raw";
+import updateCommandsRs from "../../src-tauri/src/update/commands.rs?raw";
+import updateRs from "../../src-tauri/src/update/mod.rs?raw";
 import windowRs from "../../src-tauri/src/window.rs?raw";
 import usageRs from "../../src-tauri/src/usage/mod.rs?raw";
 import { describe, expect, it } from "vitest";
 import { isTextKey } from "../i18n/ko";
 import {
+  APP_UPDATE_EVENT,
+  APP_UPDATE_NOTES_MAX_CHARS,
   AppError,
   CUSTOM_CAT_ID_PATTERN,
   CUSTOM_CATS_CHANGES_MAX,
@@ -57,6 +61,13 @@ import {
   type AgentsState,
   type AlwaysScope,
   type AppErrorKind,
+  type AppUpdateFailStage,
+  type AppUpdateInstallOutcome,
+  type AppUpdateInstallResult,
+  type AppUpdateRelease,
+  type AppUpdateStatus,
+  type AppUpdateUnsupportedReason,
+  type AppUpdateWarning,
   type ChatEntry,
   type ChatListEventType,
   type ChatPage,
@@ -212,6 +223,27 @@ const TS_ERROR_KINDS: Record<AppErrorKind, true> = {
   project_folder_forbidden: true,
   trust_required: true,
   trust_changed: true,
+  update_busy: true,
+};
+
+// 앱 업데이트 (P11-01) — 화면 쪽에서 종류가 하나 늘면 컴파일이 실패하고, Rust 쪽에서 늘면 아래 시험이 실패한다.
+const TS_APP_UPDATE_STATES: Record<AppUpdateStatus["state"], true> = {
+  idle: true,
+  checking: true,
+  latest: true,
+  available: true,
+  downloading: true,
+  ready: true,
+  unsupported: true,
+  failed: true,
+};
+const TS_APP_UPDATE_STAGES: Record<AppUpdateFailStage, true> = { check: true, download: true, install: true };
+const TS_APP_UPDATE_UNSUPPORTED: Record<AppUpdateUnsupportedReason, true> = { not_app_image: true };
+const TS_APP_UPDATE_WARNINGS: Record<AppUpdateWarning, true> = { working: true, harness_fetch: true, harness_install: true };
+const TS_APP_UPDATE_OUTCOMES: Record<AppUpdateInstallOutcome, true> = { restarting: true, warning: true, no_update: true, unsupported: true, failed: true };
+const TS_APP_UPDATE_FIELDS = {
+  ReleaseInfo: { version: 1, date: 1, notes: 1, notesTruncated: 1 } satisfies Record<keyof AppUpdateRelease, 1>,
+  InstallResult: { outcome: 1, warning: 1, status: 1 } satisfies Record<keyof AppUpdateInstallResult, 1>,
 };
 
 const TS_EVENT_TYPES: Record<ClaudeEventType, true> = {
@@ -1167,7 +1199,9 @@ describe("Rust ↔ 화면 목록이 같다", () => {
     expect(called.length).toBeGreaterThan(8);
     for (const command of called) {
       if (command === "app_info") continue;
-      const module = command.startsWith("custom_")
+      const module = command.startsWith("app_update_")
+        ? "update"
+        : command.startsWith("custom_")
         ? "custom"
         : command.startsWith("harness_")
         ? "harness"
@@ -1194,6 +1228,7 @@ describe("Rust ↔ 화면 목록이 같다", () => {
       ...libRs.matchAll(/skills::commands::(skills_[a-z_]+)/g),
       ...libRs.matchAll(/projects::commands::(projects?_[a-z_]+)/g),
       ...libRs.matchAll(/history::commands::([a-z_]+)/g),
+      ...libRs.matchAll(/update::commands::(app_update_[a-z_]+)/g),
     ].map((m) => m[1] as string);
     expect(sorted(registered)).toEqual(sorted(called.filter((c) => c !== "app_info")));
   });
@@ -1536,5 +1571,110 @@ describe("내 수정 (P9-01) — Rust ↔ 화면 목록이 같다", () => {
     expect(cargo).not.toMatch(/sha1|md-5|^digest|git2|gix/m);
     const pkg = (await import("../../package.json?raw")).default;
     expect(pkg).not.toMatch(/plugin-fs|plugin-shell/);
+  });
+});
+
+describe("앱 업데이트 (P11-01) — Rust ↔ 화면 목록이 같다", () => {
+  it("상태 · 까닭 · 결과 종류: update/mod.rs 의 enum 과 ipc-types 의 글 종류", () => {
+    // 태그가 붙는 enum: 변형 이름이 곧 `state` 값
+    expect(sorted(Object.keys(TS_APP_UPDATE_STATES))).toEqual(sorted(rustVariants(updateRs, "UpdateStatus").map(snake)));
+    expect(updateRs).toContain('#[serde(tag = "state", rename_all = "snake_case")]\npub enum UpdateStatus');
+    expect(sorted(Object.keys(TS_APP_UPDATE_STAGES))).toEqual(sorted(rustVariants(updateRs, "FailStage").map(snake)));
+    expect(sorted(Object.keys(TS_APP_UPDATE_UNSUPPORTED))).toEqual(sorted(rustVariants(updateRs, "UnsupportedReason").map(snake)));
+    expect(sorted(Object.keys(TS_APP_UPDATE_WARNINGS))).toEqual(sorted(rustVariants(updateRs, "WarningKind").map(snake)));
+    expect(sorted(Object.keys(TS_APP_UPDATE_OUTCOMES))).toEqual(sorted(rustVariants(updateRs, "InstallOutcome").map(snake)));
+  });
+
+  it("결과의 필드: Rust 구조체와 ipc-types 인터페이스가 같은 키를 쓴다", () => {
+    for (const name of Object.keys(TS_APP_UPDATE_FIELDS)) {
+      const ts = TS_APP_UPDATE_FIELDS[name as keyof typeof TS_APP_UPDATE_FIELDS];
+      expect(sorted(Object.keys(ts)), name).toEqual(sorted(rustFields(updateRs, name)));
+    }
+    // 상태의 변형 안 필드 (`Downloading { version, received, total }` 등)는 모두 한 낱말이라 camelCase 변환이 필요 없다
+    expect(updateRs).toMatch(/Downloading \{\s*version: String,\s*received: u64,\s*total: Option<u64>,\s*\}/);
+    expect(updateRs).toMatch(/Failed \{\s*stage: FailStage,\s*message: String,?\s*\}/);
+    expect(updateRs).toMatch(/Unsupported \{\s*reason: UnsupportedReason,\s*release: ReleaseInfo,\s*\}/);
+    expect(updateRs).toMatch(/Available \{\s*release: ReleaseInfo,?\s*\}/);
+    expect(updateRs).toMatch(/Ready \{\s*version: String,?\s*\}/);
+  });
+
+  it("이벤트 이름 · 바뀐 점 글자 수 한도는 Rust 와 같다", () => {
+    expect(updateRs).toContain(`pub const UPDATE_EVENT: &str = "${APP_UPDATE_EVENT}";`);
+    expect(updateRs).toContain(`pub const NOTES_MAX_CHARS: usize = ${APP_UPDATE_NOTES_MAX_CHARS};`);
+  });
+
+  it("명령은 화면에서 `force` 하나만 받는다 (주소 · 키 · 경로 · 실행 파일을 받는 길이 없다)", async () => {
+    const signatures = [...updateCommandsRs.matchAll(/#\[tauri::command\]\s+pub async fn (app_update_[a-z_]+)\(([^)]*)\)/g)];
+    expect(signatures.map((m) => m[1]).sort()).toEqual(["app_update_check", "app_update_install", "app_update_status"]);
+    for (const [, name, params] of signatures) {
+      const names = (params as string)
+        .replace(/<[^>]*>/g, "") // `State<'_, AppUpdate>` 안의 쉼표는 매개변수 구분이 아니다
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p !== "")
+        .map((p) => p.split(":")[0]?.trim());
+      const allowed = name === "app_update_status" ? ["state"] : name === "app_update_check" ? ["app", "state"] : ["app", "state", "force"];
+      expect(names, `${name} 의 매개변수`).toEqual(allowed);
+    }
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).toContain('appUpdateStatus: () => call<AppUpdateStatus>("app_update_status"),');
+    expect(ipcTs).toContain('appUpdateCheck: () => call<AppUpdateStatus>("app_update_check"),');
+    expect(ipcTs).toContain('appUpdateInstall: (force = false) => call<AppUpdateInstallResult>("app_update_install", { force }),');
+  });
+
+  it("설치는 순서 함수(run_install)를 거치고, 경고는 트레이 종료와 같은 질문(attention::quit_warning)이다", () => {
+    const install = updateCommandsRs.slice(updateCommandsRs.indexOf("pub async fn app_update_install"));
+    expect(install).toContain("run_install(");
+    expect(install).toMatch(/&store,\s*force,/);
+    expect(updateCommandsRs).toContain("attention::quit_warning(&app)");
+    // 확인은 순서 함수를 거친다 (한 번에 하나 규칙을 건너뛰지 않는다)
+    expect(updateCommandsRs).toMatch(/run_check\(store, silent, install_unsupported_here\(\), plugin_check\(app\)\)/);
+    // 순서 함수는 확인 · 설치 맨 앞에서 한 번에 하나 규칙을 잡는다
+    expect(updateRs).toMatch(/let Some\(run\) = store\.begin_check\(\)\? else/);
+    expect(updateRs).toMatch(/store\.begin_install\(warn\)\?/);
+    // 경고는 `force` 가 아닐 때만 묻는다
+    expect(updateRs).toMatch(/let warn = if force \{\s*None\s*\} else \{\s*warning\(\)\.await\?\s*\};/);
+  });
+
+  it("Windows 의 업데이터 종료 직전에도 끝내기 정리(exit_cleanup)가 돈다 — RunEvent::Exit 와 같은 함수", async () => {
+    const libRs = (await import("../../src-tauri/src/lib.rs?raw")).default;
+    expect(updateCommandsRs).toContain(".on_before_exit(move || before_exit(&for_exit))");
+    expect(updateCommandsRs).toMatch(/fn before_exit[\s\S]*?crate::exit_cleanup\(app\)/);
+    expect(libRs).toMatch(/if let tauri::RunEvent::Exit = event \{\s*exit_cleanup\(app\);/);
+    // 정리 함수가 세션 정리 · 하네스 도중 끝남 표시를 모두 한다
+    const cleanup = libRs.slice(libRs.indexOf("pub fn exit_cleanup"));
+    expect(cleanup.slice(0, cleanup.indexOf("\n}\n"))).toMatch(/note_exit[\s\S]*manager\.shutdown\(\)/);
+  });
+
+  it("시작 때 자동 확인은 출시 빌드만 하고, 실패는 화면에 오류로 가지 않는다 (조용한 확인)", () => {
+    expect(updateCommandsRs).toContain("auto_check_enabled(cfg!(debug_assertions))");
+    expect(updateCommandsRs).toMatch(/check_now\(&app, &store, true\)/);
+  });
+
+  it("창 권한(capabilities)은 업데이트 때문에 넓어지지 않았다 — updater · process 권한 · 패키지 · 플러그인이 없다", async () => {
+    const capabilityText = (await import("../../src-tauri/capabilities/default.json?raw")).default;
+    expect(JSON.parse(capabilityText).permissions).toEqual(["core:event:allow-listen", "core:event:allow-unlisten"]);
+    expect(capabilityText).not.toMatch(/updater|process/i);
+    const pkg = (await import("../../package.json?raw")).default;
+    expect(pkg).not.toMatch(/plugin-updater|plugin-process/);
+    const ipcTs = (await import("./ipc.ts?raw")).default;
+    expect(ipcTs).not.toMatch(/plugin-updater|plugin-process/);
+    const cargo = (await import("../../src-tauri/Cargo.toml?raw")).default;
+    expect(cargo).toMatch(/^tauri-plugin-updater = "2"$/m);
+    expect(cargo).not.toMatch(/tauri-plugin-process/);
+    const libRs = (await import("../../src-tauri/src/lib.rs?raw")).default;
+    expect(libRs).toContain(".plugin(tauri_plugin_updater::Builder::new().build())");
+    expect(libRs).not.toContain("tauri_plugin_process");
+  });
+
+  it("설정: 배포 주소는 GitHub Releases 의 latest.json 하나, Windows 는 passive, 출시용 산출물 설정은 꺼져 있다 (P11-03 에서 CI 전용으로)", async () => {
+    const conf = JSON.parse((await import("../../src-tauri/tauri.conf.json?raw")).default) as {
+      bundle: Record<string, unknown>;
+      plugins: { updater: { endpoints: string[]; pubkey: string; windows: { installMode: string } } };
+    };
+    expect(conf.plugins.updater.endpoints).toEqual(["https://github.com/nerohee/Nyanitor/releases/latest/download/latest.json"]);
+    expect(conf.plugins.updater.windows.installMode).toBe("passive");
+    expect(conf.plugins.updater.pubkey.length).toBeGreaterThan(0);
+    expect(conf.bundle).not.toHaveProperty("createUpdaterArtifacts");
   });
 });

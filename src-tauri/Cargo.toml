@@ -3,6 +3,7 @@ name = "nyanitor"
 version = "0.1.0"
 description = "Nyanitor — claude-harness 를 고양이 집으로 쓰는 데스크톱 앱"
 authors = ["nerohee"]
+license = "MIT"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -33,6 +34,8 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 tauri-plugin-dialog = "2"
 # OS 알림 — Rust 에서만 띄운다 (D-50). 화면 권한(`capabilities/`)에는 notification 을 열지 않는다. src/attention/ 에서만 쓴다.
 tauri-plugin-notification = "2"
+# 앱 업데이트 (D-26) — Rust 에서만 부른다 (`update/`). 화면 권한(`capabilities/`)에는 updater · process 를 열지 않는다.
+tauri-plugin-updater = "2"
 
 # 자식 프로세스 트리를 한꺼번에 끄기 (claude 가 시킨 bash · node 가 남지 않게) — src/claude/process_tree.rs 에서만 쓴다.
 # Windows 는 Job Object (앱이 비정상 종료해도 OS 가 자식을 끈다), 그 밖에는 프로세스 그룹.

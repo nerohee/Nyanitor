@@ -15,6 +15,7 @@ use tauri_plugin_log::log;
 
 use super::KNOWN_CLI_VERSION;
 use super::exec::{self, ClaudeCommand};
+#[cfg(windows)]
 use super::workdir;
 use crate::error::AppError;
 
@@ -389,6 +390,7 @@ static STATUS_CACHE: StatusCache = StatusCache::new(STATUS_TTL);
 
 /// `cmd.exe /C start ...` 에 넘길 글. 새 콘솔 창에서 `claude auth login` 이 돈다.
 /// 경로에 따옴표나 `%` 가 있으면 cmd 가 다르게 읽을 수 있어 거절한다.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn login_command_line(program: &Path) -> Result<OsString, AppError> {
     let text = program.to_string_lossy();
     if text.contains(['"', '%']) || text.chars().any(char::is_control) {

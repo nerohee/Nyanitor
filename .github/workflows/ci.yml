@@ -77,4 +77,5 @@ jobs:
       - run: npm run build
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # 한 시험 파일이 실패해도 나머지 파일까지 모두 돌려 한 번에 본다.
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast

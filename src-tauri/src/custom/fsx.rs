@@ -32,9 +32,7 @@ impl From<io::Error> for FsError {
 
 /// 링크 · 정션인가 (Windows 는 재해석 지점이면 모두 링크로 본다)
 pub fn is_link(meta: &fs::Metadata) -> bool {
-    if meta.file_type().is_symlink() {
-        return true;
-    }
+    // Windows 쪽 판단을 먼저 — 다른 OS 에서는 이 블록이 빠져 마지막 줄만 남는다 (clippy `needless_bool` 을 피하는 짜임새)
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -43,7 +41,7 @@ pub fn is_link(meta: &fs::Metadata) -> bool {
             return true;
         }
     }
-    false
+    meta.file_type().is_symlink()
 }
 
 /// 상대 경로의 부분들 (`/` 로 나눈다). 빈 부분 · `.` · `..` · `\` · `:` · 제어 문자가 있으면 `None`.

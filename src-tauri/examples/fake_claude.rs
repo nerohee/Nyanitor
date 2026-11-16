@@ -15,6 +15,7 @@
 //!   `inject-nonjson` (첫 줄 앞에 JSON 아닌 줄 · 빈 줄 끼움) · `die-before-result` (첫 `result` 직전에 코드 1 로 죽음) ·
 //!   `hang-on-eof` (stdin 이 닫혀도 안 끝남 — 강제 종료 시험) · `mark-done` (재생이 끝나면 stderr 에 `fake-claude: replay complete`) ·
 //!   `keep-cwd` (녹화의 옛 작업 폴더 이름을 그대로 둔다)
+//! - (P11) `NYANITOR_FAKE_HOLD_RESULT=<파일>` `result` 줄 앞에서 그 파일이 생길 때까지 멈춤 (최대 60초)
 //! - `NYANITOR_FAKE_DELAY_MS=<ms>` 느린 재생 (줄마다 쉼) · `NYANITOR_FAKE_CUT_LINE=<n>` n 번째 줄을 반만 쓰고 코드 1 로 죽음 ·
 //!   `NYANITOR_FAKE_LONG_LINE=<바이트>` 첫 `system/init` 뒤에 그만큼 긴 assistant 글 한 줄을 끼움
 //! - `NYANITOR_FAKE_CHILD_PIDFILE=<파일>` 손자 프로세스(60초 자는 것, stdout 을 쥔 채)를 띄우고 pid 를 적는다
@@ -61,6 +62,8 @@ struct Config {
     cut_line: Option<usize>,
     long_line: usize,
     log: Option<PathBuf>,
+    /// `result` 줄을 쓰기 전에 이 파일이 생길 때까지 기다린다 (최대 60초) — 시간 대신 순서로 "줄마다 넘기는가" 를 보는 시험 (P11)
+    hold_result: Option<PathBuf>,
 }
 
 impl Config {
@@ -77,6 +80,7 @@ impl Config {
             cut_line: number("NYANITOR_FAKE_CUT_LINE"),
             long_line: number("NYANITOR_FAKE_LONG_LINE").unwrap_or(0),
             log: env::var_os("NYANITOR_FAKE_LOG").map(PathBuf::from),
+            hold_result: env::var_os("NYANITOR_FAKE_HOLD_RESULT").map(PathBuf::from),
         }
     }
 
@@ -357,6 +361,14 @@ fn run_session(config: &Config) {
             Step::Recv(item) => {
                 if config.has("die-before-result") && type_of(&item) == "result" {
                     exit(1);
+                }
+                if let Some(gate) = &config.hold_result
+                    && type_of(&item) == "result"
+                {
+                    let until = std::time::Instant::now() + Duration::from_secs(60);
+                    while !gate.exists() && std::time::Instant::now() < until {
+                        sleep(Duration::from_millis(10));
+                    }
                 }
                 if config.has("inject-unknown") && type_of(&item) == "assistant" {
                     write_stdout(r#"{"type":"future_thing","payload":{"x":1}}"#, true);

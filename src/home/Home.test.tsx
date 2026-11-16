@@ -139,7 +139,8 @@ describe("고양이 집 — 가짜 데이터 기본", () => {
     expect(screen.getByRole("meter", { name: "5시간 츄르" })).toHaveAttribute("aria-valuenow", "42");
     expect(screen.getByRole("meter", { name: "주간 츄르" })).toHaveAttribute("aria-valuenow", "18");
     expect(screen.getByText("42% 먹음")).toBeInTheDocument();
-    expect(screen.getByText(/오늘 .*다시 채워짐/)).toBeInTheDocument();
+    // 가짜 5시간 츄르는 "지금 + 2시간" 에 다시 채워진다 — 밤 10시가 넘으면 내일이 된다 (CI 가 23:56 에 돌다 깜빡임, P11)
+    expect(screen.getByText(/(오늘|내일) .*다시 채워짐/)).toBeInTheDocument();
     expect(screen.getByText("준비 완료 4/4")).toBeInTheDocument();
     expect(screen.getByText(/방금 읽음/)).toBeInTheDocument();
 

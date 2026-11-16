@@ -1213,35 +1213,29 @@ fn closing_the_job_handle_kills_the_whole_tree_like_an_app_crash_would() {
 
 #[test]
 fn a_slow_replay_delivers_events_one_by_one_in_order() {
-    // 가짜 CLI 는 줄마다 `DELAY` 만큼 쉰다: 시작 줄 → (쉼) → 글 → (쉼) → 한도 → (쉼) → 결과.
-    // 느린 기계(CI 러너)에서는 이쪽이 이벤트를 늦게 알아챈다 — 그래서 "첫 이벤트를 본 때부터 끝까지가 몇 ms 이상" 처럼 늦게 본 만큼 줄어드는
-    // 기준은 빠듯하게 잡지 않는다. 늦게 보는 일은 시간을 줄일 수만 있고 늘릴 수는 없으므로:
-    //  ① 보내기 전부터 끝까지는 쉼 셋 이상 (늦게 봐도 줄지 않는 확실한 아래 한계 — 앱이 재생을 끝까지 기다렸다는 뜻)
-    //  ② 첫 이벤트를 본 뒤 끝까지는 쉼 하나 이상 (첫 이벤트가 끝과 함께 한꺼번에 오지 않았다는 뜻 — 늦게 보는 여유는 쉼 둘)
-    const DELAY_MS: u64 = 200;
-    let delay = Duration::from_millis(DELAY_MS);
+    // 앱이 CLI 의 줄을 받는 대로 넘기는가 (끝까지 모았다가 한꺼번에 넘기지 않는가) — 시간이 아니라 **순서**로 본다 (P11):
+    // 가짜 CLI 는 `result` 줄을 쓰기 직전에 문 파일이 생길 때까지 멈춰 선다. 그동안 앞의 글 · 한도 이벤트가 이미 와 있어야 하고,
+    // 턴 끝은 아직 오지 않아야 한다. (예전엔 줄 사이 쉼과 걸린 시간으로 봤다 — 바쁜 CI 에서 읽는 쪽이 늦게 깨면 한꺼번에 읽혀 깜빡였다.)
+    // 줄 사이에 조금 쉬어 줄이 실제로 따로따로 오게 한다 (시험 기준은 아니다).
     let mut h = Harness::new("slow");
+    let gate = h.root.join("release-the-result");
     let cmd = h
         .fake("start", &[])
-        .env("NYANITOR_FAKE_DELAY_MS", DELAY_MS.to_string());
+        .env("NYANITOR_FAKE_DELAY_MS", "30")
+        .env("NYANITOR_FAKE_HOLD_RESULT", gate.clone());
     h.start(&cmd).unwrap();
-    let t0 = Instant::now();
     h.manager.send_message("pong").unwrap();
-    h.wait_for("turn started", |e| {
-        matches!(e, SessionEvent::TurnStarted { .. }).then_some(())
+    h.wait_for("the rate limit line, before the held result", |e| {
+        matches!(e, SessionEvent::RateLimit { .. }).then_some(())
     });
-    let first_at = t0.elapsed();
+    // 가짜는 아직 `result` 를 쓰지 않았다 — 턴 끝이 와 있으면 앱이 무언가를 기다렸다 한꺼번에 넘긴 것
+    assert!(
+        !h.kinds().iter().any(|k| k == "turn_ended"),
+        "the turn ended before the CLI wrote its result: {:?}",
+        h.kinds()
+    );
+    fs::write(&gate, "go").unwrap();
     h.wait_for("turn end", turn_outcome);
-    let end_at = t0.elapsed();
-    // (운영체제의 쉼이 몇 ms 일찍 풀릴 수 있어 50ms 여유)
-    assert!(
-        end_at >= delay * 3 - Duration::from_millis(50),
-        "the replay was not slow: {end_at:?} from send to the end"
-    );
-    assert!(
-        end_at - first_at >= delay,
-        "events were not spread out: first seen at {first_at:?}, the end at {end_at:?}"
-    );
     let kinds = h.kinds();
     let order: Vec<_> = kinds
         .iter()

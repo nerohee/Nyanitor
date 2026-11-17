@@ -15,6 +15,7 @@ use tauri_plugin_log::log;
 
 use super::KNOWN_CLI_VERSION;
 use super::exec::{self, ClaudeCommand};
+use super::shell_path;
 #[cfg(any(windows, target_os = "macos"))]
 use super::workdir;
 use crate::error::AppError;
@@ -93,12 +94,22 @@ pub fn locate(
 }
 
 /// 이 프로세스의 환경(PATH · 홈)으로 찾는다. 못 찾으면 기억한 찾기 결과도 버린다 (`StatusCache`).
+/// macOS · Linux 는 앱의 `PATH` 가 아니라 로그인 셸이 알려 준 `PATH` 를 합친 값으로 찾는다 (`shell_path`, P11-08) — Windows 는 환경의 `PATH` 그대로.
+/// 못 찾으면 셸에게 `PATH` 를 다시 물어 (10초에 한 번까지) 한 번 더 찾는다 — 설치 · 셸 설정을 고친 뒤 "다시 확인" 이 낡은 값으로 실패하지 않게.
 pub fn locate_here(user_path: Option<&Path>) -> Option<PathBuf> {
-    let found = locate(
+    let home = std::env::home_dir();
+    let mut found = locate(
         user_path,
-        std::env::var_os("PATH").as_deref(),
-        std::env::home_dir().as_deref(),
+        shell_path::search_path().as_deref(),
+        home.as_deref(),
     );
+    if found.is_none() && shell_path::refresh_after_miss() {
+        found = locate(
+            user_path,
+            shell_path::search_path().as_deref(),
+            home.as_deref(),
+        );
+    }
     if found.is_none() {
         forget_status();
     }

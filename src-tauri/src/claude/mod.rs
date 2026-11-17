@@ -9,6 +9,7 @@
 //! - `events` — 화면으로 가는 이벤트 · 명령 입출력 모양
 //! - `launch` — 세션 시작 계획: 프로젝트 번호 → 폴더, 하네스 `planner` 설정 → 모델 · 수준 (D-47)
 //! - `exec` · `process_tree` — 환경 정리 · 창 숨기기 · 프로세스 트리 끄기
+//! - `shell_path` — macOS · Linux 에서 `claude` · `node` 를 찾을 `PATH` (로그인 셸에게 물어 한 번만 기억, P11-08)
 //! - `workdir` — `--version` · `auth status` · `/usage` 같은 짧은 CLI 가 도는 앱 전용 빈 폴더 (`cli-work`)
 //! - `store` — 프로젝트별 세션 ID (앱 DB 의 `sessions` 표) · 옛 `claude-sessions.json` 가져오기
 //! - `commands` — Tauri 명령 (얇게: 입력 확인 · 전달만)
@@ -21,6 +22,7 @@ pub mod launch;
 pub mod process_tree;
 pub mod protocol;
 pub mod session;
+pub mod shell_path;
 pub mod store;
 pub mod workdir;
 

@@ -132,6 +132,9 @@ pub fn run() {
                 }
                 Err(err) => log::warn!("could not find the app local data folder: {err}"),
             }
+            // macOS · Linux: `claude` · `node` 를 찾을 PATH 를 로그인 셸에게 미리 물어 둔다 (`claude/shell_path.rs`, P11-08). 작업 폴더가 정해진 뒤에 — 셸이 그 폴더에서 돈다.
+            // 첫 찾기가 이보다 먼저 오면 끝날 때까지 기다린다. Windows 는 아무 일도 하지 않는다.
+            claude::shell_path::prefetch();
             let app_db = db::AppDb::open(&app_data.join(db::DB_FILE));
             // 옛 `claude-sessions.json` 의 세션 ID 를 가져온다 (등록된 프로젝트의 것만). 못 맞춘(아직 등록 안 된 폴더) 항목이 남으면 파일을 그대로 두고,
             // 그 폴더를 등록할 때 다시 찾는다 (`projects::add`). 다 맞췄을 때만 파일 이름을 바꾼다. 실패해도 앱은 뜬다.

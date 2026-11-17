@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::process_tree::{self, ProcessTree};
+use super::shell_path;
 use super::workdir;
 
 /// 환경에 있으면 CLI 가 구독 대신 이 키로 과금한다 (D-19). 값은 읽지도 남기지도 않는다.
@@ -199,10 +200,12 @@ impl ClaudeCommand {
     {
         let mut command = Command::new(&self.program);
         command.args(args);
+        // 환경을 따로 주지 않으면 이 프로세스의 환경 — 유닉스는 `PATH` 만 셸이 알려 준 값을 합친 것으로 (`shell_path`, P11-08).
+        // 주어진 환경(시험 · git)은 그대로 쓴다.
         let base = self
             .base_env
             .clone()
-            .unwrap_or_else(|| std::env::vars_os().collect());
+            .unwrap_or_else(|| shell_path::with_search_path(std::env::vars_os().collect()));
         command.env_clear();
         command.envs(clean_env(base, self.keep_api_key));
         command.envs(self.extra_env.iter().map(|(k, v)| (k, v)));
@@ -641,6 +644,18 @@ mod fix_tests {
             ]))
             .is_empty()
         );
+    }
+
+    // P11-08: macOS · Linux 만 `PATH` 를 합친 값으로 바꾼다 (`shell_path`) — Windows 는 환경 그대로
+    #[cfg(windows)]
+    #[test]
+    fn on_windows_a_command_without_a_base_env_gets_the_process_path_unchanged() {
+        let built = ClaudeCommand::new("claude").command(["x"]);
+        let path = built
+            .get_envs()
+            .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+            .and_then(|(_, v)| v.map(OsStr::to_os_string));
+        assert_eq!(path, std::env::var_os("PATH"));
     }
 
     #[test]

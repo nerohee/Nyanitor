@@ -2,7 +2,7 @@
 // 집이 화면 전체 무대, 카드는 그림의 빈 곳: 왼쪽 위 = 준비 상태 + 사용량, 아래 판 = 최근 프로젝트 + 새 프로젝트 단추 (P6-04).
 // 왼쪽에 메뉴(고양이 집 · 작업 공간) — 프로젝트를 누르면 작업 공간에서 열린다.
 // 앱이 돌린 세션의 작업자가 일하는 동안 그 고양이는 캣휠(점검은 캣타워)에, 기다리는 카드를 보낸 고양이(먹물, 또는 권한을 물은 작업자)는 댓돌에 있다 (P7-05, `useHomeWork`). 나머지는 쉰다.
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { HouseScene } from "../components/house/HouseScene";
 import { AppNav, type NavPlace } from "../components/nav/AppNav";
 import { timeOfDay } from "../components/house/time";
@@ -24,6 +24,7 @@ import { cardElements, useBlockedSpots } from "./useBlockedSpots";
 import { useReadiness } from "./useReadiness";
 import { useAppUpdate } from "./useAppUpdate";
 import { useUsage } from "./useUsage";
+import { useHomeScale } from "./useHomeScale";
 import "./home.css";
 
 /** 주소에 `?spots=on` 이 있으면 자리 십자 표시 (개발 중 좌표를 맞출 때 쓴다) */
@@ -62,6 +63,7 @@ interface HomeProps {
 export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, onChangeCat, clock }: HomeProps) {
   const now = useClock(clock);
   const time = timeOfDay(now);
+  const scale = useHomeScale();
   const panel = useCatPanel();
   const motion = useSceneMotion();
   const { state: agents, cats } = useAgents();
@@ -115,7 +117,7 @@ export default function Home({ onGo, onOpenProject, onNewProject, onOpenWork, on
   };
 
   return (
-    <div className="home" data-testid="home" data-skin="3" data-time={time}>
+    <div className="home" data-testid="home" data-skin="3" data-time={time} style={{ "--hm-s": scale } as CSSProperties}>
       <AppNav current="house" onGo={onGo} />
       <main className="hm-view">
         <h1 className="hm-sr" tabIndex={-1}>{t("home.title")}</h1>

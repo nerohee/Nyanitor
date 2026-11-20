@@ -12,3 +12,7 @@ export const CLI_FIXTURES = path.join(TAURI_DIR, "tests", "fixtures", "cli");
 export const TAURI_DRIVER = path.join(process.env.USERPROFILE ?? "", ".cargo", "bin", "tauri-driver.exe");
 export const EDGE_DRIVER = path.join(REPO, "msedgedriver.exe");
 export const SPECS_DIR = path.join(REPO, "e2e", "specs");
+/** README 캡처 장면 (`npm run screenshots`) — 시험과 같은 틀(시험 폴더 · 가짜 CLI · tauri-driver)로 돌지만, 확인 대신 그림을 남긴다 */
+export const SHOTS_DIR = path.join(REPO, "e2e", "shots");
+/** 캡처 결과 — 저장소에 넣는 그림 */
+export const SHOTS_OUT = path.join(REPO, "assets", "readme");

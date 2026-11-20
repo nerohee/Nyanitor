@@ -1,14 +1,20 @@
 // `npm run e2e` — 빌드 → (시험 파일마다) 시험 폴더 준비 → tauri-driver 띄우기 → 시험 → 정리.
 // 인자: 시험 파일 이름의 일부 (예: `npm run e2e -- permission`). `E2E_SKIP_BUILD=1` 이면 빌드를 건너뛴다 (고치며 돌릴 때).
+// `--shots` (`npm run screenshots`): 같은 틀로 시험 대신 README 캡처 장면 (`e2e/shots/*.shot.ts`) 을 돌려 `assets/readme/` 에 그림을 만든다.
+// `SHOTS_OUT` 이 있으면 그 폴더에 만든다 (두 번 돌려 견줄 때).
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { APP_EXE, EDGE_DRIVER, REPO, SPECS_DIR, TAURI_DRIVER } from "./lib/paths.ts";
+import { APP_EXE, EDGE_DRIVER, REPO, SHOTS_DIR, SHOTS_OUT, SPECS_DIR, TAURI_DRIVER } from "./lib/paths.ts";
 import { createSandbox, removeSandbox, sandboxEnv } from "./lib/sandbox.ts";
+import { prepareShotSandbox } from "./lib/shotfiles.ts";
 import { diffSnapshots, realDataDirs, saveSnapshot, takeSnapshot } from "./lib/snapshot.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 캡처 모드 — 시험 대신 README 그림 장면을 돈다 */
+const SHOTS = process.argv.includes("--shots");
 
 function step(title: string): void {
   console.log(`\n=== ${title}`);
@@ -57,13 +63,15 @@ async function waitForDriver(port: number): Promise<void> {
 
 /** 시험 파일 하나 — 새 시험 폴더 · 새 tauri-driver. 통과하면 true. */
 async function runSpec(file: string): Promise<boolean> {
-  const name = path.basename(file).replace(/\.e2e\.ts$/, "");
+  const name = path.basename(file).replace(/\.(e2e|shot)\.ts$/, "");
   step(`${name}`);
   const sandbox = createSandbox(name);
+  if (SHOTS) prepareShotSandbox(sandbox); // 하네스 · 사용량 · 대화 녹화는 앱이 뜨기 전에 놓는다
   const env = sandboxEnv(sandbox);
   saveSnapshot(path.join(sandbox.root, "real-baseline.json"), takeSnapshot()); // 시험이 앱을 띄운 뒤 실제 폴더와 견준다
   const port = await freePort(4474);
   env.E2E_DRIVER_PORT = String(port);
+  if (SHOTS) env.E2E_SHOTS_OUT = path.resolve(process.env.SHOTS_OUT ?? SHOTS_OUT);
   let driver: ChildProcess | null = null;
   let ok: boolean;
   try {
@@ -94,13 +102,15 @@ async function main(): Promise<void> {
   if (process.env.E2E_SKIP_BUILD !== "1") build();
   if (!fs.existsSync(APP_EXE)) throw new Error(`앱이 없다: ${APP_EXE}`);
 
-  const filters = process.argv.slice(2);
+  const filters = process.argv.slice(2).filter((arg) => arg !== "--shots");
+  const specsDir = SHOTS ? SHOTS_DIR : SPECS_DIR;
+  const suffix = SHOTS ? ".shot.ts" : ".e2e.ts";
   const specs = fs
-    .readdirSync(SPECS_DIR)
-    .filter((f) => f.endsWith(".e2e.ts"))
+    .readdirSync(specsDir)
+    .filter((f) => f.endsWith(suffix))
     .filter((f) => filters.length === 0 || filters.some((q) => f.includes(q)))
     .sort()
-    .map((f) => path.join(SPECS_DIR, f));
+    .map((f) => path.join(specsDir, f));
   if (specs.length === 0) throw new Error("돌릴 시험 파일이 없다");
 
   const before = takeSnapshot();
